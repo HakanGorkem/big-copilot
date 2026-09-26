@@ -165,7 +165,7 @@ test('at 390 px the Overview folds its figures into one line, pairs them when op
       line: getComputedStyle(document.getElementById('ovCtx')).display !== 'none' && document.getElementById('ovCtx').textContent,
       tiles: getComputedStyle(document.getElementById('kpis')).display,
     }));
-    assert.match(folded.line, /Profit.*Cash.*Day.*All figures/s);
+    assert.match(folded.line, /Profit.*Cash.*All figures/s);  // the day is the masthead's clock, right above
     assert.equal(folded.tiles, 'none', 'the tiles wait for All figures');
     await page.evaluate(() => wireCards()); // the board wires it in renderAll(); this harness draws alone
     await page.click('#ovCtx .ov-kmore');

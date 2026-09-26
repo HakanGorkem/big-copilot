@@ -379,16 +379,14 @@ test('a question lands on its answer, lit, and the questions are the palette\'s 
   try {
     assert.equal(await page.locator('#ssAsk, #ssAskMini').count(), 0, 'no row of its own on the Overview');
     await page.evaluate(() => ssAsk('hire'));
-    assert.equal(await page.evaluate(() => page), 'company');
-    const strip = page.locator('#pageCompany .ss-asked');
+    assert.deepEqual(await page.evaluate(() => [page, route]), ['staffing', 'staffing/needs']);
+    const strip = page.locator('#pageStaffing .ss-asked');
     assert.match(await strip.innerText(), /Whom should I hire\?/);
-    assert.match(await strip.innerText(), /Back to Needs attention/, 'a site opened from the list goes back to it');
-    assert.equal(await page.locator('#sp-roster').evaluate(el => el.classList.contains('ss-lit')), true);
-    assert.equal(await page.locator('#sp-crew').evaluate(el => el.classList.contains('ss-dim')), true);
-    assert.equal(await page.locator('#sitePanel .sitehead').evaluate(el => el.classList.contains('ss-dim')), false);
+    assert.match(await strip.innerText(), /Back to Overview/, 'it goes back to where it was asked');
+    assert.equal(await page.locator('#secStaff').evaluate(el => el.classList.contains('ss-lit')), true);
+    assert.equal(await page.locator('#secNeeds').evaluate(el => el.classList.contains('ss-dim')), true);
     // Back to the Overview: the strip and the lighting go.
     await strip.locator('[data-ss="back"]').click();
-    // The question opened a site's page, so Back is the browser's, as the crumb's is.
     await page.waitForFunction(() => page === 'today');
     assert.equal(await page.locator('.ss-asked').count(), 0);
     assert.equal(await page.locator('.ss-lit, .ss-dim').count(), 0);
@@ -454,10 +452,11 @@ test('the sphere rests between the places and the references, and the field step
     }));
     assert.ok(orb.left >= nav.right, `the ball ${orb.left} starts after the places ${nav.right}`);
     assert.ok(orb.right <= refs.left, `the ball ${orb.right} ends before the references ${refs.left}`);
-    // However many balls roll out, none rests under the references.
-    await page.click('.wordmark');
+    // However many balls roll out, none rests under the references. The board's
+    // own wordmark: the web build keeps its landing's (hidden) in the page too.
+    await page.click('.wrap .mast .wordmark');
     await shelfAtRest(page);
-    await page.click('.wordmark');
+    await page.click('.wrap .mast .wordmark');
     await shelfAtRest(page);
     const right = await page.evaluate(() => Math.max(...[...document.querySelectorAll('.orb')].map(o => o.getBoundingClientRect().right)));
     assert.ok(right <= (await page.locator('#navRefs').boundingBox()).x + 1);
@@ -558,11 +557,15 @@ test('"Why did profit move?" and "Whom should I hire?" light a block whose tag i
     await page.click('#nav a[data-id="overview"]');
     await page.evaluate(() => ssOpen());
     await page.click('#ssRes .ss-q2 >> text=Whom should I hire?');
-    assert.deepEqual(await page.evaluate(() => [page, siteOpen, siteKey]), ['company', true, SHOP]);
-    assert.equal(await page.locator('#sp-roster').evaluate(el => el.classList.contains('ss-lit')), true);
-    assert.equal(await page.locator('#sp-crew').evaluate(el => el.classList.contains('ss-dim')), true);
-    assert.equal(await page.locator('#sitePanel .sitehead').evaluate(el => el.classList.contains('ss-dim')), false);
-    assert.match(await page.locator('.ss-asked').innerText(), /Staffing on \[LM\] Test Clothing/);
+    // Hiring's home is Staffing › Staff needs (main's Staff page), not one shop's page.
+    assert.deepEqual(await page.evaluate(() => [page, sub.staffing, route, siteOpen]), ['staffing', 'needs', 'staffing/needs', false]);
+    const staff = page.locator('#secStaff');
+    assert.equal(await staff.evaluate(el => el.classList.contains('ss-lit')), true);
+    assert.equal(await staff.evaluate(el => getComputedStyle(el).overflowX), 'visible');
+    assert.equal(await staff.evaluate(el => getComputedStyle(el).contentVisibility), 'visible');
+    assert.equal(await page.locator('#secNeeds').evaluate(el => el.classList.contains('ss-dim')), true);
+    assert.equal(await page.locator('#pageStaffing .ss-asked + #secStaff').count(), 1);
+    assert.match(await page.locator('.ss-asked').innerText(), /Staffing › Staff needs · open places and candidates/);
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
 });
@@ -768,17 +771,18 @@ test('the answer\'s own controls leave the landing up, and a redrawn answer is l
     await page.waitForTimeout(50);
     assert.equal(await page.locator('.ss-asked').count(), 1);
     assert.equal(await page.locator('#secPortfolio.ss-lit').count(), 1);
-    // The hire landing: the roster's day tabs are the answer being read.
+    // The hire landing: the hiring page's own filters are the answer being read.
     await page.click('.ss-asked [data-ss="another"]');
     await page.click('#ssRes .ss-q2 >> text=Whom should I hire?');
-    await page.click('#probeDays a:nth-child(2)');
+    await page.evaluate(() => { $('secStaff').innerHTML = '<span class="seg"><a href="#" id="probeFilter">Part-time</a></span>'; });
+    await page.click('#probeFilter');
     await page.waitForTimeout(50);
     assert.equal(await page.locator('.ss-asked').count(), 1);
-    assert.equal(await page.locator('#sp-roster.ss-lit').count(), 1);
-    // Picking the plan draws a new roster in its place: that is still the answer.
-    await page.click('#probePlan');
+    assert.equal(await page.locator('#secStaff.ss-lit').count(), 1);
+    // Staff draws its page again in place (drawStaff()): that is still the answer.
+    await page.evaluate(() => { $('secStaff').innerHTML = '<p id="probeRedrawn">plan</p>'; });
     await page.waitForTimeout(50);
-    assert.equal(await page.locator('#sp-roster.ss-lit').innerText(), 'plan');
+    assert.equal(await page.locator('#secStaff.ss-lit').innerText(), 'plan');
     assert.equal(await page.locator('.ss-asked').count(), 1);
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
@@ -861,35 +865,34 @@ const quietRender = page => page.evaluate(() => {
    'drawOptimizeStaffing', 'drawFooter', 'wireAll', 'refreshCityMaps'].forEach(name => { window[name] = () => {}; });
 });
 
-test('hire: a live refresh lights the same roster again, whatever the staffing card picks by then', async () => {
+test('hire: a live refresh lights the same hiring block again, whatever the staffing card picks by then', async () => {
   const page = await board();
   try {
     await page.evaluate(() => ssAsk('hire'));
-    assert.equal(await page.locator('#sp-roster.ss-lit').count(), 1);
+    assert.equal(await page.locator('#secStaff.ss-lit').count(), 1);
     const strip = await page.locator('.ss-asked').innerText();
-    // The next save makes the card pick another shop; the refresh redraws the panel.
+    // The next save makes the staffing card pick another shop; the refresh redraws the board.
     await page.evaluate(site => { $('optimizeStaffingCard').dataset.site = site; }, GYM);
     await quietRender(page);
     await page.evaluate(() => renderAll());
-    assert.equal(await page.locator('#sitePanel h2').innerText(), SHOP);
-    assert.equal(await page.locator('#sp-roster.ss-lit').count(), 1);
-    assert.equal(await page.locator('#secPortfolio.ss-lit').count(), 0);
-    assert.equal(await page.locator('#sp-crew.ss-dim').count(), 1);
-    assert.equal(await page.locator('#sitePanel .ss-asked + #sp-roster').count(), 1);
+    assert.deepEqual(await page.evaluate(() => [page, route, siteOpen]), ['staffing', 'staffing/needs', false]);
+    assert.equal(await page.locator('#secStaff.ss-lit').count(), 1);
+    assert.equal(await page.locator('#secNeeds.ss-dim').count(), 1);
+    assert.equal(await page.locator('#pageStaffing .ss-asked + #secStaff').count(), 1);
     assert.equal(await page.locator('.ss-asked').innerText(), strip);
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
 });
 
-test('hire: another site picked with the keyboard takes the landing down', async () => {
+test('hire: another Staffing view picked with the keyboard takes the landing down', async () => {
   const page = await board();
   try {
     await page.evaluate(() => ssAsk('hire'));
-    assert.equal(await page.locator('#sp-roster.ss-lit').count(), 1);
+    assert.equal(await page.locator('#secStaff.ss-lit').count(), 1);
     await page.waitForTimeout(100);  // the landing's own click has been checked
-    await page.focus('#sitePick .sitepick');
-    await page.keyboard.press('ArrowDown');
-    await page.waitForFunction(site => siteKey === site, GYM);
+    await page.focus('#localNav a[data-route="staffing/payroll"]');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => route === 'staffing/payroll');
     await page.waitForFunction(() => !document.querySelector('.ss-asked, .ss-lit, .ss-dim'));
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
@@ -1041,15 +1044,20 @@ test('a site found in the palette is a link to its address, and opens its page w
   } finally { await page.close(); }
 });
 
-test('a question that opens a site names the page it was asked from', async () => {
+test('a question names where it was asked from: a page, or a site\'s own page', async () => {
   const page = await board();
   try {
+    const back = () => page.locator('.ss-asked [data-ss="back"]').innerText();
     await page.evaluate(() => ssAsk('hire'));
-    assert.deepEqual(await page.evaluate(() => [location.hash, siteFrom && siteFrom.label]), ['#site/fifthavenue-57', 'Needs attention']);
-    // Asked from another view, the crumb names that view, as a finding's does.
+    assert.match(await back(), /Back to Overview/);
+    // Asked from another page, the strip names that page.
     await page.evaluate(() => { ssClearAsked(); showSub('supply', 'shops'); showPage('supply'); });
     await page.evaluate(() => ssAsk('hire'));
-    assert.equal(await page.evaluate(() => siteFrom && siteFrom.label), 'Deliveries', 'the Shops scope is Supply › Deliveries');
+    assert.match(await back(), /Back to Supply/);
+    // Asked on a site's page, it names the site.
+    await page.evaluate(key => { ssClearAsked(); openSite(key); }, SHOP);
+    await page.evaluate(() => ssAsk('hire'));
+    assert.match(await back(), /Back to .*Test Clothing/);
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
 });
@@ -1225,7 +1233,7 @@ test("a press on a site's name in the palette leaves focus in the field", async 
 
 // --- release round 3 ---------------------------------------------------------------------
 
-test("a question that opened a site's page goes back the way its crumb does", async () => {
+test("a question's way back is the browser's Back, to the view and scope it was asked from", async () => {
   const page = await board();
   try {
     await page.evaluate(() => { showSub('supply', 'shops'); showPage('supply'); });
@@ -1233,14 +1241,14 @@ test("a question that opened a site's page goes back the way its crumb does", as
     // Asked from Supply's Shops, where the Ask row is the palette's.
     await page.evaluate(() => ssAsk('hire'));
     const strip = page.locator('.ss-asked');
-    assert.match(await strip.innerText(), /Back to Deliveries/);
+    assert.match(await strip.innerText(), /Back to Supply/);
     await strip.locator('[data-ss="back"]').click();
-    await page.waitForFunction(() => page === 'supply' && !siteOpen);
+    await page.waitForFunction(() => page === 'supply');
     assert.deepEqual(await page.evaluate(() => [location.hash, sub.supply]), ['#supply/deliveries', 'shops']);
-    // Back, not a new visit: Forward reaches the site again.
+    // Back, not a new visit: Forward reaches the answer again.
     assert.equal(await page.evaluate(() => history.length), before + 1);
     await page.goForward();
-    await page.waitForFunction(() => siteOpen);
+    await page.waitForFunction(() => route === 'staffing/needs');
     // A landing with no site keeps its page's own way back.
     await page.evaluate(() => { showPage('today'); ssAsk('import'); });
     assert.match(await page.locator('.ss-asked').innerText(), /Back to Overview/);
@@ -1274,15 +1282,16 @@ test('the palette closed after a resize across 1500 px hands focus to the chip s
   } finally { await page.close(); }
 });
 
-test("asked on a site's page opened with no way back, the strip goes back to the portfolio, as the crumb does", async () => {
+test("asked on a site's page and answered elsewhere, the strip goes back to that site's page", async () => {
   const page = await board();
   try {
     await page.evaluate(key => openSite(key), SHOP);
     await page.evaluate(() => ssAsk('hire'));
     const strip = page.locator('.ss-asked');
-    assert.match(await strip.innerText(), /Back to Portfolio/);
+    assert.match(await strip.innerText(), /Back to .*Test Clothing/);
     await strip.locator('[data-ss="back"]').click();
-    assert.deepEqual(await page.evaluate(() => [siteOpen, page]), [false, 'company']);
+    await page.waitForFunction(() => page === 'company' && siteOpen);
+    assert.deepEqual(await page.evaluate(() => [siteOpen, siteKey, page]), [true, SHOP, 'company']);
     assert.equal(await page.locator('.ss-asked').count(), 0);
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }

@@ -793,6 +793,14 @@ entry, `nxOv` (its filters, folds and the row the reader left from). A load with
 `ba_dash_route`. [ui-route-migration.md](ui-route-migration.md) is the full table, with every
 old hash, finding kind and task.
 
+Two routes share the Map page: `map` with the finder off and `expansion/finder` with it on.
+`routeFor()` reads the switch (`routeFinderOn()`), and the switch calls `routeSync()`, so the
+address and the lit place always name what is on screen. The finder's picked building rides on
+the history entry as `nxPick` (`finderPickRemember()`/`finderPickRestore()` in `web/map.js`); a
+reload picks it again only where the current results still hold it. An old word can land
+inside its route: `ROUTE_ALIAS_INTO` sends `#staff` to the hiring block (`#secStaff`) on
+Staffing › Staff needs.
+
 A site's page is the site panel (`drawSite()` in `#secDetail`) shown on its own on Company:
 while it is up, `#pageCompany` carries `ss-siteup` and the rest of Results and the Company
 views step aside. The slug is the site's key and nothing else, by one reversible rule,

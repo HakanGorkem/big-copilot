@@ -31,8 +31,8 @@ sys.stdout.buffer.write(render(d).encode("utf-8"))`], {cwd: ROOT, maxBuffer: 64 
 after(async () => { await browser?.close(); });
 
 /* The board at `hash`, in a context of its own (its storage survives a reload). */
-async function board(t, {hash = '#overview', width = 1440, height = 900} = {}) {
-  const context = await browser.newContext({viewport: {width, height}, reducedMotion: 'reduce'});
+async function board(t, {hash = '#overview', width = 1440, height = 900, scheme = 'dark'} = {}) {
+  const context = await browser.newContext({viewport: {width, height}, reducedMotion: 'reduce', colorScheme: scheme});
   t.after(() => context.close());
   const page = await context.newPage();
   const errors = [];
@@ -308,4 +308,148 @@ test('Staffing › Payroll draws Payroll; Staff needs carries the demands and th
   assert.equal(await page.locator('#secNeeds #nxDemands').isVisible(), true);
   assert.equal(await page.locator('#secStaff .hs-head h2').textContent(), 'Staff');
   assert.equal(await page.locator('#secPayroll').isHidden(), true);
+});
+
+// --- review round 2 (c1-final-code-review, c1-final-visual-qa, c1-final-functional-qa) -------
+
+test('the dark theme keeps the shell\'s own colours, and a finding\'s kind label reads on the ground and a surface', async t => {
+  for (const scheme of ['dark', 'light']) {
+    const page = await board(t, {scheme});
+    const got = await page.evaluate(() => {
+      /* A colour as [r, g, b], and the contrast of two, as WCAG counts it. */
+      const rgbOf = c => { const p = document.createElement('i'); p.style.color = c; document.body.append(p);
+        const m = getComputedStyle(p).color.match(/[\d.]+/g).map(Number); p.remove(); return m.slice(0, 3); };
+      const lum = ([r, g, b]) => { const f = c => { c /= 255; return c <= .03928 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4; };
+        return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); };
+      const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+      const v = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      const label = document.querySelector('#alerts .find .ov-k');
+      const ink = getComputedStyle(label).color.match(/[\d.]+/g).map(Number).slice(0, 3);
+      return {soft: ['--neg-soft', '--warn-soft', '--info-soft'].map(v), ink3: v('--ink-3'),
+        ground: ratio(ink, rgbOf(v('--ground'))), surface: ratio(ink, rgbOf(v('--surface'))),
+        // the critical mark's ring is painted with --neg-soft
+        ring: getComputedStyle(document.querySelector('#alerts .find.crit .mark')).boxShadow};
+    });
+    assert.ok(got.soft.every(Boolean), `${scheme}: the soft tints are set: ${got.soft}`);
+    if (scheme === 'dark') assert.equal(got.ink3, '#808a84', 'dark --ink-3 is the shell\'s, not the base theme\'s');
+    assert.ok(got.ground >= 4.5, `${scheme}: kind label on the ground ${got.ground.toFixed(2)}`);
+    assert.ok(got.surface >= 4.5, `${scheme}: kind label on a surface ${got.surface.toFixed(2)}`);
+    assert.notEqual(got.ring, 'none', `${scheme}: the critical mark has its ring`);
+  }
+});
+
+test('#staff lands on the hiring block of Staff needs; #staffing/needs opens at its top', async t => {
+  const page = await board(t, {hash: '#staff', height: 700});
+  await page.waitForTimeout(300);
+  const at = () => page.evaluate(() => ({route, y: Math.round(scrollY),
+    staff: Math.round(document.getElementById('secStaff').getBoundingClientRect().top),
+    needs: Math.round(document.getElementById('secNeeds').getBoundingClientRect().top)}));
+  const staff = await at();
+  assert.equal(staff.route, 'staffing/needs');
+  assert.ok(staff.y > 0 && staff.staff >= 0 && staff.staff < 200, `the hiring block is at the top: ${JSON.stringify(staff)}`);
+  assert.ok(staff.needs < staff.staff, 'the staff demands are above it, scrolled past');
+  await page.evaluate(() => { location.hash = '#secStaff'; });
+  await page.waitForTimeout(300);
+  const sec = await at();
+  assert.ok(sec.staff >= 0 && sec.staff < 200, `#secStaff too: ${JSON.stringify(sec)}`);
+  await page.evaluate(() => openRoute('staffing/needs'));
+  await page.waitForTimeout(300);
+  assert.equal((await at()).y, 0, 'the view itself opens at its top');
+});
+
+test('the finder switch moves the page between City map and Expansion › Find a location, both ways', async t => {
+  const page = await board(t, {hash: '#map'});
+  await page.waitForFunction(() => typeof cityMapPage !== 'undefined' && cityMapPage && cityMapPage.panel);
+  await page.evaluate(() => cityMapPage.ready);
+  const lit = () => page.evaluate(() => ({route, hash: location.hash,
+    area: (document.querySelector('#nav a.on, #nav a[aria-current="page"]') || {}).dataset?.id || null,
+    ref: (document.querySelector('#navRefs a.on, #navRefs a[aria-current="page"]') || {}).dataset?.id || null,
+    view: (document.querySelector('#localNav a.on') || {}).dataset?.route || null,
+    on: cityMapPage.finderOn()}));
+  assert.deepEqual(await lit(), {route: 'map', hash: '#map', area: null, ref: 'map', view: null, on: false});
+  await page.locator('#cityMapPage [data-f="tog"]').click();
+  assert.deepEqual(await lit(), {route: 'expansion/finder', hash: '#expansion/finder', area: 'expansion', ref: null,
+    view: 'expansion/finder', on: true});
+  await page.locator('#cityMapPage [data-f="tog"]').click();
+  assert.deepEqual(await lit(), {route: 'map', hash: '#map', area: null, ref: 'map', view: null, on: false});
+  // Switched on and left on, the City map is Find a location: its address says so.
+  await page.locator('#cityMapPage [data-f="tog"]').click();
+  await page.evaluate(() => openRoute('overview'));
+  await page.locator('#navRefs a[data-id="map"]').click();
+  assert.equal((await lit()).route, 'expansion/finder');
+});
+
+test('"Whom should I hire?" lands on Staff needs\' hiring block, with the way back to where it was asked', async t => {
+  const page = await board(t);
+  await page.evaluate(() => ssAsk('hire'));
+  await page.waitForSelector('#pageStaffing .ss-asked');
+  const got = await page.evaluate(() => ({route, page, hash: location.hash, sub: sub.staffing,
+    strip: document.querySelector('#pageStaffing .ss-asked').innerText.replace(/\s+/g, ' '),
+    staff: Math.round(document.getElementById('secStaff').getBoundingClientRect().top)}));
+  assert.equal(got.route, 'staffing/needs');
+  assert.equal(got.page, 'staffing');
+  assert.equal(got.hash, '#staffing/needs');
+  assert.equal((await where(page)).lit, 'staffing/needs', 'the area\'s row lights Staff needs');
+  assert.match(got.strip, /Whom should I hire\?.*Staffing › Staff needs.*Back to Overview/);
+  assert.ok(got.staff >= 0 && got.staff < 300, `the hiring block is on screen: ${got.staff}`);
+  await page.locator('#pageStaffing .ss-asked [data-ss="back"]').click();
+  await page.waitForTimeout(200);
+  assert.equal((await where(page)).route, 'overview');
+});
+
+test('on a 320 x 568 phone, and at 130% on 390 x 844, the first critical finding and its action are above the bar', async t => {
+  for (const [width, height, zoom] of [[320, 568, 0], [390, 844, 1.3]]) {
+    const page = await board(t, {width, height});
+    if (zoom) { await page.evaluate(z => { document.documentElement.style.zoom = z; }, zoom); await page.waitForTimeout(200); }
+    const m = await page.evaluate(() => {
+      const row = document.querySelector('#alerts .find.crit'), r = el => el.getBoundingClientRect();
+      return {what: r(row.querySelector('.what')).bottom, act: r(row.querySelector('.ov-act')).bottom,
+        bar: r(document.getElementById('phoneNav')).top, day: document.querySelector('.wrap .mast .clock > b').getClientRects().length > 0,
+        ctx: document.getElementById('ovCtx').innerText.replace(/\s+/g, ' '),
+        over: [...document.querySelectorAll('#alerts .find .ov-act')].filter(a => a.offsetParent && a.scrollWidth > a.clientWidth + 1).length,
+        sideways: document.documentElement.scrollWidth > document.documentElement.clientWidth};
+    });
+    const what = `${width}x${height}${zoom ? ' at 130%' : ''}`;
+    assert.ok(m.what < m.bar && m.act <= m.bar, `${what}: headline ${m.what}, action ${m.act}, bar ${m.bar}`);
+    assert.ok(m.day, `${what}: the day is on the masthead`);
+    assert.match(m.ctx, /Profit.*Cash.*All figures/);
+    assert.equal(m.over, 0, `${what}: every action's words are inside its button`);
+    assert.equal(m.sideways, false, `${what}: nothing scrolls sideways`);
+  }
+});
+
+test('Staffing › Schedules is named for shops and offices, in the board\'s words', async t => {
+  const page = await board(t, {hash: '#staffing/schedules'});
+  const head = await page.locator('#secSchedules .sechead').innerText();
+  assert.match(head, /Shop and office schedules/);
+  assert.match(head, /each office/);
+  assert.doesNotMatch(head, /\b(roster|shifts?|posts?)\b/i);
+});
+
+test('the building picked in Find a location comes back after a reload; one no longer in the results is dropped', async t => {
+  const page = await board(t, {hash: '#expansion/finder'});
+  const ready = async () => {
+    await page.waitForFunction(() => typeof cityMapPage !== 'undefined' && cityMapPage && cityMapPage.finderOn());
+    await page.evaluate(() => cityMapPage.ready);
+  };
+  await ready();
+  // The synthetic save's rivals: its city has no empty retail floor to rent.
+  await page.locator('#cityMapPage [data-show="takeover"]').click();
+  await page.waitForSelector('#cityMapPage .place[data-pick]');
+  const key = await page.locator('#cityMapPage .place[data-pick]').first().getAttribute('data-pick');
+  await page.locator(`#cityMapPage .place[data-pick="${key}"]`).click();
+  const picked = () => page.evaluate(() => ({selected: cityMapPage.selected, pressed: (document.querySelector('#cityMapPage .place.on') || {}).dataset?.pick || null,
+    state: (history.state || {}).nxPick || null}));
+  assert.deepEqual(await picked(), {selected: key, pressed: key, state: key});
+  await page.reload();
+  await ready();
+  await page.waitForFunction(k => cityMapPage.selected === k && document.querySelector('#cityMapPage .place.on'), key);
+  assert.deepEqual(await picked(), {selected: key, pressed: key, state: key}, 'a reload picks it again');
+  assert.equal((await where(page)).route, 'expansion/finder');
+  // A pick the results no longer hold is dropped, not faked.
+  await page.evaluate(() => history.replaceState({...(history.state || {}), nxPick: 'ba:street_nowhere#0'}, '', location.href));
+  await page.reload();
+  await ready();
+  await page.waitForFunction(() => !(history.state || {}).nxPick);
+  assert.deepEqual(await picked(), {selected: null, pressed: null, state: null});
 });

@@ -184,6 +184,128 @@ with the numbers in its `measurements.txt`:
   landing and the loaded board on desktop and phone. On the phone the source strip is one line
   and the first critical action is on the first screen.
 
+## Acceptance pass, review round 2 (26 Sep 2026)
+
+After the independent code review, visual QA and functional QA of `a847704`
+(`execution/c1-final-code-review`, `c1-final-visual-qa`, `c1-final-functional-qa`):
+
+| # | Finding | Fix | Regression test |
+| --- | --- | --- | --- |
+| 1 | MUST: the shell stylesheet's comment opener had moved to just before `</style>`, so the dark theme dropped `--neg-soft`, `--warn-soft`, `--info-soft` and `--ink-3` (my merge script had read the banner's `=======` as a conflict marker; no other line was lost) | Opener back in place, the stray copy removed, `web/` rebuilt | `tests/test_css_integrity.py` walks every stylesheet in order (orphan `*/`, unclosed `/*`, conflict markers) and fails on `a847704`; `tests/shell_routes.test.cjs`, "the dark theme keeps the shell's own colours…", reads the computed variables in Edge |
+| 2 | Schedules summarised the demand plan while the shop showed full cover | `spShownRow()` is the one plan choice for the shop's Staffing, its write and Schedules; a plan pick marks Schedules stale (`nxSchedStale()`) | `tests/roster.test.cjs`, "Staffing › Schedules summarises the plan the shop shows…" |
+| 3 | `#staff` opened Staff needs at the top | `ROUTE_ALIAS_INTO` lands it on `#secStaff`; `#secStaff`, `#payroll`, `#secPayroll` and the remembered views unchanged | shell_routes, "#staff lands on the hiring block…" |
+| 4 | The finder switch left the route behind | `routeFor()` reads the switch; the switch calls `routeSync()`; City map reached with the finder left on is Find a location | shell_routes, "the finder switch moves the page…, both ways" |
+| 5 | "Whom should I hire?" opened a shop under Businesses › Results | Lands on Staffing › Staff needs at the hiring block; the strip remembers where it was asked (a site's page included) and goes Back there with the browser's Back | shell_routes, "\"Whom should I hire?\" lands on Staff needs' hiring block…"; the search tests on the old answer now assert the new one, with their checks (tag not clipped, lit and dimmed blocks, strip placement, live refresh, landing taken down, way back) kept |
+| 6 | 320 x 568 (CLI and hosted) and 390 x 844 at 130%: the first critical action under the bar | On a phone: rows read headline, action, then evidence (the DOM keeps the evidence first for screen readers); a tighter head, with Customize checks as its icon; the day and source dot on one line; the company line without the day; what the board checked under the list; the news in two short lines; an action's words wrap inside its button | shell_routes, "on a 320 x 568 phone, and at 130% on 390 x 844…"; the Edge screenshots below |
+| 7 | Schedules was titled "Shop schedules" | "Shop and office schedules", its line naming the office default; an office with a plan shows its staffed computers | shell_routes, "Staffing › Schedules is named for shops and offices…" |
+| 8 | Dark kind labels at 4.01:1 | Fixed by 1 (`--ink-3` #808a84) | the dark-theme test asserts >= 4.5:1 on the ground and on a surface |
+| 9 | The finder's picked building was lost on a reload | Kept on the history entry (`nxPick`); a reload or Back picks it again where the results still hold it, and drops it where they do not | shell_routes, "the building picked in Find a location comes back after a reload…" |
+
+Found on the way: switching the finder on now shows Expansion's row of views, which moved the
+list lower. On a short phone a tapped result's card then opened above the window
+(`tests/finder.test.cjs`, "on a short phone the card scrolls…"). A result picked from the list
+on a narrow page now brings the map back under the masthead.
+
+Results (Windows, Edge, `--test-concurrency=2`). The last TEMPLATE CSS change was the padding
+on Schedules' highlighted row. The finishing gate was run again on the source after it (`web/`
+rebuilt first):
+
+| Run | Result |
+| --- | --- |
+| Earlier, before the padding change: full Python `py_full5`, full Node `node_full5`, web `node_web5` | 1354 OK (1 skipped); 1187: 1186 pass, 0 fail, 1 skipped; 409/409 |
+| **Final gate**: `python build_web.py` then `--check` | `web/ is up to date` |
+| **Final gate**: full Python (`py_full6`) | 1354 tests, OK, 1 skipped |
+| **Final gate**: full Node (`node_full6`) | 1187 tests: 1186 pass, 0 fail, 1 skipped |
+| **Final gate**: `BOARD_TARGET=web`, the 16 files (`node_web6`) | 409 tests: 408 pass, **1 fail**. See below |
+| After the test fix: `BOARD_TARGET=web`, the 16 files (`node_web7`) | 409 tests, 409 pass, 0 fail |
+| After the test fix: `tests/search.test.cjs` on the CLI target | 54 tests, 54 pass, 0 fail |
+
+The `node_web6` failure was the search test "the sphere rests between the places and the
+references…". It failed in about a third of focused runs on the web target and never on the
+CLI target. Its diagnostic: `page.click('.wordmark')` resolved to two elements and clicked the
+first, the hosted landing's own wordmark, which is hidden once the board is entered. The test's
+web-target harness enters the board without the landing ever being removed, so the landing's
+hidden copy was still in the page to be found. This was test ambiguity, not a product fault:
+`app.js` removes the landing on entering a real board, for exactly this reason.
+
+Removing the landing by hand in the harness was tried and dropped. Those focused runs
+(`/tmp/c1/sph_*.log`, all web target) logged `Failed to execute 'appendChild' on 'Node':
+parameter 1 is not of type 'Node'.` The stacks put it at `place` (`web/app.js:486`) and
+`paintStrip` (`web/app.js:385`). `place()` moves `#srcStrip`, `#srcNote` and `#help` out of the
+landing once the board is on, and with the landing already gone they are `null`. In the product
+the landing is removed only at the end of `place()`, after those moves.
+
+Reproduced deliberately with a throwaway copy of the test: 6 of 6 web runs logged these errors,
+and the test failed in 5. Without the removal the committed test was clean: 10/10 web and 10/10
+CLI, with the `page.errors` assertion kept. The CLI page does not load `app.js`, so the CLI
+target cannot raise it. It was an artefact of the discarded harness step, not a sphere or
+refresh race. The fix scopes the test's two wordmark clicks to the board's masthead
+(`.wrap .mast .wordmark`). Every sphere, rest and layout assertion is unchanged. Focused after
+the fix: 8/8 on the web target, 1/1 on the CLI target.
+
+Two targeted runs failed on the way and were fixed before the full runs:
+- 10 of 353: eight search tests still asserted the old hiring answer, today_layout's 390 px test
+  expected "Day" in the company line, and the finder card test found the map above the window.
+- Then the finder card test alone, which found the map under the sticky masthead.
+
+Screenshots and measurements, rendered in Edge from the synthetic day-47 save (the CLI render,
+and the built `web/` served on 127.0.0.1 with the save loaded through Pyodide), are in
+`C:/Users/Peter/.codex/handoffs/big-copilot-ui-redesign-2026-09-26/execution/chunk1-review2-shots/`:
+
+- `phone_*` and `phone-first-view.txt`: the first critical action (top–bottom y) against the
+  bottom bar's top.
+
+  | View | Action | Bar |
+  | --- | --- | --- |
+  | CLI 320 x 568 | 343–387 | 507 |
+  | CLI 390 x 844 | 349–393 | 783 |
+  | CLI 390 x 844 at 130% | 524–581 | 765 |
+  | Hosted 320 x 568 | 454–498 | 507 |
+  | Hosted 390 x 844 | 445–489 | 783 |
+  | Hosted 390 x 844 at 130% | 687–744 | 765 |
+
+  None scrolls sideways, and none has a page error. The hosted board keeps its news strip, its
+  source strip (Up to date, Update, the menu) and the day with the source dot.
+- `desktop_*`, `tablet*`, `phone_390_*` light and dark, `pointer_1280_*`, `long_*`, `web_*`
+  and `measurements.txt`:
+  - The sphere is at 1440, 1024 and 800 px.
+  - Every masthead link lands at 1280 px after three wordmark clicks.
+  - Long names at 320 and 390 px, plain, zoomed and at 130% text, overflow nothing.
+  - Unpressed severity switches measure 5.27:1 (light) and 7.38:1 (dark).
+- `schedules-*`, `staff-alias-1440-dark`, `ask-hire-390-dark` and `routes.txt`: the renamed
+  Schedules page, `#staff` landing on the hiring block, and the hiring question's landing with
+  its way back.
+
+Files changed in this round:
+- `ba_dashboard.py`: CSS, the route layer, Schedules, the hiring question, the Overview's phone
+  layout.
+- `web/map.js`: the finder switch, the pick on the history entry, a narrow pick bringing the
+  map into view.
+- `build_web.py`: the news strip on a phone with a board.
+- Tests: `tests/test_css_integrity.py` (new), `tests/shell_routes.test.cjs`,
+  `tests/roster.test.cjs`, `tests/search.test.cjs`, `tests/today_layout.test.cjs`.
+- Docs: `docs/ui-route-migration.md`, `docs/architecture.md` and this file.
+- Generated by the build: `web/index.html`, `web/py/ba_dashboard.py`, `web/version.json` and
+  `web/i18n/de.json` (which ships only the keys in use).
+
+### State at the handover (26 Sep 2026)
+
+- **Candidate:** the working tree on `codex/ui-redesign-shell` over local merge commit `a847704`,
+  uncommitted, for the coordinator's snapshot.
+  - Modified: `ba_dashboard.py`, `build_web.py`, `web/map.js`, `tests/shell_routes.test.cjs`,
+    `tests/roster.test.cjs`, `tests/search.test.cjs`, `tests/today_layout.test.cjs`,
+    `docs/ui-route-migration.md`, `docs/architecture.md`, this file.
+  - New: `tests/test_css_integrity.py`.
+  - Generated by the build: `web/index.html`, `web/py/ba_dashboard.py`, `web/version.json`,
+    `web/i18n/de.json`.
+- **Screenshots:** `…/execution/chunk1-review2-shots/`, including
+  `schedules-litrow-{390,1440}-dark.png` and `-390-light.png`. There the highlighted row's
+  content starts 9 px after its 3 px accent bar.
+- **Review:** all nine findings of the code review, visual QA and functional QA of `a847704` are
+  addressed above. No independent re-review of this candidate has run yet. It is not accepted;
+  the redesign is not finished, and chunks 2 and 3 have not started.
+- **Not done here:** no commit, merge, push or deploy.
+
 ## Known limitations and what is deferred
 
 - **Interim hosts.** Every route below the Overview still shows its old page or tab
@@ -195,8 +317,14 @@ with the numbers in its `measurements.txt`:
   (`secStaff`) each keep their own heading, and the Staff page keeps its own short Payroll
   summary beside the Payroll view. H01–H07 are reachable and unchanged. Merging them into one
   Staff needs presentation is chunk 2.
-- **Offices on Schedules** show a fixed line ("Office: its staff and computers are on its
-  page") rather than their plan's counts; the plan and its write are on the office's page.
+- **Offices on Schedules** count the office default's staffed computers; their hour grid,
+  the plan's week and its write stay on the office's own page.
+- **The phone's first screen** fits a critical finding and its action above the bar at
+  320 x 568, including the hosted board with its news and source strip, by a small margin
+  (9 px in the hosted board). A much longer company name, or a larger system text size on top
+  of that, can push the action just under the bar; it is then one short scroll away. On a phone
+  the news sentence is cut to one line on screen (a screen reader reads it whole), and the line
+  about what the board checked sits under the list.
 - **Search.** Typing "staff" lights "Staffing for factory lines" first; Hiring is in the list
   and first for "hire" and "hiring".
 - **Translations.** New shell text goes through `tt()`/`data-tt` with English fallbacks, no

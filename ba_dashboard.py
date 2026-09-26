@@ -16120,6 +16120,7 @@ body:has(#changelogDialog[open]){overflow:hidden}
   #sp-shelves > table{display:block;overflow-x:auto;max-width:100%}
   #sp-shelves td.l{white-space:nowrap}
 }
+/* ===== the redesign's shell and Overview (docs/ui-route-migration.md) =========
    Five destinations in the masthead, City map and Game guide beside them, the
    area's own views in a row under it, a strip that says why the reader
    arrived, and the Overview: company figures, Needs attention first, then the
@@ -16314,6 +16315,44 @@ body:has(.mast.nx-wrap) .ov-sticky{top:112px}
   .wrap .source-row .strip .st{flex-wrap:nowrap;min-width:0;gap:8px}
   .wrap .source-row .strip .file{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;line-height:1.3}
   .wrap .source-row .strip .right{gap:6px}
+}
+/* ----- chunk 1, review round 2: the phone's first screen -------------------
+   A critical finding and its action above the bottom bar on a 320 x 568
+   phone, the hosted board's source strip and news included: each row reads
+   headline, then action, then the evidence (the DOM keeps headline, evidence,
+   action, so a screen reader hears why before what to do); the head is one
+   tight block; what the board checked follows the list. */
+.ov-metafoot{display:none}
+@media (max-width:560px){
+  #alertSection .find.ov-f .ov-t{display:contents}
+  #alertSection .find.ov-f .ov-l1{grid-column:2/-1;grid-row:1}
+  #alertSection .find.ov-f .ov-ac{grid-row:2}
+  #alertSection .find.ov-f .ov-det{grid-row:2}
+  #alertSection .find.ov-f .ov-now{grid-column:2/-1;grid-row:3}
+  #alertSection .find.ov-f .ov-vz{grid-row:4}
+  #alertSection .find.ov-f > .gw-find{grid-row:5}
+  #alertSection .find.ov-f .ov-x{grid-row:6}
+  #pageToday #alertSection .find.ov-f{padding:10px 0;row-gap:6px}
+  .ov-head{gap:8px}
+  .ov-head .sev{min-height:32px;padding:0 10px}
+  #alertHead .ov-meta{display:none}
+  .ov-metafoot{display:block}
+  .ov-metafoot .ov-meta{margin:14px 0 4px}
+  #pageToday #alertSection{margin-top:8px}
+  #pageToday #alerts .ov-band{margin-top:4px;padding-top:8px}
+  /* The day and the source's word on one line under the name. */
+  .wrap .mast .clock{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:12px;flex:1 1 100%;text-align:left;margin:0}
+  .wrap .mast .clock > small:has(.live){margin-top:0}
+  /* Customize checks is its icon here (its words stay its name and its tip),
+     so it and All tools share the row with the severity filters. */
+  #alertKindsToggle > span{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+  #alertKindsToggle.nx-btn{min-width:36px;min-height:32px;padding:0 9px;justify-content:center}
+  .ov-head .aside{gap:6px}
+  .ov-head .aside .nx-btn{min-height:32px}
+  .ov-ctx{min-height:40px;padding:4px 0}
+  /* An action's words never run past its button: tighter, and a longer one
+     (a translation, larger text) takes a second line inside it. */
+  #alertSection .find.ov-f .ov-ac .nx-btn{padding:0 10px;gap:6px;white-space:normal;text-align:left;line-height:1.2;overflow-wrap:anywhere;hyphens:auto;min-width:0}
 }
 /* A board with no save shows the Game guide alone; the phone's bar has
    nothing else to offer it. */
@@ -16528,7 +16567,7 @@ button.nx-card{appearance:none}
 .nx-card small{font-size:12.5px;color:var(--ink-2);line-height:1.35}
 .nx-list{display:flex;flex-direction:column;border-top:1px solid var(--rule)}
 .nx-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto;gap:4px 16px;align-items:center;min-height:52px;padding:8px 6px 8px 0;border-bottom:1px solid var(--rule-soft)}
-.nx-row.lit{background:linear-gradient(90deg,transparent,var(--accent-soft) 12%);box-shadow:inset 3px 0 0 var(--accent)}
+.nx-row.lit{background:linear-gradient(90deg,transparent,var(--accent-soft) 12%);box-shadow:inset 3px 0 0 var(--accent);padding-left:12px}
 .nx-row .nm{display:flex;align-items:center;gap:8px;min-width:0;font-weight:600}
 .nx-row .nm > span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .nx-row .nm > svg{width:17px;height:17px;flex:none;stroke:var(--ink-3);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
@@ -16842,7 +16881,7 @@ dialog.hs-sheet::backdrop{background:#000;opacity:.45}
 }
 @media (prefers-reduced-motion:reduce){#secStaff *,.gw-dlg.hr-wide *,.hs-sheet *{animation:none!important;transition:none!important}}
 
-/* ===== the redesign's shell and Overview (docs/ui-route-migration.md) ==</style>
+</style>
 <script>
 /*__I18N_SCRIPT__*/
 </script>
@@ -16882,6 +16921,9 @@ dialog.hs-sheet::backdrop{background:#000;opacity:.45}
       <p class="ov-news" id="ovNews" role="status" hidden></p>
       <div class="finds" id="alerts"></div>
       <div class="ov-more" id="ovMore" hidden></div>
+      <!-- A phone reads what the board checked, and the reader's marks, under
+           the list rather than between the heading and the first finding. -->
+      <div class="ov-metafoot" id="ovMetaFoot"></div>
       <p class="silenced" id="silenced"><b></b> · <a class="link" href="#" data-tt="today.silenced.undo">undo</a></p>
       <div class="td-minor" id="alertMinor"></div>
     </section>
@@ -19291,17 +19333,17 @@ function drawKpis(){
   });
   drawKpiLine();
 }
-/* On a phone the four figures fold into one line -- profit, cash and the
-   game day -- so Needs attention is on the first screen; the line opens the
-   four figures (revenue and net worth among them) in place. */
+/* On a phone the four figures fold into one line -- profit and cash, the
+   game day being the masthead's clock right above -- so Needs attention is on
+   the first screen; the line opens the four figures (revenue and net worth
+   among them) in place. */
 function drawKpiLine(){
   const host = $("ovCtx");
   if(!host || !hasData()) return;
-  const k = D.kpi, m = D.meta || {};
+  const k = D.kpi;
   const open = !!($("pageToday") && $("pageToday").classList.contains("ov-kopen"));
   host.innerHTML = `<span><small>${tt("today.ctx.profit", "Profit")}</small><b class="${k.profitYesterday < 0 ? "neg" : ""}">${fmt(k.profitYesterday)}</b></span>`
     + `<span><small>${tt("today.ctx.cash", "Cash")}</small><b>${compact(k.cash)}</b></span>`
-    + `<span><small>${tt("today.ctx.day", "Day")}</small><b>${num(m.day)}</b></span>`
     + `<button type="button" class="ov-kmore" aria-expanded="${open}" aria-controls="kpis">${tt("today.ctx.all", "All figures")}${nxIcon("chevd")}</button>`;
 }
 
@@ -20293,6 +20335,7 @@ function drawAlerts(){
       tt("today.alerts.none.sub", "Nothing above the threshold in the kinds switched on. The lines below count what was set aside.")}</p></div>`;
   $("alerts").classList.toggle("ov-all", ovShowAll);
   bindFindingRows($("alerts"), rows);
+  if($("ovMetaFoot")) $("ovMetaFoot").innerHTML = ovMetaHtml();
   const more = folded.watch + folded.opp;
   const moreBox = $("ovMore");
   moreBox.hidden = !more;
@@ -21198,6 +21241,8 @@ const spPlanWrite = (key, which) => {
   const at = spPlanKey(key);
   spPlanMem[at] = which === "full" ? "full" : "demand";
   hrStale();
+  /* Staffing › Schedules summarises the plan shown (spShownRow()). */
+  if(typeof nxSchedStale === "function") nxSchedStale();
   if(!spCharacter()) return;
   try {
     if(which === "full") localStorage.setItem(SP_PLAN_STORE + at, "full");
@@ -21225,6 +21270,10 @@ const spFullNeed = row => {
 };
 const spFullRow = row => Object.assign({}, row, spFullNeed(row), row.fullCover,
   {fullCover: null, full: true});
+/* The plan a shop shows: full cover where the reader picked it and the shop
+   offers it, else the demand plan. Its Staffing block, its write and Staffing ›
+   Schedules all read this one, so the three never describe different weeks. */
+const spShownRow = base => spOffersFull(base) && spPlanRead(base.key) === "full" ? spFullRow(base) : base;
 /* The ticks of each plan are kept apart: an entry ticked on one is not an
    entry typed for the other. The full-cover ticks are kept per company as
    well, and not at all on a board with no character id; the demand plan's
@@ -22287,8 +22336,8 @@ function spOfficeRoster(b){
 function spRosterBlock(b){
   const base = spRosterRow(b.key);
   const offer = spOffersFull(base);
-  const full = offer && spPlanRead(base.key) === "full";
-  const row = full ? spFullRow(base) : base;
+  const row = spShownRow(base);
+  const full = offer && row !== base;
   const pick = offer ? spPlanPick(base, full) : "";
   /* A week with nothing in it is the only empty state. A shop too new to have
      been measured still has cleaning and security cover to type -- and that is
@@ -27770,6 +27819,11 @@ function hrStale(){
   const row = PAGE_DRAWS.find(r => /drawStaff\(/.test(String(r[1])));
   if(row && hasData()) pageStale.add(row);
 }
+/* ...and what Staffing › Schedules summarises for that shop. */
+function nxSchedStale(){
+  const row = PAGE_DRAWS.find(r => /drawSchedules\(/.test(String(r[1])));
+  if(row && hasData()) pageStale.add(row);
+}
 /* Staffing › Payroll (docs/ui-route-migration.md): the Payroll view main folded
    into Company › Staff (issue #89) stays a view of its own in the redesign, beside
    Staff needs, whose hiring page keeps its short copy (hrPayroll()).
@@ -28219,10 +28273,19 @@ function drawSchedules(){
   const sites = D.businesses.filter(b => b.status === "retail" || b.status === "office");
   const lit = schedLit || (typeof ssStaffingSite === "function" ? ssStaffingSite() : "");
   const status = b => {
-    if(b.status === "office") return tt("co.sched.office", "Office: its staff and computers are on its page");
-    const r = plans.get(b.key);
-    if(!r) return tt("co.sched.none", "No plan yet");
-    if(r.failed) return tt("co.sched.failed", "No plan: the planner could not read this shop");
+    if(b.status === "office"){
+      /* The office default where it plans the office (spOfficeRoster()). */
+      const o = typeof gwOfficeRow === "function" ? gwOfficeRow(b.key) : null;
+      return o && (o.shifts || []).length && o.computers
+        ? tt("co.sched.office.plan", {one: "Office default: {n} of {c} computer staffed", other: "Office default: {n} of {c} computers staffed"},
+          {n: o.staffedComputers || 0, c: o.computers})
+        : tt("co.sched.office", "Office: its staff and computers are on its page");
+    }
+    const base = plans.get(b.key);
+    if(!base) return tt("co.sched.none", "No plan yet");
+    if(base.failed) return tt("co.sched.failed", "No plan: the planner could not read this shop");
+    /* The plan the shop's own Staffing shows, full cover where it was picked. */
+    const r = spShownRow(base);
     if(!(r.shifts || []).length) return tt("co.sched.nothing", "Nothing to schedule yet");
     const c = spRosterCounts(r), people = c.hire ? spPlanPosts(r) : 0;
     return people ? tt("co.sched.plan.hire", {one: "{now} entries now, {week} in the plan, {n} person to hire", other: "{now} entries now, {week} in the plan, {n} people to hire"},
@@ -28230,8 +28293,8 @@ function drawSchedules(){
       : tt("co.sched.plan", "{now} entries now, {week} in the plan", {now: c.now, week: c.staffed});
   };
   const factories = ((D.supply || {}).factories || {}).sites || [];
-  host.innerHTML = `<div class="sechead"><h2>${tt("co.sched.title", "Shop schedules")}</h2><span class="quiet">${
-    tt("co.sched.sub", "A week of hours for each shop from its own customers. Open one to compare it with its schedule and copy it or write it through the game link.")}</span></div>`
+  host.innerHTML = `<div class="sechead"><h2>${tt("co.sched.title.all", "Shop and office schedules")}</h2><span class="quiet">${
+    tt("co.sched.sub.all", "A week of hours for each shop from its own customers, and for each office from the office default. Open one to compare it with its schedule and copy it or write it through the game link.")}</span></div>`
     + (sites.length ? `<div class="nx-list">${sites.map(b => `<div class="nx-row${b.key === lit ? " lit" : ""}"><span class="nm">${hoodHtml(b)}<span>${spEsc(shortName(b))}</span></span>`
       + `<span class="st">${spEsc(status(b))}</span><span class="ac"><button type="button" class="nx-btn sm" data-sched-open="${attr(b.key)}">${
         b.status === "office" ? tt("co.sched.openOffice", "Open staffing") : tt("co.sched.open", "Open schedule")}${icon("go")}</button></span></div>`).join("")}</div>`
@@ -28664,7 +28727,9 @@ const ROUTES = {
     if(o.preset && typeof openFinder === "function") openFinder(o.preset, !!o.focus);
     else if(typeof showFinder === "function") showFinder(); }},
   "expansion/factory": {host: ["growth", "plan"]},
-  "map": {host: ["map"]},
+  /* The map as the reader left it: with the finder on, that is Find a
+     location, and the address says so (routeFor()). */
+  "map": {host: ["map"], after(){ routeSync(); }},
   "wiki": {host: ["wiki"]},
 };
 /* The route a host page and view shows when nothing more precise was asked
@@ -28734,6 +28799,9 @@ function areaEntry(id){
 /* Old page names that are routes now: Payroll and Staff (main's Company
    views, issue #89) are Staffing's, the Wiki is the Game guide. */
 const ROUTE_ALIASES = {today: "overview", payroll: "staffing/payroll", staff: "staffing/needs", guide: "wiki"};
+/* Where an old word lands inside its route: #staff was main's Staff page, the
+   hiring block on Staff needs (after the staff demands). */
+const ROUTE_ALIAS_INTO = {staff: "#secStaff"};
 function routeResolve(h){
   if(typeof h !== "string" || !h) return null;
   if(ROUTES[h]) return h;
@@ -28753,7 +28821,13 @@ function routeAccepts(id, p){
   }
   return !r.host[1] || r.host[1] === sub[p];
 }
+/* The City map's page is two places: the plain map, and Expansion › Find a
+   location when the finder is switched on. The switch decides which is on
+   screen (it lasts the session, and a new load starts with the plain map). */
+const routeFinderOn = () => typeof cityMapPage !== "undefined" && !!cityMapPage && !!cityMapPage.fs
+  && !!cityMapPage.fs.on && typeof premises === "function" && !!premises();
 function routeFor(p){
+  if(p === "map" && typeof cityMapPage !== "undefined" && cityMapPage) return routeFinderOn() ? "expansion/finder" : "map";
   if(routeAccepts(route, p)) return route;
   if(p === "supply" && routeDiagram()) return "supply/flow";
   return HOST_ROUTES[SUBS[p] ? `${p}/${sub[p]}` : p] || HOST_ROUTES[p] || "overview";
@@ -29220,7 +29294,7 @@ function pageFromHash(h){
 function openHash(h, historyMode = "none"){
   if(PAGE_ALIASES[h]){ siteShut(); showPage(h, false, historyMode); return true; }
   const r = routeResolve(h);
-  if(r && (hasData() || r === "wiki")){ openRoute(r, {historyMode, scroll: false}); return true; }
+  if(r && (hasData() || r === "wiki")){ openRoute(r, {historyMode, scroll: false, into: ROUTE_ALIAS_INTO[h]}); return true; }
   const id = pageFromHash(h);
   if(!id) return false;
   if(openSiteHash(h, historyMode)) return true;
@@ -30326,13 +30400,12 @@ const SS_QUESTIONS = [
   {id: "fed", get q(){ return tt("nav.ask.fed.q", "Is my factory fed?"); },
    lands: () => tt("nav.ask.fed.lands", "Supply › Production · lines and factory inputs"), page: "supply",
    go: () => openRoute("supply/production"), lit: "#secFactories", holds: () => sub.supply === "factories"},
-  {id: "hire", get q(){ return tt("nav.ask.hire.q", "Whom should I hire?"); }, page: "company",
-   lands: () => { const b = D.businesses.find(x => x.key === ssStaffingSite());
-     return b ? tt("nav.ask.hire.lands.site", "Staffing on {site} · hiring lines", {site: b.name})
-       : tt("nav.ask.hire.lands.none", "Businesses › Results · the sites"); },
-   go: () => ssOpenSite(ssStaffingSite(), "#sp-roster"),
-   lit: () => siteOpen && ssStaffingSite() && siteKey === ssStaffingSite() ? $("sp-roster") : $("secPortfolio"),
-   holds: a => a.site === (siteOpen ? siteKey : null)},
+  /* Hiring's home is Staffing › Staff needs (main's Staff page, issue #89):
+     the open places by role, the candidates and Quick hire, for every site. */
+  {id: "hire", get q(){ return tt("nav.ask.hire.q", "Whom should I hire?"); }, page: "staffing",
+   lands: () => tt("nav.ask.hire.lands.needs", "Staffing › Staff needs · open places and candidates"),
+   go: () => openRoute("staffing/needs", {into: "#secStaff"}), lit: "#secStaff",
+   holds: () => page === "staffing" && sub.staffing === "needs" && !siteOpen},
   {id: "prices", get q(){ return tt("nav.ask.prices.q", "Are my prices right?"); }, page: "wiki",
    lands: () => { const t = ssPricesType();
      return t ? tt("nav.ask.prices.lands.type", "Game guide › {type} › Prices in your save", {type: t.type}) : tt("nav.ask.prices.lands.none", "Game guide"); },
@@ -30368,18 +30441,22 @@ function ssAskPaint(){
 /* The landing on screen ({qn, strip, lit, litId, host, hash, site}), and the
    landing still on its way, with the address its question opened. */
 let ssAsked = null, ssTicket = 0, ssPending = null;
-function ssAsk(id, from = page){
+/* Where a question was asked: the address, and the site whose page it was
+   asked on. Its strip names that site and goes Back to it (ssLand()); asked
+   again for another answer, it keeps the same way back. */
+function ssAsk(id, from = page, origin = null){
   const qn = SS_QUESTIONS.find(x => x.id === id);
   if(!qn || !hasData()) return;
   try{ localStorage.setItem(SS_ASK_KEY, "1"); }catch(e){}
   ssAskPaint();
   ssClearAsked();
   const ticket = ++ssTicket;
+  const asked = origin || {hash: location.hash, site: siteOpen && page === "company" ? siteKey : null};
   qn.go();
   ssPending = {ticket, hash: location.hash};
-  ssLand(qn, from, ticket);
+  ssLand(qn, from, ticket, 0, asked);
 }
-function ssLand(qn, from, ticket, tries = 0){
+function ssLand(qn, from, ticket, tries = 0, origin = null){
   /* A later question, a search that went elsewhere, or the reader's own
      navigation takes over from a landing still on its way. */
   if(ticket !== ssTicket || !ssPending || ssPending.ticket !== ticket){
@@ -30396,7 +30473,7 @@ function ssLand(qn, from, ticket, tries = 0){
   const el = found && host.contains(found) && found.getClientRects().length ? found : null;
   /* The wiki opens its page once the address has changed, and draws its guide
      once its file is in; the map draws its finder once its file is: wait. */
-  if(!el && qn.wait && tries < 40){ setTimeout(() => ssLand(qn, from, ticket, tries + 1), 100); return; }
+  if(!el && qn.wait && tries < 40){ setTimeout(() => ssLand(qn, from, ticket, tries + 1, origin), 100); return; }
   ssPending = null;
   /* No answer on screen, nothing to point at. */
   if(!el) return;
@@ -30415,7 +30492,9 @@ function ssLand(qn, from, ticket, tries = 0){
      (the site was open already) the portfolio. */
   const onSite = siteOpen && page === "company";
   const viaSite = onSite && siteFrom ? siteFrom : null;
-  const backLabel = viaSite ? viaSite.label : onSite ? tt("nav.ask.portfolio", "Portfolio") : back.label;
+  /* Asked on a site's page and answered elsewhere: the way back is that page. */
+  const askedOn = !onSite && origin && origin.site ? D.businesses.find(b => b.key === origin.site) : null;
+  const backLabel = viaSite ? viaSite.label : onSite ? tt("nav.ask.portfolio", "Portfolio") : askedOn ? shortName(askedOn) : back.label;
   const choices = qn.choices ? qn.choices() : null;
   const pickLabel = tt("nav.ask.pick", "Answer for");
   strip.innerHTML = `<span class="ic" aria-hidden="true">?</span><span><small>${tt("nav.ask.asked", "YOU ASKED")}</small><br><b>${ssEsc(qn.q)}</b></span>`
@@ -30430,7 +30509,7 @@ function ssLand(qn, from, ticket, tries = 0){
     if(!b) return;
     if(b.dataset.ss === "another"){ ssOpen(); return; }
     /* Another of the question's answers: asked again, with the same way back. */
-    if(b.dataset.ss === "pick"){ e.preventDefault(); qn.choose(b.dataset.pick); ssAsk(qn.id, from); return; }
+    if(b.dataset.ss === "pick"){ e.preventDefault(); qn.choose(b.dataset.pick); ssAsk(qn.id, from, origin); return; }
     ssClearAsked();
     /* The crumb's own rule: Back while the entry carries the way back, else
        its address, else the portfolio. */
@@ -30440,6 +30519,10 @@ function ssLand(qn, from, ticket, tries = 0){
       return;
     }
     if(onSite && siteOpen){ closeSite(); return; }
+    /* An answer that went somewhere new goes Back there, the browser's Back,
+       so a site's page, a view's scope and the list's place come back as
+       they were; an answer on the page it was asked from has no visit to undo. */
+    if(origin && origin.hash !== undefined && location.hash !== origin.hash){ history.back(); return; }
     showPage(back.id);
   });
   ssAsked = {qn, strip, lit: el, litId: el.id || "", host, hash: location.hash, site: siteOpen ? siteKey : null};
@@ -33674,7 +33757,7 @@ function gwRosterPlan(key){
   if(b.status !== "retail") return null;
   const base = spRosterRow(key);
   if(!base || base.failed) return null;
-  const row = spOffersFull(base) && spPlanRead(base.key) === "full" ? spFullRow(base) : base;
+  const row = spShownRow(base);
   return (row.shifts || []).length ? row : null;
 }
 /* The week a write sends, from the plan's rows, their station and person
@@ -34068,7 +34151,7 @@ function boot(){
      whichever view of its new page was last used. */
   if(!openSiteHash(h, "replace")){
     const r = routeResolve(h) || (h ? null : routeResolve(remembered(ROUTE_KEY) || ""));
-    if(r) openRoute(r, {historyMode: "replace", scroll: false});
+    if(r) openRoute(r, {historyMode: "replace", scroll: false, into: ROUTE_ALIAS_INTO[h]});
     else showPage(PAGE_ALIASES[h] ? h : pageFromHash(h) || remembered(PAGE_KEY) || "today", false, "replace");
   }
   /* Bound once: the nav underline, the coin, and the sphere's entrance. A live

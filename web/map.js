@@ -450,7 +450,19 @@ class CityMapView {
     this.root.addEventListener('click', e => {
       if(!this.svg) return;
       const pick = e.target.closest('[data-pick]');
-      if(pick){ this.select(pick.dataset.pick); return; }
+      if(pick){
+        this.select(pick.dataset.pick);
+        // Narrow, the list is under the map: a row picked there brings the map,
+        // where its card opens, back into view (Find a location adds the
+        // area's row above it, so a lower row is often reached by scrolling).
+        if(this.narrow && this.list?.contains(pick) && this.stage){
+          // It lands under the masthead, which stays at the top of the window.
+          const r = this.stage.getBoundingClientRect(), mast = document.querySelector('.wrap .mast');
+          const top = mast && getComputedStyle(mast).position === 'sticky' ? mast.getBoundingClientRect().bottom : 0;
+          if(r.top < top || r.top > innerHeight) window.scrollBy({top: r.top - top, behavior: REDUCED ? 'auto' : 'smooth'});
+        }
+        return;
+      }
       const sorter = e.target.closest('.fhead [data-s]');
       if(sorter){ this.sortBy(sorter.dataset.s); return; }
       if(e.target.closest('[data-more]')){ this.showAll = true; this.update(); return; }
@@ -619,6 +631,9 @@ class CityMapView {
     const changed = () => { this.showAll = false; this.saveFinder(); this.update(); };
     this.root.querySelector('[data-f="tog"]').onclick = () => {
       this.fs.on = !this.fs.on; this.deselect(); changed();
+      // On, the page is Expansion › Find a location; off, the City map: the
+      // address and the lit place follow (routeFor() in the board script).
+      if(this === cityMapPage && page === "map" && typeof routeSync === "function") routeSync();
     };
     this.root.querySelectorAll('.fchip.cat').forEach(chip => chip.onclick = () => {
       // A sort the player picked travels to the new category when it can; the
@@ -747,6 +762,7 @@ class CityMapView {
     this.fs.sort = this.fs.cat === 'warehouse' ? 'm2' : 'score'; this.fs.sortPicked = false;
     this.saveFinder();
     this.selected = null; this.showAll = false;  // back to the 80-row cap
+    finderPickRemember(this);
     this.ready.then(ok => { if(ok) this.update(); });
   }
   /* --- saved searches ---------------------------------------------------------
@@ -1629,6 +1645,7 @@ class CityMapView {
   }
   async select(key, focus=true, fresh=false){
     this.selected=key;this.freshSelection=fresh;
+    finderPickRemember(this);
     if(!await this.ready) return;
     if(this.selected!==key) return; // A newer selection or character superseded this request.
     // A dialog that was just reopened has no layout yet; a cached rect from
@@ -1661,6 +1678,7 @@ class CityMapView {
   deselect(){
     if(!this.selected) return;
     this.selected = null; this.onSettled = null;
+    finderPickRemember(this);
     this.update();
   }
   resetCharacter(){
@@ -1722,10 +1740,39 @@ function showFinder(){
   showPage("map");
   showCityMap();
   const view = cityMapPage;
-  if(view.fs.on) return;
-  view.loadFinder();
-  view.fs.on = true;
-  view.ready.then(ok => { if(ok) view.update(); });
+  if(!view.fs.on){
+    view.loadFinder();
+    view.fs.on = true;
+    view.ready.then(ok => { if(ok) view.update(); });
+  }
+  finderPickRestore(view);
+}
+/* The building picked in the finder is kept on the history entry (nxPick),
+   beside the route and the arrival, so a reload of Find a location -- or Back
+   to it -- opens it again. Only the finder's own pick, on the City map's page. */
+function finderPickRemember(view){
+  if(view !== cityMapPage) return;
+  try{
+    const st = Object.assign({}, history.state || {});
+    if(view.selected && view.finderOn()) st.nxPick = view.selected; else delete st.nxPick;
+    if((history.state || {}).nxPick === st.nxPick) return;
+    history.replaceState(Object.keys(st).length ? st : null, '', location.href);
+  }catch(e){}
+}
+/* ...and given back once the finder has its results: where the building is
+   still one of them (the same availability, category and filters), it is
+   picked again, its row pressed and its card open; where it is not, the entry
+   forgets it rather than showing a pick the list does not hold. A pick made
+   since the load stands. */
+function finderPickRestore(view){
+  let key = null;
+  try{ key = (history.state || {}).nxPick || null; }catch(e){}
+  if(!key || view.selected) return;
+  view.ready.then(ok => {
+    if(!ok || page !== 'map' || !view.finderOn() || view.selected) return;
+    if(view.rows().some(r => r.key === key)) view.select(key, false);
+    else finderPickRemember(view);
+  });
 }
 function refreshCityMaps(){
   const character=D?.meta?.character || D?.supply?.factories?.character || D?.meta?.save;

@@ -50,13 +50,13 @@ aliases. Code: `ROUTES`, `AREAS`, `REFS` and `HOST_ROUTES` in the board script
 | `supply/deliveries` | Supply › Deliveries | `supply/shops` (shelves, top-ups, wholesale); depot top-ups on the Warehouses scope | Scope Shops or Warehouses; a finding lights its row | Chunk 2 |
 | `supply/production` | Supply › Production | `supply/factories` (lines, hours, inputs, `#sbStaff` factory staffing) | Scope Factories | Chunk 2 |
 | `supply/flow` | Supply › Goods flow | The tab on screen in diagram mode (`svg#flow`, `#flowChain` when narrow). The List or Diagram switch moves the route between the tab's view and Goods flow | The scope on screen | Chunk 2 |
-| `staffing/schedules` | Staffing › Schedules | new `secSchedules`: every shop and office with its plan's state. A shop opens its page on `#sp-roster`; an office on `#sp-roster` where the office default plans it (its additive write is there), else on `#sp-crew` (`nxStaffInto()`). Factories open Supply › Production | The shop a task or search named is lit (`schedPick`) | Chunk 2 |
+| `staffing/schedules` | Staffing › Schedules | new `secSchedules`, "Shop and office schedules": every shop and office with its plan's state. A shop's line counts the plan its own Staffing shows and writes, full cover where the reader picked it (`spShownRow()`), and is drawn again after a pick (`nxSchedStale()`). An office's line counts the office default's staffed computers. A shop opens its page on `#sp-roster`; an office on `#sp-roster` where the office default plans it (its additive write is there), else on `#sp-crew` (`nxStaffInto()`). Factories open Supply › Production | The shop a task or search named is lit (`schedPick`) | Chunk 2 |
 | `staffing/needs` | Staffing › Staff needs | new `secNeeds`: staff demands (`#nxDemands`), each opening the crew that shows it; then `secStaff`, main's Staff page unchanged: open places by role, candidates, Mass and Quick hire, hire and move review and write (no undo), office plans, staff with no hours, and its short Payroll summary | – | Chunk 2 |
 | `staffing/payroll` | Staffing › Payroll | `staffing/payroll`: `secPayroll`, the full Payroll tables (`drawPayroll`), moved from Company | – | Chunk 2 |
 | `expansion/demand` | Expansion › Demand | `growth/market`: `secMarket` | – | Chunk 3 |
-| `expansion/finder` | Expansion › Find a location | `map` host with the finder on. A task or a Demand cell asks a question (`openFinder(preset)`); Back, Forward, a reload and the area's row switch it on as the reader left it (`showFinder()`) | Finder filters and saved searches as before | Chunk 3 |
+| `expansion/finder` | Expansion › Find a location | `map` host with the finder on. A task or a Demand cell asks a question (`openFinder(preset)`); Back, Forward, a reload and the area's row switch it on as the reader left it (`showFinder()`). The finder's switch moves the page between this route and `map`, address and lit place included (`routeFor()`) | Finder filters and saved searches as before; the picked building rides on the history entry (`nxPick`), so a reload or Back picks it again where the results still hold it, and drops it where they do not | Chunk 3 |
 | `expansion/factory` | Expansion › Plan a factory | `growth/plan`: `secPlan`, `secIngredients` | – | Chunk 3 |
-| `map` | City map (reference) | `map` host | Finder as the reader left it | Chunk 3 |
+| `map` | City map (reference) | `map` host, with the finder off. The switch lasts the session, so City map reached with the finder left on is Find a location, and its address says so | Finder as the reader left it | Chunk 3 |
 | `wiki` | Game guide (reference) | `wiki` host; `#wiki/<page>` is still the wiki's own route | – | Chunk 3 |
 | `#site/<slug>` | a business's page | `company/results` + `secDetail` | Under the route that opened it (`nxRoute`) | Chunk 3 |
 
@@ -66,7 +66,7 @@ aliases. Code: `ROUTES`, `AREAS`, `REFS` and `HOST_ROUTES` in the board script
 | --- | --- |
 | `#today` | `overview` (`ROUTE_ALIASES`; the Overview's state is restored as on `#overview`) |
 | `#payroll`, `#secPayroll` | Staffing › Payroll |
-| `#staff`, `#secStaff` | Staffing › Staff needs, at the hiring page (`#staff` and `#secStaff` were main's Company › Staff, issue #89) |
+| `#staff`, `#secStaff` | Staffing › Staff needs, at the hiring page, scrolled past the staff demands (`ROUTE_ALIAS_INTO` for `#staff`, `SEC_PAGE` for `#secStaff`; both were main's Company › Staff, issue #89) |
 | `#company`, `#results` | `businesses/results` |
 | `#growth` | `expansion/demand` (or Plan a factory if that was the Growth view last used) |
 | `#supply` | the Supply area entry: `supply/changes` on the first visit |
@@ -144,7 +144,9 @@ shell shows the page's own route. It never shows a route that is not on screen.
 
 Next moves and the Ask the board row are gone from the Overview (E15, E16). Their three live
 cards are rows here under the same ids. The seven questions are still the search palette's
-empty state.
+empty state. "Whom should I hire?" lands on Staffing › Staff needs at the hiring page (open
+places and candidates), with the answer strip's way back to where it was asked; it used to open
+one shop's Staffing under Businesses › Results.
 
 ## PR #121 staffing and hiring rows (H01–H07)
 

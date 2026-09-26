@@ -1876,6 +1876,33 @@ test('a measured shop names its plan the demand plan and offers the test beside 
   } finally { await page.close(); }
 });
 
+test('Staffing › Schedules summarises the plan the shop shows, and follows a change of plan', async () => {
+  // c1-final-code-review, finding 2: the row read the demand plan while the
+  // shop's own Staffing showed (and would write) full cover.
+  const page = await shop('full');
+  try {
+    const counts = which => page.evaluate(([k, which]) => {
+      const base = spRosterRow(k), c = spRosterCounts(which === 'full' ? spFullRow(base) : base);
+      return `${c.now} entries now, ${c.staffed} in the plan`;
+    }, [KEY, which]);
+    const line = () => page.evaluate(k => {
+      const b = document.querySelector(`#secSchedules [data-sched-open="${CSS.escape(k)}"]`);
+      return b ? b.closest('.nx-row').querySelector('.st').textContent : null;
+    }, KEY);
+    const demand = await counts('demand'), full = await counts('full');
+    assert.notEqual(demand, full, 'the two plans differ, so the row can tell them apart');
+    await page.evaluate(() => { drawSchedules(); openRoute('staffing/schedules'); });
+    assert.ok((await line()).startsWith(demand), await line());
+    // The plan is picked on the shop's own page; Schedules is drawn again on its next visit.
+    await page.evaluate(k => openSite(k), KEY);
+    await page.evaluate(() => q('#sp-roster [data-plan="full"]').click());
+    await page.evaluate(() => openRoute('staffing/schedules'));
+    assert.ok((await line()).startsWith(full), `full cover: ${await line()}`);
+    await page.evaluate(k => { openSite(k); q('#sp-roster [data-plan="demand"]').click(); openRoute('staffing/schedules'); }, KEY);
+    assert.ok((await line()).startsWith(demand), `back to the demand plan: ${await line()}`);
+  } finally { await page.close(); }
+});
+
 test('each plan keeps its own ticks', async () => {
   const page = await shop('newshop');
   try {
