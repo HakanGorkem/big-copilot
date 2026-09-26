@@ -27,9 +27,11 @@ const WIDTHS = [360, 768, 1280, 1500, 1501, 1920];
    A conversion pull request adds its row; from then on English left on
    screen there fails the sweep. */
 const CONVERTED = {
-  /* The masthead's own lines: its live dot's word is community.js's. */
-  nav: '#nav, #companyNav, #supplyNav, #growthNav, #clock > b, #clock > small:not(.fv-diffline), #clock .flag, '
-    + '#clock .fv-diff, #ssField, .ss-ask, #ssAskMini',
+  /* The masthead's own lines: its live dot's word is community.js's. The
+     shell's places, references, the area's row, the arrival strip's way back
+     and the phone's bar are the redesign's (docs/ui-route-migration.md). */
+  nav: '#nav, #navRefs, #localNav, #arrive .nx-back, #phoneNav, #companyNav, #supplyNav, #growthNav, #staffingNav, #clock > b, '
+    + '#clock > small:not(.fv-diffline), #clock .flag, #clock .fv-diff, #ssField',
   foot: '.sitefoot',
   /* A finding's headline and its detail, on Today and in the site panel. */
   f: '.find .what, .find .more, .sp-find .what, .sp-find .more',
@@ -45,12 +47,13 @@ const CONVERTED = {
   map: '#cityMapPage .map-head .layers, #cityMapPage .fswitch, #cityMapPage .filters .lab, #cityMapPage .fchip.cat, '
     + '#cityMapPage .fchip.show, #cityMapPage .fchip.num, #cityMapPage .fnew, #cityMapPage .fhead, #cityMapPage .places .empty, '
     + '#cityMapPage .site .nums, #cityMapPage .site .go2',
-  /* Today's own words: the tiles, the list's head and count lines, each
-     finding's figure, the silenced line and the Next moves cards. The
-     finding sentences are Python's (f); the kinds panel is left out, as its
-     rows are the kinds' names (nav) and it redraws each time it opens, and so
-     is Ask the board under Next moves (the search palette's). */
-  today: '#kpis, #alertHead, #alerts .amt, #alertMinor .td-count, #silenced, #secMoves h2, #secMoves .moves',
+  /* The Overview's own words: the figures, the list's head and count lines,
+     its groups, each finding's figure, Details, action and the pane's labels,
+     "Show N more", the silenced line and All tools. The finding sentences are
+     Python's (f); the kinds panel is left out, as its rows are the kinds'
+     names (nav) and it redraws each time it opens. */
+  today: '#kpis, #alertHead, #alerts .amt, #alerts .ov-band, #alerts .ov-det, #alerts .ov-act, #alerts .ov-x .lab, '
+    + '#ovMore, #ovNews, #alertMinor .td-count, #silenced, #secMoves',
   /* Supply's own words: the switches, the checklist strip's chrome, each
      tab's verdict, sizing row, headers, status words, reasons, counts, units
      and notes, the factory staffing block, and the diagram's legend and
@@ -72,7 +75,13 @@ const CONVERTED = {
   co: '#secDaily .sechead, #dailyBox .chartbox, #rhythmSites thead, #rhythmSites td:not(.l), #rhythmSites td.l + td.l, '
     + '#secPortfolio .sechead, #portfolio thead, #portfolio tfoot, #portfolio tr.chain, #portfolio tr.kid td:not(.l), '
     + '#secProducts .sechead, #secProducts thead, #secProducts td:not(.l), #secProducts > p, '
-    + '#secPayroll .sechead, #secPayroll > p, #secGoals',
+    + '#secPayroll .sechead, #secPayroll > p, #secGoals, '
+    /* The redesign's adapters: Standards' subjects, a shop's prices, and the
+       Staffing lists' heads, states and buttons (the names in them are left
+       out). */
+    + '#secStandards .sechead, #secStandards .nx-card b > span, #secPrices .sechead, #secPrices .nx-part, #secPrices [data-price-guide] small, '
+    + '#secSchedules .sechead, #secSchedules .st, #secSchedules .nx-part, #secSchedules .nx-btn, '
+    + '#secNeeds .sechead, #secNeeds .nx-part, #secNeeds .nx-btn, #secNeeds p.quiet',
   /* The Wiki's own words: the home view's search row, legend, topic shelf
      heading and states; a guide's section headings, checklist cards and
      captions (its labels are guideUi's, keyed wiki.ui.*), tiles, card and lane

@@ -156,12 +156,12 @@ test('the Portfolio total meets Today\'s profit through the company costs', asyn
   } finally { await page.close(); }
 });
 
-test('at 390 px Today pairs its tiles, stacks its cards and never scrolls sideways', async () => {
+test('at 390 px the Overview pairs its figures, stacks its tool panels and never scrolls sideways', async () => {
   const page = await today(390);
   try {
     const m = await page.evaluate(() => {
       const tiles = [...document.querySelectorAll('#kpis .kpi')].map(t => t.getBoundingClientRect());
-      const cards = [...document.querySelectorAll('#secMoves .move')].map(c => c.getBoundingClientRect());
+      const cards = [...document.querySelectorAll('#secMoves .ov-p')].map(c => c.getBoundingClientRect());
       const row = document.querySelector('#alerts .find');
       const site = row.querySelector('.site').getBoundingClientRect();
       const what = row.querySelector('.what').getBoundingClientRect();
@@ -176,7 +176,8 @@ test('at 390 px Today pairs its tiles, stacks its cards and never scrolls sidewa
     assert.equal(m.tileTops[0], m.tileTops[1]);
     assert.equal(m.tileTops[2], m.tileTops[3]);
     assert.ok(m.tileTops[2] > m.tileTops[0], 'two rows of two');
-    assert.equal(new Set(m.cardLefts).size, 1, 'the cards stack');
+    assert.equal(m.cardLefts.length, 4, 'the four tool panels');
+    assert.equal(new Set(m.cardLefts).size, 1, 'the panels stack');
     assert.ok(m.sentenceBelowSite, 'the sentence has a line of its own');
   } finally { await page.close(); }
 });
@@ -242,7 +243,9 @@ test('at 390 px the Growth grid narrows its names, never its cells or the page',
 
 // --- Today with the other passes on it (site pages R9, search R10/R11, folds R15) ----
 
-test('at 390 px the count lines, the Ask row and a live Plan imports card share Today without overlap', async () => {
+/* Next moves and the Ask the board row became All tools (docs/ui-route-migration.md):
+   the live Plan imports card is the Calculate import amounts row, by the same id. */
+test('at 390 px the count lines, the tool panels and a live import task share the Overview without overlap', async () => {
   const page = await today(390);
   try {
     const m = await page.evaluate(() => {
@@ -251,21 +254,20 @@ test('at 390 px the count lines, the Ask row and a live Plan imports card share 
       document.querySelector('[data-td-toggle="off"]').click();
       const box = el => { const r = el.getBoundingClientRect(); return {l: r.left, t: r.top, r: r.right, b: r.bottom}; };
       const meets = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
-      const blocks = [...document.querySelectorAll('#alerts .find, #alertMinor .td-count, #alertMinor .find, #kpis .kpi, #secMoves .move, #ssAsk')]
+      const blocks = [...document.querySelectorAll('#alerts .find, #alertMinor .td-count, #alertMinor .find, #kpis .kpi, #secMoves .ov-p')]
         .filter(el => el.getClientRects().length).map(el => ({el: el.id || el.className, ...box(el)}));
       const clashes = [];
       blocks.forEach((a, i) => blocks.slice(i + 1).forEach(b => { if(meets(a, b)) clashes.push(`${a.el} / ${b.el}`); }));
-      const ask = document.getElementById('ssAsk'), card = document.getElementById('planImportsCard');
+      const card = document.getElementById('planImportsCard');
       return {clashes, scroll: document.documentElement.scrollWidth, width: document.documentElement.getBoundingClientRect().width,
-        askShown: ask.getClientRects().length > 0, askInside: box(ask).l >= -0.5 && box(ask).r <= innerWidth + 0.5,
-        askBelowCards: box(ask).t >= Math.max(...[...document.querySelectorAll('#secMoves .move')].map(c => box(c).b)) - 0.5,
-        cardText: card.querySelector('.what').textContent, cardInside: box(card).r <= innerWidth + 0.5,
+        askGone: !document.getElementById('ssAsk'),
+        cardText: card.querySelector('.what').textContent, cardInside: box(card).r <= innerWidth + 0.5 && box(card).l >= -0.5,
         lines: document.querySelectorAll('#alertMinor .td-count').length};
     });
     assert.deepEqual(m.clashes, [], 'nothing on Today overlaps');
     assert.ok(m.scroll <= m.width, 'no sideways scroll');
     assert.equal(m.lines, 2);
-    assert.ok(m.askShown && m.askInside && m.askBelowCards, 'the Ask row sits under the cards, inside the window');
+    assert.ok(m.askGone, 'the Ask the board row is folded into All tools; its questions stay in the search palette');
     assert.match(m.cardText, /^12 import settings/);
     assert.ok(m.cardInside);
   } finally { await page.close(); }
@@ -283,7 +285,7 @@ test("an Overstaffed hours row, one per site, opens its site's page from its sen
     // The sentence is the finding: the site's page, with the finding lit and the way back to Today.
     await row.locator('.what').click();
     assert.deepEqual(await page.evaluate(() => [location.hash, siteOpen, spArrived === D.minor.rows[1].id, siteFrom && siteFrom.label]),
-      ['#site/secondavenue-10', true, true, 'Today']);
+      ['#site/secondavenue-10', true, true, 'Needs attention']);
     await page.evaluate(() => { siteShut(); showPage('today'); showSwitchedOff = true; drawAlerts(); });
     // The name is the site's own page, with no finding.
     await page.locator('[data-td-rows="off"] .find').first().locator('a.ss-sl').click();

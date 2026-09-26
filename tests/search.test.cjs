@@ -145,7 +145,7 @@ test('the index holds every group, read from the page, with the words players us
     // Pages and views, synonyms included.
     assert.ok(by('view:staffing').syn.includes('hire'));
     assert.ok(by('view:cash').syn.includes('debt'));
-    assert.equal(by('view:cash').p, 'Today · $250k owed on loans');
+    assert.equal(by('view:cash').p, 'Overview · $250k owed on loans');
     // The game's settings are the difficulty chip now (R15), not Milestones.
     assert.ok(by('view:difficulty').syn.includes('house rules'));
     assert.equal(by('view:difficulty').p, 'Custom · every setting against Normal');
@@ -241,7 +241,7 @@ test('a synonym says so beside the real name, and "break even" says there is no 
     await page.keyboard.press('/');
     await typed(page, 'hire');
     const first = await page.$eval('#ssRes .ss-row.on', el => [el.querySelector('.t').textContent, el.querySelector('.ss-syn').textContent]);
-    assert.equal(first[0], 'Staffing≈ hire');
+    assert.equal(first[0], 'Schedules≈ hire');
     assert.equal((await groups(page))[0], 'Pages & views');
     await typed(page, 'break even');
     const row = page.locator('#ssRes .ss-row', {hasText: 'Portfolio'}).first();
@@ -365,42 +365,40 @@ test('on a phone the masthead has the icon, and the palette is the whole screen,
 
 // --- Ask the board ---------------------------------------------------------------------
 
-test('a question lands on its answer, lit, and the row folds into a button after first use', async () => {
+/* The questions were a row under Next moves as well; All tools took that
+   row's place (docs/ui-route-migration.md), and the questions are the search
+   palette's empty state. A question lands on its answer, lit, as before. */
+test('a question lands on its answer, lit, and the questions are the palette\'s empty state', async () => {
   const page = await board();
   try {
-    assert.equal(await page.locator('#ssAsk').isVisible(), true);
-    assert.equal(await page.locator('#ssAsk .ss-aq').count(), 7);
-    assert.equal(await page.locator('#ssAskMini').isHidden(), true);
-    await page.click('#ssAsk .ss-aq[data-ask="hire"]');
+    assert.equal(await page.locator('#ssAsk, #ssAskMini').count(), 0, 'no row of its own on the Overview');
+    await page.evaluate(() => ssAsk('hire'));
     assert.equal(await page.evaluate(() => page), 'company');
     const strip = page.locator('#pageCompany .ss-asked');
     assert.match(await strip.innerText(), /Whom should I hire\?/);
-    assert.match(await strip.innerText(), /Back to Today/);
+    assert.match(await strip.innerText(), /Back to Needs attention/, 'a site opened from the list goes back to it');
     assert.equal(await page.locator('#sp-roster').evaluate(el => el.classList.contains('ss-lit')), true);
     assert.equal(await page.locator('#sp-crew').evaluate(el => el.classList.contains('ss-dim')), true);
     assert.equal(await page.locator('#sitePanel .sitehead').evaluate(el => el.classList.contains('ss-dim')), false);
-    assert.equal(await page.evaluate(() => localStorage.getItem('ba_dash_ask_used')), '1');
-    // Back to Today: the strip and the lighting go, and the row has folded.
+    // Back to the Overview: the strip and the lighting go.
     await strip.locator('[data-ss="back"]').click();
     // The question opened a site's page, so Back is the browser's, as the crumb's is.
     await page.waitForFunction(() => page === 'today');
     assert.equal(await page.locator('.ss-asked').count(), 0);
     assert.equal(await page.locator('.ss-lit, .ss-dim').count(), 0);
-    assert.equal(await page.locator('#ssAsk').isHidden(), true);
-    assert.equal(await page.locator('#ssAskMini').isVisible(), true);
-    // The folded button opens search on its empty state, which holds the same questions.
-    await page.click('#ssAskMini button');
+    // Search opens on its empty state, which holds the questions.
+    await page.evaluate(() => ssOpen());
     assert.equal(await page.locator('#ssRes .ss-q2').count(), 7);
     // Asked from the palette, the next navigation clears the landing.
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowDown');
     assert.equal(await lit(page), 'Is my factory fed?');
     await page.keyboard.press('Escape');
-    await page.click('#ssAskMini button');
+    await page.evaluate(() => ssOpen());
     await page.click('#ssRes .ss-q2 >> text=What should I import this week?');
-    assert.equal(await page.evaluate(() => page), 'supply');
+    assert.equal(await page.evaluate(() => [page, route].join()), 'supply,supply/changes');
     assert.equal(await page.locator('#sbStrip').evaluate(el => el.classList.contains('ss-lit')), true);
-    await page.click('#nav a[data-id="growth"]');
+    await page.click('#nav a[data-id="expansion"]');
     await page.waitForFunction(() => !document.querySelector('.ss-asked'));
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
@@ -409,11 +407,9 @@ test('a question lands on its answer, lit, and the row folds into a button after
 test('with storage refused, the questions and the palette still work and nothing throws', async () => {
   const page = await board({storage: false});
   try {
-    await page.click('#ssAsk .ss-aq[data-ask="import"]');
+    await page.evaluate(() => ssAsk('import'));
     assert.equal(await page.locator('#sbStrip').evaluate(el => el.classList.contains('ss-lit')), true);
-    await page.click('#nav a[data-id="today"]');
-    // Nothing could be remembered, so the row is still there.
-    assert.equal(await page.locator('#ssAsk').isVisible(), true);
+    await page.click('#nav a[data-id="overview"]');
     await page.keyboard.press('/');
     await typed(page, 'fitness');
     await page.keyboard.press('Enter');
@@ -436,28 +432,31 @@ const shelfAtRest = page => page.evaluate(() => { window.shelfMark = null; }).th
   return now - window.shelfMark.at >= 400;
 }, null, {polling: 50}));
 
-test('the sphere rests between the nav and the field, and the field steps down before it would crowd it', async () => {
+/* The shelf is the gap between the five places and the references (City map,
+   Game guide); the search field comes after the references. */
+test('the sphere rests between the places and the references, and the field steps down before the row would crowd', async () => {
   const page = await board({data: false, width: 1440});
   try {
     await page.evaluate(() => { $('title').textContent = 'Big Copilot'; wireSphere(); });
     await page.locator('#orb.live').waitFor();
     await shelfAtRest(page);  // under reduced motion an entrance ends at its 400 ms mark
-    const [orb, field, nav] = await page.evaluate(() => ['orb', 'ssField', 'nav'].map(id => {
+    const [orb, refs, nav] = await page.evaluate(() => ['orb', 'navRefs', 'nav'].map(id => {
       const r = document.getElementById(id).getBoundingClientRect(); return {left: r.left, right: r.right, w: r.width};
     }));
-    assert.ok(orb.left >= nav.right, `the ball ${orb.left} starts after the nav ${nav.right}`);
-    assert.ok(orb.right <= field.left, `the ball ${orb.right} ends before the field ${field.left}`);
-    // However many balls roll out, none rests under the field.
+    assert.ok(orb.left >= nav.right, `the ball ${orb.left} starts after the places ${nav.right}`);
+    assert.ok(orb.right <= refs.left, `the ball ${orb.right} ends before the references ${refs.left}`);
+    // However many balls roll out, none rests under the references.
     await page.click('.wordmark');
     await shelfAtRest(page);
     await page.click('.wordmark');
     await shelfAtRest(page);
     const right = await page.evaluate(() => Math.max(...[...document.querySelectorAll('.orb')].map(o => o.getBoundingClientRect().right)));
-    assert.ok(right <= (await page.locator('#ssField').boundingBox()).x + 1);
-    // Narrower, the field gives way to its icon rather than to the ball.
+    assert.ok(right <= (await page.locator('#navRefs').boundingBox()).x + 1);
+    // Narrower, the places take a row of their own and search is its icon.
     await page.setViewportSize({width: 1180, height: 1000});
-    await page.waitForFunction(() => $('mast').classList.contains('ss-tight'));
+    await page.waitForFunction(() => getComputedStyle($('ssFieldBtn')).display !== 'none');
     assert.equal(await page.locator('#ssFieldBtn').isVisible(), true);
+    assert.equal(await page.locator('#ssField').isVisible(), false);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.getBoundingClientRect().width), 'nothing scrolls sideways');
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
@@ -500,7 +499,7 @@ test('"Are my prices right?" lands on the wiki guide every time it is asked', as
       assert.equal(await page.locator('.ss-asked').count(), 1, `round ${round}`);
       await page.waitForTimeout(100);
       assert.equal(await page.locator('.ss-asked').count(), 1, `round ${round}: nothing clears it`);
-      await page.click('#nav a[data-id="today"]');
+      await page.click('#nav a[data-id="overview"]');
       await page.waitForFunction(() => !document.querySelector('.ss-asked'));
     }
     assert.deepEqual(page.errors, []);
@@ -520,12 +519,12 @@ test('"Are my prices right?" answers for each kind of shop the company runs', as
     await page.waitForFunction(() => /businesstypes-gym\/prices$/.test(location.hash) && document.querySelector('.ss-asked .ss-askpick a.on')?.textContent === 'Gym');
     assert.equal(await page.locator('.ss-asked').count(), 1);
     // The way back is still the page the question was asked on.
-    assert.match(await page.locator('.ss-asked [data-ss="back"]').innerText(), /Today/);
+    assert.match(await page.locator('.ss-asked [data-ss="back"]').innerText(), /Overview/);
     // The palette offers each type's guide; the question remembers the pick.
     const index = await page.evaluate(() => ssBuild().filter(e => e.id.startsWith('view:prices')).map(e => [e.id, e.p]));
-    assert.deepEqual(index, [['view:prices:ba:businesstype_clothingstore', 'Wiki › Clothing Store guide'],
-      ['view:prices:ba:businesstype_gym', 'Wiki › Gym guide']]);
-    assert.equal(await page.evaluate(() => ssLands(SS_QUESTIONS.find(x => x.id === 'prices'))), 'Wiki › Gym › Prices in your save');
+    assert.deepEqual(index, [['view:prices:ba:businesstype_clothingstore', 'Game guide › Clothing Store'],
+      ['view:prices:ba:businesstype_gym', 'Game guide › Gym']]);
+    assert.equal(await page.evaluate(() => ssLands(SS_QUESTIONS.find(x => x.id === 'prices'))), 'Game guide › Gym › Prices in your save');
     // One kind of shop has nothing to pick between; none at all lands on the wiki.
     await page.evaluate(() => { D.businesses = D.businesses.filter(b => b.typeSlug !== 'ba:businesstype_gym'); });
     assert.equal(await page.evaluate(() => SS_QUESTIONS.find(x => x.id === 'prices').choices()), null);
@@ -538,7 +537,7 @@ test('"Are my prices right?" answers for each kind of shop the company runs', as
 test('"Why did profit move?" and "Whom should I hire?" light a block whose tag is not clipped', async () => {
   const page = await board();
   try {
-    await page.click('#ssAsk .ss-aq[data-ask="profit"]');
+    await page.evaluate(() => ssAsk('profit'));
     assert.equal(await page.evaluate(() => [page, view, VIEWS.pnl.cols[sortKey][0], sortDir].join()), 'company,pnl,Wk / wk,-1');
     const port = page.locator('#secPortfolio');
     assert.equal(await port.evaluate(el => el.classList.contains('ss-lit')), true);
@@ -547,8 +546,8 @@ test('"Why did profit move?" and "Whom should I hire?" light a block whose tag i
     assert.equal(await port.evaluate(el => getComputedStyle(el).contentVisibility), 'visible');
     assert.equal(await page.locator('#secDaily').evaluate(el => el.classList.contains('ss-dim')), true);
     assert.equal(await page.locator('#pageCompany .ss-asked + #secPortfolio').count(), 1);
-    await page.click('#nav a[data-id="today"]');
-    await page.click('#ssAskMini button');
+    await page.click('#nav a[data-id="overview"]');
+    await page.evaluate(() => ssOpen());
     await page.click('#ssRes .ss-q2 >> text=Whom should I hire?');
     assert.deepEqual(await page.evaluate(() => [page, siteOpen, siteKey]), ['company', true, SHOP]);
     assert.equal(await page.locator('#sp-roster').evaluate(el => el.classList.contains('ss-lit')), true);
@@ -742,10 +741,10 @@ test('a redraw keeps a lit question or "n more" row lit, so Enter does what it s
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowDown');
     await page.evaluate(() => ssDataChanged());
-    // Which question Enter asks is what is under test, not the tab it draws.
-    await page.evaluate(() => { ssSupply = v => { window.__asked = v; }; });
+    // Which question Enter asks is what is under test, not the view it draws.
+    await page.evaluate(() => { openRoute = v => { window.__asked = v; }; });
     await page.keyboard.press('Enter');
-    assert.equal(await page.evaluate(() => window.__asked), 'factories');
+    assert.equal(await page.evaluate(() => window.__asked), 'supply/production');
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
 });
@@ -754,7 +753,7 @@ test('the answer\'s own controls leave the landing up, and a redrawn answer is l
   const page = await board();
   try {
     // The profit landing: the chart's series toggles above it are a view, not a way out.
-    await page.click('#ssAsk .ss-aq[data-ask="profit"]');
+    await page.evaluate(() => ssAsk('profit'));
     await page.evaluate(() => { $('dailyHead').innerHTML = '<span class="seg"><a href="#" id="probeSeries">Revenue</a></span>'; });
     await page.click('#probeSeries');
     await page.waitForTimeout(50);
@@ -822,7 +821,7 @@ test('a touch never lights a row; the viewport is watched only while the palette
 test('fed: switching Supply to another tab takes the landing down', async () => {
   const page = await board();
   try {
-    await page.click('#ssAsk .ss-aq[data-ask="fed"]');
+    await page.evaluate(() => ssAsk('fed'));
     assert.equal(await page.locator('#secFactories.ss-lit').count(), 1);
     assert.equal(await page.evaluate(() => sub.supply), 'factories');
     await page.click('#supplyNav a[data-id="shops"]');
@@ -834,7 +833,7 @@ test('fed: switching Supply to another tab takes the landing down', async () => 
 test('profit: switching the portfolio to Operations takes the landing down', async () => {
   const page = await board();
   try {
-    await page.click('#ssAsk .ss-aq[data-ask="profit"]');
+    await page.evaluate(() => ssAsk('profit'));
     await page.evaluate(() => {
       $('portHead').innerHTML = '<div class="sechead"><h2>Portfolio</h2><span class="seg"><a href="#" id="probeOps">Operations</a></span></div>';
       $('probeOps').onclick = () => { view = 'ops'; };
@@ -856,7 +855,7 @@ const quietRender = page => page.evaluate(() => {
 test('hire: a live refresh lights the same roster again, whatever the staffing card picks by then', async () => {
   const page = await board();
   try {
-    await page.click('#ssAsk .ss-aq[data-ask="hire"]');
+    await page.evaluate(() => ssAsk('hire'));
     assert.equal(await page.locator('#sp-roster.ss-lit').count(), 1);
     const strip = await page.locator('.ss-asked').innerText();
     // The next save makes the card pick another shop; the refresh redraws the panel.
@@ -876,7 +875,7 @@ test('hire: a live refresh lights the same roster again, whatever the staffing c
 test('hire: another site picked with the keyboard takes the landing down', async () => {
   const page = await board();
   try {
-    await page.click('#ssAsk .ss-aq[data-ask="hire"]');
+    await page.evaluate(() => ssAsk('hire'));
     assert.equal(await page.locator('#sp-roster.ss-lit').count(), 1);
     await page.waitForTimeout(100);  // the landing's own click has been checked
     await page.focus('#sitePick .sitepick');
@@ -890,9 +889,9 @@ test('hire: another site picked with the keyboard takes the landing down', async
 test('import: leaving Supply takes the change checklist\'s landing down', async () => {
   const page = await board();
   try {
-    await page.click('#ssAsk .ss-aq[data-ask="import"]');
+    await page.evaluate(() => ssAsk('import'));
     assert.equal(await page.locator('#sbStrip.ss-lit').count(), 1);
-    await page.click('#nav a[data-id="today"]');
+    await page.click('#nav a[data-id="overview"]');
     await page.waitForFunction(() => !document.querySelector('.ss-asked, .ss-lit, .ss-dim'));
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
@@ -901,7 +900,7 @@ test('import: leaving Supply takes the change checklist\'s landing down', async 
 test('prices: moving off the guide\'s prices address takes the landing down', async () => {
   const page = await board();
   try {
-    await page.click('#ssAsk .ss-aq[data-ask="prices"]');
+    await page.evaluate(() => ssAsk('prices'));
     await page.waitForSelector('#pageWiki .ss-asked', {timeout: 5000});
     // The same guide, without the section: the prices are still drawn, but not asked for.
     await page.evaluate(() => { location.hash = location.hash.replace(/\/prices$/, ''); });
@@ -922,7 +921,7 @@ test('where to open: switching the finder off takes the landing down', async () 
       cityMapPage = {fs: {on: false}, finderOn(){ return this.fs.on; }, paintView(){}, wakeBall(){}};
       openFinder = () => { showPage('map'); cityMapPage.fs.on = true; };
     });
-    await page.click('#ssAsk .ss-aq[data-ask="open"]');
+    await page.evaluate(() => ssAsk('open'));
     await page.waitForSelector('#pageMap .ss-asked');
     assert.equal(await page.locator('#cityMapPage .places.ss-lit').count(), 1);
     await page.evaluate(() => { cityMapPage.fs.on = false; document.body.click(); });
@@ -955,7 +954,7 @@ test('"What am I playing on?" opens the difficulty chip\'s settings where the re
   const page = await board({width: 1600});
   try {
     await withChip(page);
-    await page.click('#ssAsk .ss-aq[data-ask="playing"]');
+    await page.evaluate(() => ssAsk('playing'));
     // No page to go to and no strip: the chip on the build line, its popover open.
     assert.equal(await page.evaluate(() => page), 'today');
     assert.equal(await page.locator('.ss-asked').count(), 0);
@@ -985,7 +984,7 @@ test('at 1500 px and under "What am I playing on?" opens the footer\'s chip, in 
   try {
     await withChip(page);
     await page.evaluate(() => { document.body.style.paddingBottom = '3000px'; window.scrollTo(0, 0); });
-    await page.click('#ssAsk .ss-aq[data-ask="playing"]');
+    await page.evaluate(() => ssAsk('playing'));
     const chip = page.locator('#footDiff .fv-diff');
     assert.equal(await chip.evaluate(el => el.classList.contains('ss-lit')), true);
     const [c, p] = await Promise.all([chip.boundingBox(), page.locator('#fvDiffPop').boundingBox()]);
@@ -1019,12 +1018,12 @@ test('a site found in the palette is a link to its address, and opens its page w
     assert.equal(await page.locator('#ssPal').isVisible(), true);
     assert.equal(await page.evaluate(() => siteOpen), false);
     // A plain click opens it here, through the palette: remembered, closed, and
-    // the crumb names Today, where it was searched from.
+    // the crumb names the Overview's list, where it was searched from.
     await link.click();
     assert.equal(await page.locator('#ssPal').isHidden(), true);
     assert.deepEqual(await page.evaluate(() => [location.hash, siteOpen, siteKey, siteFrom && siteFrom.label]),
-      ['#site/secondavenue-2', true, GYM, 'Today']);
-    assert.deepEqual(await page.evaluate(() => ({...history.state.ssFrom})), {label: 'Today', hash: '#today'});
+      ['#site/secondavenue-2', true, GYM, 'Needs attention']);
+    assert.deepEqual(await page.evaluate(() => ({...history.state.ssFrom})), {label: 'Needs attention', hash: '#overview'});
     assert.deepEqual(await page.evaluate(() => ssRecent().map(r => r.id)), [`site:${GYM}`]);
     // Back is Today again.
     await page.goBack();
@@ -1036,12 +1035,12 @@ test('a site found in the palette is a link to its address, and opens its page w
 test('a question that opens a site names the page it was asked from', async () => {
   const page = await board();
   try {
-    await page.click('#ssAsk .ss-aq[data-ask="hire"]');
-    assert.deepEqual(await page.evaluate(() => [location.hash, siteFrom && siteFrom.label]), ['#site/fifthavenue-57', 'Today']);
+    await page.evaluate(() => ssAsk('hire'));
+    assert.deepEqual(await page.evaluate(() => [location.hash, siteFrom && siteFrom.label]), ['#site/fifthavenue-57', 'Needs attention']);
     // Asked from another view, the crumb names that view, as a finding's does.
     await page.evaluate(() => { ssClearAsked(); showSub('supply', 'shops'); showPage('supply'); });
     await page.evaluate(() => ssAsk('hire'));
-    assert.equal(await page.evaluate(() => siteFrom && siteFrom.label), 'Shops');
+    assert.equal(await page.evaluate(() => siteFrom && siteFrom.label), 'Deliveries', 'the Shops scope is Supply › Deliveries');
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
 });
@@ -1082,10 +1081,10 @@ test("a site's page opened from the map over the palette takes the palette down,
     assert.equal(await page.locator('#ssPal').isHidden(), true);
     assert.equal(await page.locator('#locationMapDialog').evaluate(d => d.open), false);
     assert.deepEqual(await page.evaluate(() => [location.hash, siteOpen, siteKey, siteFrom && siteFrom.label]),
-      ['#site/secondavenue-2', true, GYM, 'Today']);
+      ['#site/secondavenue-2', true, GYM, 'Needs attention']);
     // Without a palette, a name on the map says where it was clicked, as any name does.
     await page.evaluate(() => { siteShut(); showPage('today'); siteOpenOver(D.businesses[0].key); });
-    assert.deepEqual(await page.evaluate(() => [siteKey, siteFrom && siteFrom.label]), [SHOP, 'Today']);
+    assert.deepEqual(await page.evaluate(() => [siteKey, siteFrom && siteFrom.label]), [SHOP, 'Needs attention']);
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
 });
@@ -1210,17 +1209,17 @@ test("a question that opened a site's page goes back the way its crumb does", as
     // Asked from Supply's Shops, where the Ask row is the palette's.
     await page.evaluate(() => ssAsk('hire'));
     const strip = page.locator('.ss-asked');
-    assert.match(await strip.innerText(), /Back to Shops/);
+    assert.match(await strip.innerText(), /Back to Deliveries/);
     await strip.locator('[data-ss="back"]').click();
     await page.waitForFunction(() => page === 'supply' && !siteOpen);
-    assert.deepEqual(await page.evaluate(() => [location.hash, sub.supply]), ['#supply', 'shops']);
+    assert.deepEqual(await page.evaluate(() => [location.hash, sub.supply]), ['#supply/deliveries', 'shops']);
     // Back, not a new visit: Forward reaches the site again.
     assert.equal(await page.evaluate(() => history.length), before + 1);
     await page.goForward();
     await page.waitForFunction(() => siteOpen);
     // A landing with no site keeps its page's own way back.
     await page.evaluate(() => { showPage('today'); ssAsk('import'); });
-    assert.match(await page.locator('.ss-asked').innerText(), /Back to Today/);
+    assert.match(await page.locator('.ss-asked').innerText(), /Back to Overview/);
     await page.locator('.ss-asked [data-ss="back"]').click();
     assert.equal(await page.evaluate(() => page), 'today');
     assert.deepEqual(page.errors, []);

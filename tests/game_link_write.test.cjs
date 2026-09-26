@@ -392,10 +392,10 @@ test('the site panel offers the write for its one shop', async (t) => {
   assert.equal(await btn.getAttribute('data-gw-sites'), JSON.stringify([GIFTS]));
 });
 
-/* Where Today's uniform buttons sit: inside their own finding row, clear of
-   the row's text, and never pushing the page sideways, on a desktop and on a
-   phone. Measured at rest and again with the row's detail line opened by
-   focusing a button, as a keyboard does. */
+/* Where the Overview's uniform buttons sit: inside their own finding row,
+   clear of the row's text, its Details and its action, and never pushing the
+   page sideways, on a desktop and on a phone. Measured at rest and again with
+   the row's Details open, reached from the keyboard. */
 test('the uniform buttons sit inside their finding row, clear of its text, at 1440 and 390 px', async (t) => {
   for (const width of [1440, 390]) {
     const page = await linked(t, {approved: true, viewport: {width, height: 900}});
@@ -408,7 +408,8 @@ test('the uniform buttons sit inside their finding row, clear of its text, at 14
       const bad = [];
       for (const row of rows) {
         const r = box(row);
-        const text = [...row.querySelectorAll(':scope > .mark, :scope > .site, :scope > .what, :scope > .amt, :scope > .go, :scope > .more')]
+        const text = [...row.querySelectorAll(':scope > .mark, :scope .ov-t .site, :scope .ov-t .what, :scope .ov-t .ov-k, :scope .ov-now, '
+          + ':scope > .ov-vz, :scope > .ov-det, :scope > .ov-ac, :scope > .ov-x')]
           .filter((el) => { const b = box(el); return b.width > 0 && b.height > 0; });
         for (const btn of row.querySelectorAll('.gw-find .gw-btn')) {
           const b = box(btn), name = btn.textContent.trim();
@@ -428,19 +429,16 @@ test('the uniform buttons sit inside their finding row, clear of its text, at 14
     assert.ok(rest.rows >= 2 && rest.buttons >= 3, `${width}px: ${JSON.stringify(rest)}`);
     assert.deepEqual(rest.bad, [], `${width}px at rest`);
     assert.equal(rest.sideways, false, `${width}px: the page scrolls sideways`);
-    // A keyboard on the button opens the row's detail line; the buttons keep clear of it.
-    await button(page, GIFTS).focus();
-    assert.equal(await page.evaluate(() => !!document.activeElement.closest('.find').querySelector(':scope > .more')), true,
-      `${width}px: the focused row has a detail line`);
-    await page.waitForFunction(() => {
-      const more = document.activeElement.closest('.find').querySelector(':scope > .more');
-      return getComputedStyle(more).opacity === '1' && more.getAnimations().every((a) => a.playState !== 'running');
-    });
-    assert.ok(await page.evaluate(() => document.activeElement.closest('.find').querySelector(':scope > .more')
-      .getBoundingClientRect().height) > 0, `${width}px: the detail line opens`);
+    // From the keyboard: the row's Details opens its pane; the buttons keep clear of it.
+    await button(page, GIFTS).evaluate((b) => b.closest('.find').querySelector('.ov-det').focus());
+    await page.keyboard.press('Enter');
+    assert.deepEqual(await page.evaluate(() => {
+      const row = document.activeElement.closest('.find');
+      return [document.activeElement.getAttribute('aria-expanded'), row.querySelector('.ov-x').getBoundingClientRect().height > 0];
+    }), ['true', true], `${width}px: Details opens its pane from the keyboard`);
     const open = await measure();
-    assert.deepEqual(open.bad, [], `${width}px with the detail line open`);
-    assert.equal(open.sideways, false, `${width}px: the page scrolls sideways with the detail line open`);
+    assert.deepEqual(open.bad, [], `${width}px with Details open`);
+    assert.equal(open.sideways, false, `${width}px: the page scrolls sideways with Details open`);
   }
 });
 

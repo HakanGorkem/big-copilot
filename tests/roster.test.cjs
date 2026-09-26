@@ -1493,7 +1493,10 @@ test('a row that says nothing about the shop\u2019s age does not call it new', a
 
 // --- reaching the block, and reading it without a pointer -------------------
 
-test('the Optimize staffing card lands on the Roster itself', async () => {
+/* The Overview's "Build shop schedules" (the Optimize staffing card's row, by
+   its id) opens Staffing › Schedules on the shop it names; that shop's Open
+   schedule lands on the Roster itself, under the same route. */
+test('Build shop schedules opens its shop in Schedules, and Open schedule lands on the Roster itself', async () => {
   const page = await shop('full');
   try {
     await page.evaluate(() => {
@@ -1502,9 +1505,12 @@ test('the Optimize staffing card lands on the Roster itself', async () => {
          through. The chart is not what this is about. */
       drawChart = () => {};
       drawOptimizeStaffing();
-      wireCards();
+      wireAll();
       $('optimizeStaffingCard').click();
     });
+    assert.deepEqual(await page.evaluate(() => [route, page, !!q('#secSchedules .nx-row.lit [data-sched-open]')]),
+      ['staffing/schedules', 'staffing', true], 'the shop the task names is lit');
+    await page.evaluate(() => q('#secSchedules .nx-row.lit [data-sched-open]').click());
     // The scroll's end state: the Roster near the top of the window, and
     // still there over three frames in a row.
     await page.waitForFunction(() => {
@@ -1515,10 +1521,12 @@ test('the Optimize staffing card lands on the Roster itself', async () => {
     }, null, {polling: 'raf'});
     const where = await page.evaluate(() => {
       return {top: Math.round(q('#sp-roster').getBoundingClientRect().top),
-        arrived: q('#sp-roster').classList.contains('sp-arrived'),
+        arrived: q('#sp-roster').classList.contains('xl-arrived'),
+        route,
         page: [...document.querySelectorAll('.page')].filter(p => !p.hidden).map(p => p.id)};
     });
     assert.deepEqual(where.page, ['pageCompany']);
+    assert.equal(where.route, 'staffing/schedules', "the shop's page stands under Staffing › Schedules");
     // At the top of the window, under the sticky head, rather than wherever
     // the sections above it were estimated to end.
     assert.ok(where.top >= 0 && where.top < 200, `the Roster landed at ${where.top}`);
