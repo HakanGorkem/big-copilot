@@ -12187,7 +12187,7 @@ def _alerts(
         if not reasons:
             reasons.append(
                 msg("f.notrading.ready.office", "staffed and priced, no trading day booked yet")
-                if office else
+                if office or not shelved else
                 msg("f.notrading.ready", "staffed and stocked, no trading day booked yet")
             )
         note(
@@ -20416,15 +20416,18 @@ const spHypeRow = key => {
    is failing (b.notTrading, the same list the not-trading finding reads out);
    grey was never checked, because the alert stops at the first of prices,
    stock and shelves that fails; green is in place. An office has nothing to
-   stock, shelve or deliver, so it shows three. Only a site the not-trading
+   stock, shelve or deliver, so it shows three, and so does a cinema or theater
+   that prices only its issued tickets. Only a site the not-trading
    finding looked at has the list at all, and an empty one means every check
    passed and the site simply has not booked a day yet. */
 function spPreflight(b){
   const failed = b.notTrading;
   const chain = ["prices", "stock", "shelves"];
   const stops = chain.findIndex(s => failed.includes(s));
+  const priced = (b.lines || []).filter(l => l.price > 0);
+  const nothingShelved = b.status === "office" || (priced.length && priced.every(l => l.issued));
   return ["closed", "staff", "prices", "stock", "shelves", "plan"]
-    .filter(s => b.status !== "office" || s === "closed" || s === "staff" || s === "prices")
+    .filter(s => !nothingShelved || s === "closed" || s === "staff" || s === "prices")
     .map(s => ({slug: s, state: failed.includes(s) ? "no"
       : stops >= 0 && chain.indexOf(s) > stops ? "unk" : "ok"}));
 }

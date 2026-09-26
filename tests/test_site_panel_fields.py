@@ -146,8 +146,9 @@ class SiteFieldTests(unittest.TestCase):
         # delivery plan; with popcorn priced and empty it is popcorn that asks.
         cinema, ticket, popcorn = ("ba:businesstype_cinema", "ba:itemname_cinematicket",
                                    "ba:itemname_popcorn")
-        b, _ = self.silent(btype=cinema, prices=[(ticket, 12.0)], crew=CREW)
+        b, alerts = self.silent(btype=cinema, prices=[(ticket, 12.0)], crew=CREW)
         self.assertEqual(b["notTrading"], [])
+        self.assertIn("staffed and priced", alerts["lines"][0]["text"])
         self.assertTrue(next(l for l in b["lines"] if l["slug"] == ticket)["issued"])
         b, _ = self.silent(btype=cinema, prices=[(ticket, 12.0), (popcorn, 4.0)], crew=CREW)
         self.assertEqual(b["notTrading"], ["stock", "plan"])

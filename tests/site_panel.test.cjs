@@ -288,6 +288,17 @@ test('a silent shop shows the six pre-flight checks in the order it needs them',
     ]);
   } finally { await stock.close(); }
 
+  // A cinema pricing only its tickets has nothing to stock, shelve or deliver
+  // (issue #159): three lamps, as an office has.
+  const ticket = {item: 'Cinema Ticket', slug: 'ba:itemname_cinematicket', units: 0, rate: 0,
+                  price: 12, revenue: 0, soldPerDay: 0, issued: true};
+  const cinema = await site({shop: {revenue: 0, notTrading: [], lines: [ticket]}});
+  try {
+    const checks = await cinema.$$eval('#sitePanel .sp-pre [data-check]', els =>
+      els.map(e => [e.dataset.check, e.className]));
+    assert.deepEqual(checks, [['closed', 'ok'], ['staff', 'ok'], ['prices', 'ok']]);
+  } finally { await cinema.close(); }
+
   // Shut with the game's switch and otherwise ready: the door is the one red
   // lamp, and its tip says closed rather than "missing: open".
   const closed = await site({shop: {revenue: 0, notTrading: ['closed']}});
