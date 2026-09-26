@@ -639,6 +639,11 @@ RESELLER_TYPES = RETAIL_TYPES - {
     "ba:businesstype_theater",
 }
 
+# Tickets a cinema or theater issues at the kiosk or booth: sold like a product,
+# but nothing imports, makes or shelves them, so no plan, top-up, pressure or
+# on-hand figure applies to them.
+ISSUED_ITEMS = {"ba:itemname_cinematicket", "ba:itemname_theaterticket"}
+
 # The office agencies left out of RETAIL_TYPES above. Their customers are digital,
 # so nothing a shop floor needs (amenities, uniforms, shelves) applies, but they
 # trade like a shop in every other way: each sells one hourly fee that the city's
@@ -2543,6 +2548,7 @@ def _business(save, names, b, addr, latest, history, staff_by_addr, day) -> dict
                 "revenue": money(revenue_by_item[item] / span),
                 "soldPerDay": round(units_sold[item] / span),
                 "soldPerWeek": round(units_sold[item] / span * 7),
+                **({"issued": True} if item in ISSUED_ITEMS else {}),
                 # Unrounded, for _products() alone, which takes them off the
                 # payload: a price from rounded units is no price.
                 "_sold": units_sold[item] / span,
@@ -11816,10 +11822,12 @@ def _plan(
     # good a shop stocks or a factory makes, so no fee belongs in a chain the
     # sliders plan. Every business help page is read once: its fees classify
     # services across the whole game, and its text is kept for the furniture
-    # block a service type's range is read from below.
+    # block a service type's range is read from below. A ticket is issued, not
+    # made or imported, so it counts as a service too, though its page links it
+    # as a product.
     fee_re = re.compile(r"\[([^\]]+)\]\(fees-([a-z0-9_]+)\)")
     good_re = re.compile(r"\[([^\]]+)\]\(products-([a-z0-9_]+)\)")
-    services = set()
+    services = set(ISSUED_ITEMS)
     pages = {}
     for key, text in names.locale.items():
         match = _BUSINESS_HELP_RE.match(key)
@@ -22431,11 +22439,11 @@ function drawSite(){
                 num(f.setTo)}</b></span>` : num(deal)}<small ${SMALL} data-tip="${attr(t.wholesaleDay
                 ? tt("sp.shelf.wholesale.day", "Delivered by a wholesale store each {day}", {day: WEEKDAY_NAMES.includes(t.wholesaleDay) ? ttDay(WEEKDAY_NAMES.indexOf(t.wholesaleDay)) : t.wholesaleDay})
                 : tt("sp.shelf.wholesale.week", "Delivered by a wholesale store each week"))}">${tt("sp.stock.wholesale", "/wk wholesale")}</small>`
-            : !t || !t.target ? (sp ? `<span class="sp-noplan" data-el="noplan">${spIcon("route")}${tt("sp.noplan", "no plan")}</span>` : "—")
+            : !t || !t.target ? (sp && !l.issued ? `<span class="sp-noplan" data-el="noplan">${spIcon("route")}${tt("sp.noplan", "no plan")}</span>` : "—")
             : over ? `<span class="sp-up${f.st === "short" ? " bad" : ""}" data-el="raise">${num(t.target)} ${spIcon("right")} <b>${
                 num(f.setTo)}</b></span>` : num(t.target)}</td>
           <td class="gauge${f.st === "short" ? " low" : ""}">${gauge(t, f)}</td>
-          <td>${sp && !l.units ? `<span class="sp-red">${num(l.units)}</span>` : num(l.units)}</td></tr>`;
+          <td>${l.issued ? "—" : sp && !l.units ? `<span class="sp-red">${num(l.units)}</span>` : num(l.units)}</td></tr>`;
       }).join("")}</tbody></table>` : `<p class="quiet">${tt("sp.shelf.none", "Nothing stocked here.")}</p>`;
   const shelfMore = shelved && !office && sideShelves.length ? `
     <p class="quiet" style="margin:12px 0 0"><a class="link" href="#" id="shelfToggle" aria-expanded="${showAllShelves}">${

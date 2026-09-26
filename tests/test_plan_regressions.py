@@ -128,6 +128,14 @@ class PlannerRegressions(unittest.TestCase):
         self.assertIn(ITEM + "energydrink", products)
         self.assertIn(ITEM + "sodacan", products)
 
+    def test_a_ticket_is_a_service_not_a_bought_in_product(self):
+        # Issue #159: the planner called a cinema ticket "bought in" from an importer.
+        catalogue = self.plan()["catalogue"]
+        for kind, ticket in (("cinema", "cinematicket"), ("theater", "theaterticket")):
+            entry = catalogue["ba:businesstype_" + kind]
+            self.assertNotIn(ITEM + ticket, entry["products"])
+            self.assertIn(ITEM + ticket, entry["services"])
+
     def test_service_revenue_catalogue_is_preserved(self):
         self.plan()
         self.assertIn(ITEM + "gymcovercharge", self.catalogue[GYM])
