@@ -135,6 +135,8 @@ class PlannerRegressions(unittest.TestCase):
             entry = catalogue["ba:businesstype_" + kind]
             self.assertNotIn(ITEM + ticket, entry["products"])
             self.assertIn(ITEM + ticket, entry["services"])
+            # Its concessions keep the type in the planner.
+            self.assertIn(ITEM + "popcorn", entry["products"])
 
     def test_service_revenue_catalogue_is_preserved(self):
         self.plan()

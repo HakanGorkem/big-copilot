@@ -969,6 +969,7 @@ _RECIPE_LINK_RE = re.compile(r"\[([^\]]+)\]\(recipes-([a-z0-9_]+)\)")
 # the same ba:itemname_ slug underneath.
 _BUSINESS_HELP_RE = re.compile(r"^help_(ba:businesstype_[a-z0-9_]+)_content$")
 _SELLS_HEADER_RE = re.compile(r"Businesses of this type (?:primarily sell|can sell):")
+_EXTRAS_HEADER_RE = re.compile(r"can additionally sell:")
 _SOLD_ITEM_RE = re.compile(r"\[([^\]]+)\]\((?:products|fees)-([a-z0-9_]+)\)")
 
 SERVICE_SKILL = "ba:skill_customerservice"
@@ -11853,6 +11854,13 @@ def _plan(
             # block above its sell list names them with product links. Those
             # links, deduplicated, are what the planner can plan for the type.
             physical.update("ba:itemname_" + s for _n, s in good_re.findall(before))
+        if sold & ISSUED_ITEMS and header:
+            # A cinema or theater's ticket is its whole primary range, so its
+            # concessions (popcorn, martinis) are what the planner can plan.
+            extra = _EXTRAS_HEADER_RE.search(text, header.end())
+            if extra:
+                block = text[extra.end() :].lstrip("\n").split("\n\n", 1)[0]
+                physical.update("ba:itemname_" + s for _n, s in good_re.findall(block))
         catalogue_out[kind] = {
             "type": names.label(kind),
             "products": sorted(physical),
@@ -12146,7 +12154,9 @@ def _alerts(
         office = b["status"] == "office"
         silent.add(b["key"])
         priced = [l for l in b["lines"] if l["price"] > 0]
-        stocked = [l for l in priced if l["units"] > 0]
+        # A ticket is issued, never shelved, so only the other lines need stock.
+        shelved = [l for l in priced if not l.get("issued")]
+        stocked = [l for l in shelved if l["units"] > 0]
         # Which of the six pre-flight checks fail is the finding, so the slugs
         # are kept on the business beside the words: the site panel reads the
         # same list and the two cannot drift apart. An office sells hours, not
@@ -12163,14 +12173,14 @@ def _alerts(
         if not priced:
             failed.append("prices")
             reasons.append(msg("f.notrading.prices", "no prices set"))
-        elif not office and not stocked:
+        elif not office and shelved and not stocked:
             failed.append("stock")
             reasons.append(msg("f.notrading.stock", "no stock"))
-        elif not office and len(stocked) * 2 < len(priced):
+        elif not office and len(stocked) * 2 < len(shelved):
             failed.append("shelves")
             reasons.append(msg("f.notrading.shelves", "{n} of {of} shelves bare",
-                               n=len(priced) - len(stocked), of=len(priced)))
-        if not office and b["key"] not in planned:
+                               n=len(shelved) - len(stocked), of=len(shelved)))
+        if not office and (shelved or not priced) and b["key"] not in planned:
             failed.append("plan")
             reasons.append(msg("f.notrading.plan", "no delivery plan"))
         b["notTrading"] = failed
