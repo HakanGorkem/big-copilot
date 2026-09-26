@@ -1,5 +1,23 @@
 # Big Copilot redesign — fresh-session handover
 
+## Current checkpoint — 26 September 2026, second handover
+
+Peter asked for a second fresh-session handover at the chunk 1 validation boundary. **Use this section as the current state; the original handover below is retained as history and its old HEADs, pending merge, worker-stop and test statements are superseded.** The owner finished, the final gate completed, and the local candidate was snapshotted. Independent re-review and chunks 2–3 belong to the fresh session.
+
+- User authorization remains all three sequential redesign chunks with `claude-opus-5-5` implementation owners, an independent Opus 5.5 code reviewer and GPT-6 Sol functional/visual QA. No execution time limits, public push, deployment, main merge or TEMPLATE extraction E. Preserve unrelated working changes.
+- `origin/main` at `ca69a81` (PR #121 Staff hiring) **has been reconciled** into the shell implementation branch. The integration docs include 112 mapped capabilities (105 original plus H01–H07), 31 finding kinds, supported hire/office writes and separate Staffing › Staff needs / Payroll.
+- Implementation worktree: `C:/Users/Peter/.codex/worktrees/ui-redesign-shell/Big Ambitions`, branch `codex/ui-redesign-shell`, clean at local commit **`a09d162`** (`Complete UI shell acceptance corrections`), built on the PR #121 merge commit `a847704`. The resumed exact Opus 5.5 owner session `deaf483d-6b30-4e24-a5e5-3115d7a91696` completed successfully and its CLI process exited normally. Prompt, result/model metadata and final logs are in `execution/c1-acceptance-fixes/`.
+- Read-only review worktree: `C:/Users/Peter/.codex/worktrees/ui-redesign-review/Big Ambitions`, clean and detached at **`a09d162`**. Earlier independent code, functional and visual reports in `execution/c1-final-code-review/`, `c1-final-functional-qa/` and `c1-final-visual-qa/` held acceptance at `a847704`. Their defects have been addressed, but **this new candidate has not been independently rechecked or accepted**.
+- Integration/docs worktree: `C:/Users/Peter/.codex/worktrees/ui-ux-audit/Big Ambitions`, branch `codex/ui-redesign-integration`, clean at its local handover commit. Chunk 1 source is not yet merged there. Main checkout remains untouched and dirty with unrelated work.
+- The acceptance fixes cover dark CSS tokens, selected-plan Schedules counts, `#staff` landing, Finder route and selected-building reload, Search hiring route, short-phone first action, office-inclusive schedule wording, dark label contrast, narrow Finder-card scroll and highlighted-row padding. The owner recorded them in `docs/ui-chunk-1-handoff.md` in the shell checkout. **Final-source gate:** `python build_web.py --check` current; Python 1,354 tests OK (one skipped); Node 1,187 tests, 1,186 pass, zero fail, one skipped; `BOARD_TARGET=web` 409/409 after a test-selector correction; CLI Search 54/54. The first web rerun had one intermittent `.wordmark` click failure because the built page retains a hidden landing wordmark; the test now targets the board masthead and retains its assertions. A discarded test experiment manually removed the landing before `web/app.js` moved its children and caused an isolated `appendChild(null)` error; the current test passed 10/10 focused runs in both web and CLI targets. Both failures and their diagnosis are retained in `execution/c1-acceptance-fixes/test-logs/` and the chunk handoff.
+- Durable private coordination note: `C:/Users/Peter/.codex/handoffs/big-copilot-ui-redesign-2026-09-26/execution/orchestration-status.md`. Chunk 2/3 Opus briefs there have been reconciled with PR #121. Continue from the live worktrees and local history; do not reapply the old backup patch.
+
+**Next handover actions:** run the prepared independent Opus 5.5 recheck prompt (`execution/c1-recheck-code-prompt.txt`) and GPT-6 Sol functional/visual rechecks on the frozen `a09d162` checkout. Fix any real blocker before accepting chunk 1. Then merge the accepted shell branch into the integration branch locally, create an isolated chunk-2 worktree from that integrated base, and continue the planned sequence through chunk 3. Do not push, deploy or merge to main.
+
+---
+
+## Original handover (historical state)
+
 26 September 2026. Peter asked for a handover because the orchestration conversation was long. **Stop point: chunk 1 is implemented but NOT accepted; its worker is stopped, and no upstream merge has been started.** Continue the existing three-chunk implementation, not a new design exercise.
 
 ## Read these first

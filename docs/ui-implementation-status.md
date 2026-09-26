@@ -1,5 +1,17 @@
 # UI redesign execution status
 
+## Current handover checkpoint — 26 September 2026
+
+Peter requested a fresh-session handover after chunk 1 validation. **Chunk 1 is a clean local candidate, not accepted.** The source worktree `C:/Users/Peter/.codex/worktrees/ui-redesign-shell/Big Ambitions` is at `a09d162` on `codex/ui-redesign-shell`; the clean read-only review worktree is detached at the same commit. The exact `claude-opus-5-5` implementation owner completed and exited normally. No implementation or QA process is running. Independent re-review of this candidate has not started.
+
+The reconciled baseline is `origin/main` `ca69a81` with PR #121 Staff hiring, office scheduling and supported writes. The ledger has 112 mapped capabilities and 31 finding kinds. Chunk 1 correction details and screenshots are in the shell checkout's `docs/ui-chunk-1-handoff.md` and private `C:/Users/Peter/.codex/handoffs/big-copilot-ui-redesign-2026-09-26/execution/chunk1-review2-shots/`. The final source/build checks passed: Python 1,354 OK (one skipped), Node 1,186 pass (one skipped), built-web target 409/409, and `build_web.py --check` current. The built-web test needed a more precise board wordmark selector; one failed attempt and the diagnosis are preserved in `execution/c1-acceptance-fixes/test-logs/`.
+
+**Next:** independent Opus 5.5 code re-review and GPT-6 Sol functional/visual QA on `a09d162`; fix any real blocker before accepting. Then integrate chunk 1 locally and proceed sequentially with chunk 2 Supply/Staffing and chunk 3 Businesses/Expansion. No push, deployment or main merge; TEMPLATE extraction E remains out of scope. See the current top section of [the handover](ui-redesign-handoff.md) for exact paths and prompts. The older checkpoints below are historical and their HEAD, worker-running and pending-merge statements are superseded.
+
+---
+
+## Earlier checkpoints (historical)
+
 Implementation authorized by Peter on 26 September 2026. Coordinator: current Codex session.
 
 **HANDOVER CHECKPOINT:** Peter requested a fresh-session handover. The Opus worker was stopped between commands after its targeted baseline check completed; no implementation writer remains active. Source changes are preserved uncommitted, with a durable patch/evidence backup. No upstream merge or review correction pass has started. Read [ui-redesign-handoff.md](ui-redesign-handoff.md) before resuming.

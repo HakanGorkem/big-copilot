@@ -411,7 +411,7 @@ Review against these conditions:
 
 - At 1440×900 and on a phone, the first substantive section clearly demonstrates Needs attention and a useful next action.
 - Long/critical and healthy/insufficient-data states preserve honesty and don't turn the hero into a decorative score.
-- All 105 capability IDs and 31 finding kinds remain accounted for. Two entry points open the same underlying workflow where specified.
+- All 112 mapped capability IDs and 31 finding kinds remain accounted for. Two entry points open the same underlying workflow where specified.
 - A user can locate imports, factory hours, staffing, prices and premises through visible labels without Search.
 - Each reviewed finding retains its site/item, basis, units, origin and return path.
 - Manual notes, applied writes and verified outcomes look distinct. Unsupported operations are not presented as automated fixes.
