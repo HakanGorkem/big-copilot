@@ -288,6 +288,17 @@ test('a silent shop shows the six pre-flight checks in the order it needs them',
     ]);
   } finally { await stock.close(); }
 
+  // A cinema pricing only its tickets has nothing to stock, shelve or deliver
+  // (issue #159): three lamps, as an office has.
+  const ticket = {item: 'Cinema Ticket', slug: 'ba:itemname_cinematicket', units: 0, rate: 0,
+                  price: 12, revenue: 0, soldPerDay: 0, issued: true};
+  const cinema = await site({shop: {revenue: 0, notTrading: [], lines: [ticket]}});
+  try {
+    const checks = await cinema.$$eval('#sitePanel .sp-pre [data-check]', els =>
+      els.map(e => [e.dataset.check, e.className]));
+    assert.deepEqual(checks, [['closed', 'ok'], ['staff', 'ok'], ['prices', 'ok']]);
+  } finally { await cinema.close(); }
+
   // Shut with the game's switch and otherwise ready: the door is the one red
   // lamp, and its tip says closed rather than "missing: open".
   const closed = await site({shop: {revenue: 0, notTrading: ['closed']}});
@@ -1520,6 +1531,26 @@ test('the zero-stock row says why there is none of it, for every verdict', async
       assert.equal(await page.locator('#sp-stock tbody tr .sp-red').count(), 1, status);
     } finally { await page.close(); }
   }
+});
+test('a cinema ticket is issued, not stocked: no plan chip and no red zero', async () => {
+  // Issue #159. Popcorn beside it is real stock and still asks for a plan.
+  const line = (item, slug, units, over = {}) => ({item, slug, units, rate: 100, tradeRate: 100,
+    weekSold: 700, price: 12, configuredPrice: 12, revenue: 1200, soldPerDay: 100, soldPerWeek: 700,
+    cover: null, ...over});
+  const page = await site({shop: {type: 'Cinema', lines: [
+    line('Cinema Ticket', 'ba:itemname_cinematicket', 0, {issued: true}),
+    line('Popcorn', 'ba:itemname_popcorn', 0),
+  ]}});
+  try {
+    const rows = await page.$$eval('#sp-shelves tbody tr', trs => trs.map(tr => ({
+      item: tr.querySelector('td.l').firstChild.textContent.trim(),
+      noplan: !!tr.querySelector('.sp-noplan'), red: !!tr.querySelector('.sp-red'),
+      onHand: tr.lastElementChild.textContent.trim()})));
+    const ticket = rows.find(r => r.item === 'Cinema Ticket');
+    const popcorn = rows.find(r => r.item === 'Popcorn');
+    assert.deepEqual(ticket, {item: 'Cinema Ticket', noplan: false, red: false, onHand: '—'});
+    assert.deepEqual(popcorn, {item: 'Popcorn', noplan: true, red: true, onHand: '0'});
+  } finally { await page.close(); }
 });
 // --- a home -----------------------------------------------------------------
 // A flat is the one address the panel draws that is not a business. It is

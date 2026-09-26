@@ -639,6 +639,11 @@ RESELLER_TYPES = RETAIL_TYPES - {
     "ba:businesstype_theater",
 }
 
+# Tickets a cinema or theater issues at the kiosk or booth: sold like a product,
+# but nothing imports, makes or shelves them, so no plan, top-up, pressure or
+# on-hand figure applies to them.
+ISSUED_ITEMS = {"ba:itemname_cinematicket", "ba:itemname_theaterticket"}
+
 # The office agencies left out of RETAIL_TYPES above. Their customers are digital,
 # so nothing a shop floor needs (amenities, uniforms, shelves) applies, but they
 # trade like a shop in every other way: each sells one hourly fee that the city's
@@ -964,6 +969,7 @@ _RECIPE_LINK_RE = re.compile(r"\[([^\]]+)\]\(recipes-([a-z0-9_]+)\)")
 # the same ba:itemname_ slug underneath.
 _BUSINESS_HELP_RE = re.compile(r"^help_(ba:businesstype_[a-z0-9_]+)_content$")
 _SELLS_HEADER_RE = re.compile(r"Businesses of this type (?:primarily sell|can sell):")
+_EXTRAS_HEADER_RE = re.compile(r"can additionally sell:")
 _SOLD_ITEM_RE = re.compile(r"\[([^\]]+)\]\((?:products|fees)-([a-z0-9_]+)\)")
 
 SERVICE_SKILL = "ba:skill_customerservice"
@@ -2543,6 +2549,7 @@ def _business(save, names, b, addr, latest, history, staff_by_addr, day) -> dict
                 "revenue": money(revenue_by_item[item] / span),
                 "soldPerDay": round(units_sold[item] / span),
                 "soldPerWeek": round(units_sold[item] / span * 7),
+                **({"issued": True} if item in ISSUED_ITEMS else {}),
                 # Unrounded, for _products() alone, which takes them off the
                 # payload: a price from rounded units is no price.
                 "_sold": units_sold[item] / span,
@@ -11816,10 +11823,12 @@ def _plan(
     # good a shop stocks or a factory makes, so no fee belongs in a chain the
     # sliders plan. Every business help page is read once: its fees classify
     # services across the whole game, and its text is kept for the furniture
-    # block a service type's range is read from below.
+    # block a service type's range is read from below. A ticket is issued, not
+    # made or imported, so it counts as a service too, though its page links it
+    # as a product.
     fee_re = re.compile(r"\[([^\]]+)\]\(fees-([a-z0-9_]+)\)")
     good_re = re.compile(r"\[([^\]]+)\]\(products-([a-z0-9_]+)\)")
-    services = set()
+    services = set(ISSUED_ITEMS)
     pages = {}
     for key, text in names.locale.items():
         match = _BUSINESS_HELP_RE.match(key)
@@ -11845,6 +11854,13 @@ def _plan(
             # block above its sell list names them with product links. Those
             # links, deduplicated, are what the planner can plan for the type.
             physical.update("ba:itemname_" + s for _n, s in good_re.findall(before))
+        if sold & ISSUED_ITEMS and header:
+            # A cinema or theater's ticket is its whole primary range, so its
+            # concessions (popcorn, martinis) are what the planner can plan.
+            extra = _EXTRAS_HEADER_RE.search(text, header.end())
+            if extra:
+                block = text[extra.end() :].lstrip("\n").split("\n\n", 1)[0]
+                physical.update("ba:itemname_" + s for _n, s in good_re.findall(block))
         catalogue_out[kind] = {
             "type": names.label(kind),
             "products": sorted(physical),
@@ -12138,7 +12154,9 @@ def _alerts(
         office = b["status"] == "office"
         silent.add(b["key"])
         priced = [l for l in b["lines"] if l["price"] > 0]
-        stocked = [l for l in priced if l["units"] > 0]
+        # A ticket is issued, never shelved, so only the other lines need stock.
+        shelved = [l for l in priced if not l.get("issued")]
+        stocked = [l for l in shelved if l["units"] > 0]
         # Which of the six pre-flight checks fail is the finding, so the slugs
         # are kept on the business beside the words: the site panel reads the
         # same list and the two cannot drift apart. An office sells hours, not
@@ -12155,21 +12173,21 @@ def _alerts(
         if not priced:
             failed.append("prices")
             reasons.append(msg("f.notrading.prices", "no prices set"))
-        elif not office and not stocked:
+        elif not office and shelved and not stocked:
             failed.append("stock")
             reasons.append(msg("f.notrading.stock", "no stock"))
-        elif not office and len(stocked) * 2 < len(priced):
+        elif not office and len(stocked) * 2 < len(shelved):
             failed.append("shelves")
             reasons.append(msg("f.notrading.shelves", "{n} of {of} shelves bare",
-                               n=len(priced) - len(stocked), of=len(priced)))
-        if not office and b["key"] not in planned:
+                               n=len(shelved) - len(stocked), of=len(shelved)))
+        if not office and (shelved or not priced) and b["key"] not in planned:
             failed.append("plan")
             reasons.append(msg("f.notrading.plan", "no delivery plan"))
         b["notTrading"] = failed
         if not reasons:
             reasons.append(
                 msg("f.notrading.ready.office", "staffed and priced, no trading day booked yet")
-                if office else
+                if office or not shelved else
                 msg("f.notrading.ready", "staffed and stocked, no trading day booked yet")
             )
         note(
@@ -20398,15 +20416,18 @@ const spHypeRow = key => {
    is failing (b.notTrading, the same list the not-trading finding reads out);
    grey was never checked, because the alert stops at the first of prices,
    stock and shelves that fails; green is in place. An office has nothing to
-   stock, shelve or deliver, so it shows three. Only a site the not-trading
+   stock, shelve or deliver, so it shows three, and so does a cinema or theater
+   that prices only its issued tickets. Only a site the not-trading
    finding looked at has the list at all, and an empty one means every check
    passed and the site simply has not booked a day yet. */
 function spPreflight(b){
   const failed = b.notTrading;
   const chain = ["prices", "stock", "shelves"];
   const stops = chain.findIndex(s => failed.includes(s));
+  const priced = (b.lines || []).filter(l => l.price > 0);
+  const nothingShelved = b.status === "office" || (priced.length && priced.every(l => l.issued));
   return ["closed", "staff", "prices", "stock", "shelves", "plan"]
-    .filter(s => b.status !== "office" || s === "closed" || s === "staff" || s === "prices")
+    .filter(s => !nothingShelved || s === "closed" || s === "staff" || s === "prices")
     .map(s => ({slug: s, state: failed.includes(s) ? "no"
       : stops >= 0 && chain.indexOf(s) > stops ? "unk" : "ok"}));
 }
@@ -22431,11 +22452,11 @@ function drawSite(){
                 num(f.setTo)}</b></span>` : num(deal)}<small ${SMALL} data-tip="${attr(t.wholesaleDay
                 ? tt("sp.shelf.wholesale.day", "Delivered by a wholesale store each {day}", {day: WEEKDAY_NAMES.includes(t.wholesaleDay) ? ttDay(WEEKDAY_NAMES.indexOf(t.wholesaleDay)) : t.wholesaleDay})
                 : tt("sp.shelf.wholesale.week", "Delivered by a wholesale store each week"))}">${tt("sp.stock.wholesale", "/wk wholesale")}</small>`
-            : !t || !t.target ? (sp ? `<span class="sp-noplan" data-el="noplan">${spIcon("route")}${tt("sp.noplan", "no plan")}</span>` : "—")
+            : !t || !t.target ? (sp && !l.issued ? `<span class="sp-noplan" data-el="noplan">${spIcon("route")}${tt("sp.noplan", "no plan")}</span>` : "—")
             : over ? `<span class="sp-up${f.st === "short" ? " bad" : ""}" data-el="raise">${num(t.target)} ${spIcon("right")} <b>${
                 num(f.setTo)}</b></span>` : num(t.target)}</td>
           <td class="gauge${f.st === "short" ? " low" : ""}">${gauge(t, f)}</td>
-          <td>${sp && !l.units ? `<span class="sp-red">${num(l.units)}</span>` : num(l.units)}</td></tr>`;
+          <td>${l.issued ? "—" : sp && !l.units ? `<span class="sp-red">${num(l.units)}</span>` : num(l.units)}</td></tr>`;
       }).join("")}</tbody></table>` : `<p class="quiet">${tt("sp.shelf.none", "Nothing stocked here.")}</p>`;
   const shelfMore = shelved && !office && sideShelves.length ? `
     <p class="quiet" style="margin:12px 0 0"><a class="link" href="#" id="shelfToggle" aria-expanded="${showAllShelves}">${
