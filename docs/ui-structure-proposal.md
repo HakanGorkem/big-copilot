@@ -106,7 +106,7 @@ Present the current setting, proposed setting, units, expected consequence and b
 ### Execution paths
 
 - **Save-file/manual:** show the game setting and destination, let the user copy relevant changes, and mark their own progress. A local tick is “Marked done by you,” not game confirmation.
-- **Game link:** preview only supported writes. Current write families are import amounts, shop staffing plans and missing uniforms. Show refusals, uncovered amounts, changed conditions, permission waiting and the actual undo scope. Do not invent writes for delivery routes, factory hours, hiring, purchases or every recommendation.
+- **Game link:** preview only supported writes. Current write families include import amounts, shop and office scheduling, hiring/moves, and missing uniforms. Show refusals, uncovered amounts, changed conditions, permission waiting and the actual undo scope. Hiring has no undo. Do not invent writes for delivery routes, factory hours, purchases or every recommendation.
 - **Check again:** reread the game or ask for a newer save. Only updated data that supports the claim can mark the issue resolved. A successful write can be acknowledged while outcome verification remains pending.
 
 Afterward, keep the result understandable and offer Back to Needs attention. A Next finding action is an optional queue-navigation improvement, not an existing capability assumed complete. Preserve reading position, filters and selection through refresh. Don't suddenly reorder the queue under the pointer. A changed recommendation invalidates an old manual mark where the current semantics require it.
@@ -141,9 +141,9 @@ Factory running hours and the workers they require form one Supply workflow. **S
 
 ### Staffing
 
-**Schedules** starts with a recognizable choice of business and useful existing plan status, then opens the current shop scheduling workflow. It includes customer-hour evidence, existing/proposed comparison, Cover/Demand plan, full-cover measurement mode, entry ticks and eligible writes. Expose eligibility: an office can have staff/capacity evidence without supporting the same shop scheduling plan. Provide a clearly labeled Factory staffing link to Supply → Production.
+**Schedules** starts with a recognizable choice of business and useful existing plan status, then opens the current shop or office scheduling workflow. Shop planning includes customer-hour evidence, existing/proposed comparison, Cover/Demand plan, full-cover measurement mode, entry ticks and eligible writes. Office scheduling adds available planned hours without replacing existing entries; keep its distinct rules and write checks. Provide a clearly labeled Factory staffing link to Supply → Production.
 
-**Staff needs** gathers access to assign/hire requirements, unmet demands and quit warnings. Company-wide demands stay company-wide. A grouped directory may summarize existing per-site results; do not imply a new optimizer that moves employees across the whole company. If no complete per-person directory exists, design business/role summaries with drill-down rather than fabricating it.
+**Staff needs** is the single home for current-main hiring: open places by role, same-role spare and bench netting, candidate filters and picks, mass and Quick hire, people with no hours, review/confirm and later re-read. Company-wide demands stay company-wide. Keep the existing `hrModel`/`hrRequest` rules, including permitted same-role moves and affected source sites; do not invent a broader optimizer. Link shop and office schedules to Schedules and factory line hours to Production.
 
 **Payroll** retains role totals, current-rate versus booked wages, satisfaction and cost context. Link to the sites that explain differences. Site crew detail remains part of the shared business context and is reachable here.
 
@@ -163,7 +163,7 @@ Save handling, permission recovery and live status remain in the shell. Theme, g
 
 ## 6. Feature-by-feature migration map
 
-Every one of the audit's 105 capability IDs appears once below. “Shared” means one workflow with multiple entry points. “Consolidate” changes presentation, not the underlying calculation. “Secondary” remains supported. These are proposed destinations, not assertions that all combined views already exist.
+Every one of the audit's 105 capability IDs appears once below. Seven H-series rows account for capabilities added by PR #121, for **112 mapped capabilities** at the reconciled baseline. “Shared” means one workflow with multiple entry points. “Consolidate” changes presentation, not the underlying calculation. “Secondary” remains supported. These are proposed destinations, not assertions that all combined views already exist.
 
 
 ### Entry and discovery
@@ -260,6 +260,18 @@ Every one of the audit's 105 capability IDs appears once below. “Shared” mea
 | B15 | Depot stock rail and sites fed | Businesses → Selected warehouse → Stock and destinations | Keep local rail/summary; full changes in Supply with site scope. |
 | B16 | Factory machines, inputs and recipe selection | Businesses → Selected factory → Lines and inputs | Keep current-state overview; Production owns full planning and identification. |
 | B17 | Home detail: rent, area and rent per area | City map → Selected home | Keep existing detail pending a separately approved map-card consolidation. |
+
+### PR #121 staffing and hiring delta
+
+| ID | Current-main capability | Proposed home | Migration rule |
+| --- | --- | --- | --- |
+| H01 | Open places by role with bench and spare-staff netting | Staffing → Staff needs | Retain the existing per-role model and same-role cross-site moves; disclose affected source sites. |
+| H02 | Candidate catalogue, filters and individual picks | Staffing → Staff needs | Keep offer, expiration, skill, wage and changed-candidate checks. |
+| H03 | Mass hire and Quick hire at any site | Staffing → Staff needs | Reuse the same request/review engine and capability gate. |
+| H04 | Hire/move preview, confirm, refusal, partial result and re-read | Staffing → Staff needs | Preserve `/write/hire`, compare-and-set checks and the absence of undo; a click is not proof of application. |
+| H05 | Staff with no hours evidence | Staffing → Staff needs; selected business → People | Show it even when hiring need is zero, with links to the relevant planner. |
+| H06 | Office planning and additive schedule writes | Staffing → Schedules | Preserve existing entries, refuse unreadable entries, and retain office participation in multi-site write. |
+| H07 | Factory and source-site effects of hire requests | Staff needs → Supply → Production and affected sites | Retain factory/source-site schedule semantics, displaced or empty hours, and current drivers/cleaners. |
 
 ### Growth
 
