@@ -1,6 +1,18 @@
 # Big Copilot redesign — fresh-session handover
 
-## Current checkpoint — 26 September 2026, second handover
+## Current checkpoint — 26 September 2026, third handover (chunk 2 in progress)
+
+Peter ended the session to shut the PC down. **This section is the current state; the second and original handovers below are history.**
+
+- **Chunk 1 is ACCEPTED.** Round 1 on `a09d162` held on one Finder history defect and one Search Back regression; the same Opus owner fixed them (`455e067`); round 2 (Opus 5.5 code, GPT-6 Sol code, GPT-6 Sol QA) all READY. Reports: `execution/c1-recheck-*`, `execution/c1-r2-*` in the private bundle.
+- **Integration branch** `codex/ui-redesign-integration` (this worktree): `8c12eb4` merges chunk 1; `dd16dfd` merges origin/main `928a76b` (PRs #156–#158). Python 1,366 OK (1 skipped), affected Node suites 549/549, `build_web.py --check` current. Local only; nothing pushed.
+- **Chunk 2 (Supply and Staffing) is IN PROGRESS and unvalidated.** Worktree `C:/Users/Peter/.codex/worktrees/ui-redesign-chunk2/Big Ambitions`, branch `codex/ui-redesign-chunk2` from `dd16dfd`, no code changed yet: the owner finished reading and design mapping only, and its only file is the untracked WIP note. Owner: Opus 5.5 session `880dde5a-f9e2-49f8-86e2-8a82410452de`, stopped on request at a safe point; its WIP note `docs/ui-chunk-2-handoff.md` in that worktree holds the settled design (plan record on existing checklist/import rows, override store v3 with unknown-basis migration, per-character basis, confirmation from existing save fields) and the ordered next steps, starting with the Supply page restructure. Brief: `execution/c2-implement/prompt.txt`. Resume the same session with `run_opus.py --resume 880dde5a-…` and a short prompt saying where it stopped; do not start a fresh owner over its changes.
+- **Review panel (Peter, 26 Sep):** per chunk one Opus 5.5 code review + one GPT-6 Sol code review + one GPT-6 Sol general QA. No visual seat. Phone widths are optional (PC game); phone-only findings never block.
+- **Deferred to chunk 3:** City map vs Finder history (`#map` while the finder is on); phone Tab order in finding rows. Carried into chunk 2 (in its brief): Ask re-pick edge case when asked from the guide itself; a test for the office Schedules plural.
+- **Runner lessons** (`execution/run_opus.py`): launch it as its own background task (the first fix run died when started with `&` inside a shell call); a `--resume` run first emits a stale 0-turn result, so wait for a result with `num_turns > 0` before writing `inbox/CLOSE`; closing input kills any background task the worker left running, so briefs must require foreground validation. GPT-6 Sol runs through `codex exec -m gpt-6-sol -c model_reasoning_effort=high -s danger-full-access --skip-git-repo-check --json -o last-message.md - < prompt.txt` from its run dir; verify the model in the `~/.codex/sessions` rollout.
+- Boundaries unchanged: no push, deploy, main merge or TEMPLATE extraction E; main checkout untouched.
+
+## Second checkpoint — 26 September 2026 (history)
 
 Peter asked for a second fresh-session handover at the chunk 1 validation boundary. **Use this section as the current state; the original handover below is retained as history and its old HEADs, pending merge, worker-stop and test statements are superseded.** The owner finished, the final gate completed, and the local candidate was snapshotted. Independent re-review and chunks 2–3 belong to the fresh session.
 
