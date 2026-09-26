@@ -299,6 +299,13 @@ test('set for all shops, and undo from the strip once the dialog is closed', asy
   await dialog(page).locator('.gw-foot').getByRole('button', {name: 'Close'}).click();
   const strip = page.locator('#gwToast');
   await strip.getByText('Default is on 2 roles at 2 shops.').waitFor();
+  // A redraw keeps the same strip, so a keyboard user on Undo stays there (#107).
+  assert.equal(await page.evaluate(() => {
+    const undo = document.querySelector('#gwToast [data-gw-undo]');
+    undo.focus();
+    wireAll();
+    return document.activeElement === undo && document.querySelector('#gwToast [data-gw-undo]') === undo;
+  }), true);
   await strip.getByRole('button', {name: 'Undo'}).click();
   await dialog(page).getByText('Undone: 2 roles back to no uniform.').waitFor();
   assert.deepEqual((await applied()).map((w) => w.kind), ['uniforms', 'undo']);
@@ -837,6 +844,23 @@ test('a game that moved on answers 409 changed, and the dialog offers a refresh'
   await dialog(page).getByRole('button', {name: 'Refresh the board'}).click();
   await refresh;  // Update asked the game for its current state
   await dialog(page).waitFor({state: 'detached'});
+  assert.equal((await applied()).length, 0);
+});
+
+test('uniforms name the save they were planned from; another one loaded since answers changed', async (t) => {
+  const page = await linked(t, {approved: true});
+  const sent = [];
+  page.on('request', (req) => {
+    if (req.url().endsWith('/write/uniforms') && req.method() === 'POST') sent.push(JSON.parse(req.postData()));
+  });
+  await button(page, GIFTS).click();
+  await ready(page);
+  // The game loads another of the character's saves; the board has not read it yet.
+  await configure({company: 'Other Co'});
+  await dialog(page).getByRole('button', {name: SET}).click();
+  await dialog(page).getByText('The game has moved on since this board was read. Nothing was changed.').waitFor();
+  assert.deepEqual(sent.map((body) => [body.dryRun, body.expect]),
+    [[true, {character: 'default', company: 'Link Co'}], [false, {character: 'default', company: 'Link Co'}]]);
   assert.equal((await applied()).length, 0);
 });
 
@@ -1942,7 +1966,12 @@ test('schedule: full cover opens every day 0 to 24, unless the player opts out',
   await open.waitFor();
   assert.equal(await open.getAttribute('aria-checked'), 'true');
   await dialog(page).locator('.gw-plan', {hasText: 'Full cover 24/7'}).waitFor();
-  await open.click();
+  // The click flips the switch once: the Filter kinds switches' handler leaves
+  // it alone, so it shows and says what will be sent (#107).
+  assert.deepEqual(await open.evaluate((el) => {
+    el.click();
+    return [el.classList.contains('on'), el.getAttribute('aria-checked')];
+  }), [false, 'false']);
   // The game is asked again, without the opening hours.
   await page.locator('dialog.gw-dlg[data-phase="ready"] [role="switch"][aria-checked="false"]').waitFor();
   await dialog(page).getByRole('button', {name: 'Write the week'}).click();

@@ -36,6 +36,7 @@ import threading
 import time
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
 from html import escape as html_escape
@@ -6687,8 +6688,10 @@ def _need_curve(
 # ------------------------------------------------------------ roster building
 # The rules any suggested roster has to obey, read from BigAmbitions.dll at
 # VERIFIED_BUILD. docs/staffing-assistant-scope.md section 2 quotes each source.
+# The longest shift, and the most hours the plan gives anybody in one day: the
+# game's own auto-filler stops at 12 a day too, short of the 14 that raise
+# sickness (ScheduleHelper.GetOverworkedDays).
 SHIFT_CAP = 12  # ScheduleHelper.ShiftLengthCap, ScheduleAutoFiller.MaxEmployeeHoursPerDay
-OVERWORK_HOURS = 14  # more than this in one day raises sickness
 SLACK_SHARE = 0.10  # of a site's required station-hours, spent bridging troughs
 # The shortest piece the plan will cut a shift into, and the shortest head it
 # will leave behind. Not a game rule: the game takes a one-hour shift happily.
@@ -6860,7 +6863,7 @@ def _can_work(person: dict, state: dict, slot: dict) -> bool:
         return False
     if any(hour in state["busy"][wd] for hour in range(start, end)):
         return False
-    if len(state["busy"][wd]) + hours > OVERWORK_HOURS:
+    if len(state["busy"][wd]) + hours > SHIFT_CAP:
         return False
     # The week's ceiling. Their own band's if they have one, and full time's 50
     # if they do not: that is not a demand invented for somebody who holds none
@@ -6912,7 +6915,7 @@ def _placement_rank(person: dict, state: dict, slot: dict, here: dict) -> tuple:
        `_can_work()` and never traded away.
     3. **Then the longest shifts.** Nothing to rank: the shifts are cut before
        anybody is placed, into the fewest that stay inside the 12-hour cap, and
-       the 14-hour day belongs to `_can_work()`.
+       the 12-hour day belongs to `_can_work()`.
 
     Then continuity — already on this station the day before or after, so the
     player types fewer distinct names — the site's own staff before a bench
@@ -7076,7 +7079,7 @@ def _hire_fits(slot: dict, hire: dict) -> bool:
     busy = hire["busy"][slot["wd"]]
     return (
         hire["hours"] + hours <= FULL_TIME[1]
-        and len(busy) + hours <= OVERWORK_HOURS
+        and len(busy) + hours <= SHIFT_CAP
         and not any(h in busy for h in range(slot["from"], slot["to"]))
     )
 
@@ -7133,7 +7136,7 @@ def _hire_weeks(slots: list) -> list:
 
     Dividing the hours by a full week understates it: four uncovered twelve-hour
     weekend shifts are 48 hours, but two of them fall on the same day and the
-    game stops anyone working more than fourteen hours in one. So the residue is
+    plan gives nobody more than twelve hours in one. So the residue is
     packed onto hypothetical hires who have no demands of their own -- a full
     week, the daily cap, and one shift at a time.
 
@@ -7159,7 +7162,7 @@ def _hire_weeks(slots: list) -> list:
         day = [s for s in slots if s["wd"] == wd]
         if not day:
             continue
-        floor = max(floor, math.ceil(sum(s["to"] - s["from"] for s in day) / OVERWORK_HOURS))
+        floor = max(floor, math.ceil(sum(s["to"] - s["from"] for s in day) / SHIFT_CAP))
         for hour in range(24):
             floor = max(floor, sum(1 for s in day if s["from"] <= hour < s["to"]))
     for count in range(floor, len(worst)):
@@ -7189,7 +7192,7 @@ def _spread_residue(residue: list, shifts: list, pool: list, state: dict, before
     hour, which packed onto 22 hires of one day each, 7 to 14 hours a week
     (Peter's in-game test, 25 September 2026). The hires those hours need are
     about ceil(hours / 50). While more open shifts than that run at one hour,
-    or more than that many 14-hour days of them fall on one day, one of them
+    or more than that many 12-hour days of them fall on one day, one of them
     goes to somebody here who is off that day, and one of their own shifts of
     the role on another day, where the open ones are fewer, is opened in its
     place: nobody's week breaks a rule or a demand for it (_can_work()), and
@@ -7228,7 +7231,7 @@ def _spread_residue(residue: list, shifts: list, pool: list, state: dict, before
                 for mine in own:
                     if any(at[mine["wd"]][h] + 1 > limit for h in range(mine["from"], mine["to"])):
                         continue
-                    if day[mine["wd"]] + (mine["to"] - mine["from"]) > limit * OVERWORK_HOURS:
+                    if day[mine["wd"]] + (mine["to"] - mine["from"]) > limit * SHIFT_CAP:
                         continue
                     trial = _copy_state(state[pid])
                     trial["hours"] -= mine["to"] - mine["from"]
@@ -7253,7 +7256,7 @@ def _spread_residue(residue: list, shifts: list, pool: list, state: dict, before
         crowded = sorted(
             (-at[wd][hour], wd, hour)
             for wd in range(7) for hour in range(24)
-            if at[wd][hour] and (at[wd][hour] > limit or day[wd] > limit * OVERWORK_HOURS)
+            if at[wd][hour] and (at[wd][hour] > limit or day[wd] > limit * SHIFT_CAP)
             and (wd, hour) not in stuck
         )
         if not crowded:
@@ -7294,7 +7297,7 @@ def _fill_hire_weeks(weeks: list, shifts: list, pool: list, state: dict, before:
     floor and the hours the game has them on now -- so nobody already here is
     cut below the week they have, and nobody is left under their demands'
     floor or short of a four- or five-day count. The hire keeps within 50
-    hours and the 14-hour day. The number of hires does not change; only which
+    hours and the 12-hour day. The number of hires does not change; only which
     of the plan's shifts are theirs. Deterministic: donors by most spare hours,
     then id; shifts by day and hour.
     """
@@ -7595,7 +7598,7 @@ def _piece_over(shift: dict, donor: dict, taker: dict, state: dict, shifts: list
 def _keeps_floors(person: dict, before: dict, without: dict, gained: dict) -> bool:
     """Whether a swap leaves a person no worse off against their own demands.
 
-    `_can_work()` tests ceilings only: the 50 hours, the 14-hour day, the most
+    `_can_work()` tests ceilings only: the 50 hours, the 12-hour day, the most
     days a count allows. A swap hands one entry away and takes another, so it
     can also lower somebody's hours under their floor, or their days under an
     exact four- or five-day count, and turn a met demand into a broken one.
@@ -20457,13 +20460,15 @@ function drawChart(){
   rows.forEach(r => Object.values(SERIES).forEach(s => { min = Math.min(min, r[s.key]); max = Math.max(max, r[s.key]); }));
   const step = niceStep((max - min) || 1, 5), fine = step / 5;
   const hi = Math.max(Math.ceil((max + step * .05) / fine) * fine, fine);
-  const lo = min < 0 ? -Math.ceil((-min + step * .05) / fine) * fine : 0;
+  /* Whole steps below zero, so even a small loss gets a labelled line. */
+  const lo = min < 0 ? -Math.ceil((-min + step * .05) / step) * step : 0;
   const X = i => L + (n > 1 ? i / (n - 1) : .5) * (W - L - R);
   const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
 
   const out = [];
-  for(let v = 0; v <= hi + 1e-9; v += step){
-    const yy = Y(v).toFixed(1);
+  /* From the lowest step at or above lo, so a loss day has a scale too. */
+  for(let k = Math.ceil(lo / step - 1e-9); k * step <= hi + 1e-9; k++){
+    const v = k * step || 0, yy = Y(v).toFixed(1);
     out.push(`<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--rule-soft)"></line>`
       + `<text x="${L - 10}" y="${(+yy + 4).toFixed(1)}" text-anchor="end" font-size="10" font-family="IBM Plex Mono" fill="var(--ink-3)">${money(v)}</text>`);
   }
@@ -20959,7 +20964,8 @@ const roleCode = role => { const w = role.trim().split(/\s+/); return (w.length 
 function spKind(b){
   if(b.status === "retail") return "retail";
   if(b.status === "office") return "office";
-  if(spFactorySites().some(r => r.s === siteTab)) return "factory";
+  const i = D.businesses.indexOf(b);
+  if(i >= 0 && spFactorySites().some(r => r.s === i)) return "factory";
   if(b.status === "support" || b.status === "overhead") return "depot";
   return "home";
 }
@@ -21163,14 +21169,19 @@ const spDaySig = day => day.map(shifts => shifts.map(
   s => `${s.f}-${s.t}:${s.p === null || s.p === undefined ? "?" : s.p}:${s.k || ""}`).join(",")).join("|");
 /* The weekday each day is a copy of, or null. BizMan copies a schedule day and
    pastes it, so a day identical to an earlier one is two clicks rather than a
-   morning of typing; a day with nothing on it is nobody's copy. */
+   morning of typing; a day with nothing on it is nobody's copy. Earlier is the
+   order the tabs run in, Monday to Sunday (HOUR_ROWS), not the weekday index,
+   where Sunday is 0: a hint never points at a tab still to come. */
 function spSameDays(days){
-  const sigs = days.map(spDaySig);
-  return days.map((day, d) => {
-    if(!day.some(shifts => shifts.length)) return null;
-    const first = sigs.indexOf(sigs[d]);
-    return first < d ? first : null;
+  const out = days.map(() => null), source = new Map();
+  HOUR_ROWS.forEach(d => {
+    const day = days[d];
+    if(!day || !day.some(shifts => shifts.length)) return;
+    const sig = spDaySig(day);
+    if(source.has(sig)) out[d] = source.get(sig);
+    else source.set(sig, d);
   });
+  return out;
 }
 /* What a tick means: this exact line is entered in the game. So its identity
    is the line the player typed -- the weekday, the station, the hours from and
@@ -25588,7 +25599,9 @@ function drawMovers(){
     // Folded by the place's identity: a neighbourhood's key, or the address.
     const where = x.count > 1 ? tt("gr.short.suppliers", {one: "{n} supplier", other: "{n} suppliers"}, {n: x.count})
       : x.hood ? hoodName(x.hood) : x.where;
-    const id = x.count > 1 ? where : x.hood || x.where;
+    // One product at several suppliers is its own chip: two products each short
+    // at two suppliers are not the same two suppliers.
+    const id = x.count > 1 ? JSON.stringify([x.item, x.kind, x.count]) : x.hood || x.where;
     const g = byPlace.get(id) || {where, key: x.count > 1 || x.hood ? null : x.siteKey || null, rows: [], mine: 0, lo: Infinity, hi: 0};
     g.rows.push(x); g.mine += x.mine ? 1 : 0;
     g.lo = Math.min(g.lo, x.daysLeft); g.hi = Math.max(g.hi, x.daysLeft);
@@ -29830,7 +29843,7 @@ buildAlertSettingsPanel();
      .sw[data-kind=<alert group id>]  click toggles .on, flips alertGroupPrefs,
                           saves under ALERT_SETTINGS_KEY, redraws the findings
                           and the map's Findings layer.
-                          A .sw without data-kind only toggles .on.
+                          A .sw without data-kind is left to its own handler.
      the panel itself    a body-level popover (#alertPop), built once by
                           buildAlertSettingsPanel(). toggleKindsPanel(anchor)
                           opens and closes it under whatever element is passed.
@@ -32288,8 +32301,8 @@ const wireRoster = once(() => {
   onLeave("#sp-roster [data-p]", el => mark(el.dataset.p, false));
 });
 
-/* kinds popover: switches flip; with a data-kind they also flip the preference --- */
-const bindKinds = once(() => on("click", ".sw", s => {
+/* kinds popover: a switch with a data-kind flips, and flips the preference --- */
+const bindKinds = once(() => on("click", ".sw[data-kind]", s => {
   s.classList.toggle("on");
   /* changed for kinds: the switch is a span carrying role="switch", so the
      state a screen reader hears has to move with the class. */
@@ -32768,6 +32781,11 @@ function gwProblem(res){
     case "unreachable": return {wire: "no", say: say(tt("nav.dlg.say.noanswer", "No answer")), text: spEsc(res.message || tt("nav.dlg.unreachable.text", "The game did not answer.")), retry: true};
     case "uncertain": return {uncertain: true, text: tt("nav.dlg.uncertain.text", "The game did not answer, so this may or may not have been applied.")};
     case "not_linked": return {wire: "no", say: say(tt("nav.dlg.say.notlinked", "Not linked")), text: tt("nav.dlg.notlinked.text", "The board is no longer linked to the same game. Nothing was sent.")};
+    /* The mod answered in another schema version since this board was read. */
+    case "mismatch": return {wire: "no", say: say(tt("nav.dlg.say.mismatch", "The mod does not match")),
+      text: tt("nav.dlg.mismatch.text", "The Big Copilot Link mod now speaks version {v}; this page needs version {need}. Nothing was sent.",
+        {v: spEsc(String(res.version)), need: spEsc(String(res.need))}),
+      sub: tt("nav.dlg.mismatch.sub", "Update the mod, or reload this page.")};
     default: return {wire: "no", say: say(tt("nav.dlg.say.refused", "Refused")),
       text: body.detail ? tt("nav.dlg.status.detail", "The game answered {status} ({detail}). Nothing was changed.", {status: res.status, detail: spEsc(body.detail)})
         : tt("nav.dlg.status.text", "The game answered {status}. Nothing was changed.", {status: res.status})};
@@ -33280,6 +33298,9 @@ function gwToast(){
   const last = Object.values(gwUndoable).sort((a, b) => b.at - a.at)[0];
   let bar = $("gwToast");
   if(!last || gwOpen){ if(bar) bar.remove(); return; }
+  /* The same undo as the strip already shows: left alone, so a refresh does
+     not take the focus off its Undo button or announce it again. */
+  if(bar && bar._gwLast === last) return;
   if(!bar){
     bar = document.createElement("div");
     bar.id = "gwToast"; bar.setAttribute("role", "status");
@@ -33288,6 +33309,7 @@ function gwToast(){
   const {spec, text, sub} = last;
   bar.innerHTML = `<span class="ic" aria-hidden="true">${gwSvg("tick")}</span><span class="t">${text}<small>${sub || ""}</small></span><button type="button" class="gw-b undo" data-gw-undo>${
     gwSvg("undo")}<span>${tt("nav.toast.undo", "Undo")}</span></button><button type="button" class="gw-x" data-gw-dismiss aria-label="${attr(tt("nav.toast.dismiss", "Dismiss"))}">${gwSvg("close")}</button>`;
+  bar._gwLast = last;
   bar.querySelector("[data-gw-undo]").onclick = () => gwUndo(spec);
   bar.querySelector("[data-gw-dismiss]").onclick = () => { delete gwUndoable[spec.kind]; gwToast(); };
 }
@@ -34550,6 +34572,33 @@ class LinkUnavailable(Exception):
     """The game link did not answer: the game is closed or between cities."""
 
 
+class LinkMismatch(LinkUnavailable):
+    """The mod answered, but speaks a schema version this board does not know.
+
+    An outage like any other to the watch loop (docs/game-link-api.md, the
+    clients' loop, step 5): said once under the board it keeps, and over the
+    moment a health answer of this version arrives. A one-shot run stops on it.
+    """
+
+
+def loopback_link(url: str) -> str:
+    """The mod's address with localhost and [::1] spelt 127.0.0.1.
+
+    The mod listens on http://127.0.0.1:<port>/ only, and its listener turns
+    away any other Host, so the other two names for this machine would read as
+    a game that is not there. Any other address is left as given.
+    """
+    try:
+        parts = urllib.parse.urlsplit(url)
+        port = parts.port
+    except ValueError:  # a port that is no number: urllib says so on the call
+        return url
+    if parts.hostname not in ("localhost", "::1"):
+        return url
+    host = f"127.0.0.1:{port}" if port else "127.0.0.1"
+    return urllib.parse.urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+
 class GameLink:
     """The running game's save, served by the Big Copilot Link mod.
 
@@ -34574,7 +34623,11 @@ class GameLink:
                 f"--game takes the mod's address (default http://127.0.0.1:8322), "
                 f"not {url!r}; a save or character name does not combine with it"
             )
-        self.url = url.rstrip("/")
+        self.url = loopback_link(url.rstrip("/"))
+        # No proxy, whatever HTTP_PROXY says: urllib would send even
+        # 127.0.0.1 through one, which fails, or hands a local intercepting
+        # proxy the player's whole save.
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         self.path = os.path.join(out_dir, "game-link.hsg")
         self.stamp = ""  # the stamp of the bytes last downloaded
         self.character = ""
@@ -34589,7 +34642,7 @@ class GameLink:
             req = urllib.request.Request(
                 self.url + route, method=method, headers=headers or {}
             )
-            with urllib.request.urlopen(req, timeout=self.TIMEOUT) as res:
+            with self._opener.open(req, timeout=self.TIMEOUT) as res:
                 return res.status, dict(res.headers), res.read()
         except urllib.error.HTTPError as err:
             return err.code, dict(err.headers), err.read()
@@ -34604,8 +34657,9 @@ class GameLink:
 
         Keeps the last stamp it built from and sends it as If-None-Match, so
         a game that has moved on costs one /health and nothing more.
-        Raises LinkUnavailable while the game is not there and SystemExit
-        when the mod speaks a schema version this board does not know.
+        Raises LinkUnavailable while the game is not there, and its
+        LinkMismatch while the mod speaks a schema version this board does not
+        know: the next poll asks again, so a mod put right is read as ever.
         """
         status, _, body = self._call("/health")
         health = None
@@ -34633,7 +34687,7 @@ class GameLink:
         self.not_ready = 0
         version = health.get("schemaVersion")
         if version != self.SCHEMA:
-            raise SystemExit(
+            raise LinkMismatch(
                 f"the Big Copilot Link mod speaks schema version {version}; this "
                 f"board needs version {self.SCHEMA}. Update the mod or the board"
             )
@@ -34832,8 +34886,22 @@ class Board:
 class BoardHandler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     board: Board = None
+    NAME_MAX_BYTES = 16 * 1024  # a {rid, slug} is a few dozen bytes
+
+    def _this_host(self) -> bool:
+        """A request addressed to this server by a loopback name, and else
+        answered 403. The server listens on 127.0.0.1 only, but a web page on
+        a name that resolves here (DNS rebinding) would send its own Host."""
+        port = self.server.server_address[1]
+        host = (self.headers.get("Host") or "").strip().lower()
+        if host in (f"127.0.0.1:{port}", f"localhost:{port}"):
+            return True
+        self.send_error(403)
+        return False
 
     def do_GET(self):
+        if not self._this_host():
+            return
         route = self.path.split("?")[0].rstrip("/") or "/"
         # Explicit allowlist: the watch server exposes no arbitrary workspace
         # files. The wiki's catalogue is the public one beside the page, never
@@ -34878,12 +34946,30 @@ class BoardHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         """The page naming a factory line by hand: {rid, slug}, slug null to clear."""
+        if not self._this_host():
+            return
         route = self.path.split("?")[0].rstrip("/")
         if route != "/name":
             self.send_error(404)
             return
+        # JSON only: a page elsewhere can send a form or text/plain POST
+        # without asking, but not this one, which needs a CORS preflight this
+        # server never answers. The body is never read past its cap.
+        if self.headers.get_content_type() != "application/json":
+            self.send_error(415)
+            return
         try:
             length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            self.send_error(400)
+            return
+        if length < 0:
+            self.send_error(400)
+            return
+        if length > self.NAME_MAX_BYTES:
+            self.send_error(413)
+            return
+        try:
             body = json.loads(self.rfile.read(length) or b"{}")
             rid, slug = str(body["rid"]), body.get("slug") or None
         except (ValueError, KeyError, TypeError):
@@ -34933,20 +35019,17 @@ def watch(
 
     def poll():
         last_failure = None
-        link_down = False
+        link_down = ""  # what was last said about the link being out, while it is
         while True:
             try:
                 moved = board.refresh()
-            except SystemExit as exc:
-                # A schema mismatch will not fix itself by polling: say it
-                # once and stop, leaving the last board served.
-                print(f"  {time.strftime('%H:%M:%S')}  {exc}", flush=True)
-                return
             except LinkUnavailable as exc:
                 # Once per outage, not once per interval: the game is closed
-                # or between cities, and the board on screen is still good.
-                if not link_down:
-                    link_down = True
+                # or between cities, or the mod speaks another schema version,
+                # and the board on screen is still good. Polling goes on, so a
+                # game that comes back, or a mod put right, is read again.
+                if str(exc) != link_down:
+                    link_down = str(exc)
                     print(f"  {time.strftime('%H:%M:%S')}  {exc}", flush=True)
             except Exception as exc:
                 signature = f"{type(exc).__name__}: {exc}"
@@ -34968,7 +35051,7 @@ def watch(
                     )
             else:
                 if link_down:
-                    link_down = False
+                    link_down = ""
                     print(f"  {time.strftime('%H:%M:%S')}  the game link is back", flush=True)
                 if moved:
                     what = (
