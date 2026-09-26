@@ -796,8 +796,9 @@ old hash, finding kind and task.
 Two routes share the Map page: `map` with the finder off and `expansion/finder` with it on.
 `routeFor()` reads the switch (`routeFinderOn()`), and the switch calls `routeSync()`, so the
 address and the lit place always name what is on screen. The finder's picked building rides on
-the history entry as `nxPick` (`finderPickRemember()`/`finderPickRestore()` in `web/map.js`); a
-reload picks it again only where the current results still hold it. An old word can land
+the history entry as `nxPick` (`finderPickRemember()`/`finderPickRestore()` in `web/map.js`),
+which is its source of truth: a new visit takes the pick on screen, and Back, Forward or a reload
+show the entry's own pick where the current results still hold it, else none. An old word can land
 inside its route: `ROUTE_ALIAS_INTO` sends `#staff` to the hiring block (`#secStaff`) on
 Staffing › Staff needs.
 

@@ -28277,8 +28277,8 @@ function drawSchedules(){
       /* The office default where it plans the office (spOfficeRoster()). */
       const o = typeof gwOfficeRow === "function" ? gwOfficeRow(b.key) : null;
       return o && (o.shifts || []).length && o.computers
-        ? tt("co.sched.office.plan", {one: "Office default: {n} of {c} computer staffed", other: "Office default: {n} of {c} computers staffed"},
-          {n: o.staffedComputers || 0, c: o.computers})
+        ? tt("co.sched.office.plan", {one: "Office default: {s} of {n} computer staffed", other: "Office default: {s} of {n} computers staffed"},
+          {n: o.computers, s: o.staffedComputers || 0})
         : tt("co.sched.office", "Office: its staff and computers are on its page");
     }
     const base = plans.get(b.key);
@@ -28725,7 +28725,7 @@ const ROUTES = {
   "expansion/finder": {host: ["map"], after(o){
     if(typeof premises !== "function" || !premises()) return;
     if(o.preset && typeof openFinder === "function") openFinder(o.preset, !!o.focus);
-    else if(typeof showFinder === "function") showFinder(); }},
+    else if(typeof showFinder === "function") showFinder(o.historyMode || "push"); }},
   "expansion/factory": {host: ["growth", "plan"]},
   /* The map as the reader left it: with the finder on, that is Find a
      location, and the address says so (routeFor()). */
@@ -30324,9 +30324,13 @@ function ssFinder(preset){
   if(typeof premises === "function" && premises()) openFinder(preset);
   else showPage("map");
 }
-/* A hash the board already routes (#wiki/...): the hash listener opens it. */
+/* A hash the board already routes (#wiki/...): the hash listener opens it.
+   Another answer picked on the strip replaces the answer's own entry
+   (ssRepick), so the question stays one visit and the strip's Back one step. */
+let ssRepick = false;
 function ssHash(h){
   if(location.hash === h) openHash(h.slice(1), "none");
+  else if(ssRepick) location.replace(h);
   else location.hash = h;
 }
 /* The company's own shop types, the best-selling first: each has its own
@@ -30509,7 +30513,12 @@ function ssLand(qn, from, ticket, tries = 0, origin = null){
     if(!b) return;
     if(b.dataset.ss === "another"){ ssOpen(); return; }
     /* Another of the question's answers: asked again, with the same way back. */
-    if(b.dataset.ss === "pick"){ e.preventDefault(); qn.choose(b.dataset.pick); ssAsk(qn.id, from, origin); return; }
+    if(b.dataset.ss === "pick"){
+      e.preventDefault(); qn.choose(b.dataset.pick);
+      ssRepick = true;
+      try{ ssAsk(qn.id, from, origin); } finally { ssRepick = false; }
+      return;
+    }
     ssClearAsked();
     /* The crumb's own rule: Back while the entry carries the way back, else
        its address, else the portfolio. */

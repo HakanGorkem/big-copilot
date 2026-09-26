@@ -1732,9 +1732,11 @@ function openFinder(preset = {}, focus = false){
 }
 /* Expansion › Find a location reached with no preset -- Back, Forward, a
    reload, the area's own row, the masthead's remembered view: the finder as
-   the reader left it, switched on, its filters, saved searches and pick
-   untouched (only openFinder() applies a preset). */
-function showFinder(){
+   the reader left it, switched on, its filters and saved searches untouched
+   (only openFinder() applies a preset). Its pick is the history entry's
+   (finderPickRestore()): `mode` is how the entry was reached, "push" for a
+   new visit, "none" or "replace" for Back, Forward and a reload. */
+function showFinder(mode = "push"){
   if(!premises()) return;
   if(typeof routeNext !== "undefined" && routeNext === null) routeNext = "expansion/finder";
   showPage("map");
@@ -1745,7 +1747,7 @@ function showFinder(){
     view.fs.on = true;
     view.ready.then(ok => { if(ok) view.update(); });
   }
-  finderPickRestore(view);
+  finderPickRestore(view, mode !== "push");
 }
 /* The building picked in the finder is kept on the history entry (nxPick),
    beside the route and the arrival, so a reload of Find a location -- or Back
@@ -1759,18 +1761,25 @@ function finderPickRemember(view){
     history.replaceState(Object.keys(st).length ? st : null, '', location.href);
   }catch(e){}
 }
-/* ...and given back once the finder has its results: where the building is
-   still one of them (the same availability, category and filters), it is
-   picked again, its row pressed and its card open; where it is not, the entry
-   forgets it rather than showing a pick the list does not hold. A pick made
-   since the load stands. */
-function finderPickRestore(view){
-  let key = null;
-  try{ key = (history.state || {}).nxPick || null; }catch(e){}
-  if(!key || view.selected) return;
+/* The history entry is the pick's source of truth. A new visit (the area's
+   row, the masthead, a task without a preset) has no pick of its own yet: it
+   takes the one on screen, so a reload of it keeps it. Back, Forward and a
+   reload show the entry's own: its building where the results still hold it
+   (the same availability, category and filters) -- picked again, its row
+   pressed and its card open, whatever else was picked since -- and no pick
+   where the entry has none or its building has left the results, exactly as a
+   plain reload of that entry shows. */
+const finderEntryPick = () => { try{ return (history.state || {}).nxPick || null; }catch(e){ return null; } };
+function finderPickRestore(view, replay){
+  const entry = location.hash;
   view.ready.then(ok => {
-    if(!ok || page !== 'map' || !view.finderOn() || view.selected) return;
-    if(view.rows().some(r => r.key === key)) view.select(key, false);
+    // The reader may have gone on while the map loaded: that visit decides.
+    if(!ok || page !== 'map' || !view.finderOn() || location.hash !== entry) return;
+    if(!replay){ finderPickRemember(view); return; }
+    const key = finderEntryPick();
+    if(key === view.selected) return;
+    if(key && view.rows().some(r => r.key === key)){ view.select(key, false); return; }
+    if(view.selected) view.deselect();
     else finderPickRemember(view);
   });
 }

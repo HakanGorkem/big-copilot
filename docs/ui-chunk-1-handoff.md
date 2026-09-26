@@ -343,3 +343,35 @@ Files changed in this round:
   granted, so its `shell()` harness now grants `local-network-access` (ignored by a browser
   without it). How the hosted game link meets that permission in a real browser is main's
   behaviour, untouched by chunk 1 and not verified here.
+
+## Recheck fixes after `a09d162` (26 Sep 2026)
+
+Three items from the rechecks of `a09d162` (`execution/c1-recheck-code`, `c1-recheck-code-sol`,
+`c1-recheck-functional`). Everything else those reports rechecked was confirmed fixed.
+
+| Item | Fix | Test |
+| --- | --- | --- |
+| Finder pick against history (both Sol reports): a pick was lost after area re-entry and a reload, and Back could show a later pick under an earlier entry | The history entry is the pick's source of truth. `showFinder(mode)` now gets the route's history mode. A new visit (area row, masthead, a task without a preset) takes the pick on screen onto its entry. Back, Forward and a reload show the entry's own `nxPick` where the results still hold it, even with another building picked, and no pick where the entry has none or its building has left the results. That is what a plain reload of the same entry shows | `tests/shell_routes.test.cjs`: "two visits to Find a location keep their own picks through Back and Forward" (card, pressed row, `history.state`); "a pick carried into Find a location by the masthead survives a reload of that visit". Both fail against `a09d162`'s `web/map.js` and pass now. The synthetic save has one rival, so the first test adds a second one at runtime |
+| Ask strip Back after a re-pick (Opus report): "Back to Overview" landed on the first price guide | A pick on the strip replaces the answer's own history entry (`ssRepick`, `location.replace` in `ssHash`), so the question is one visit and Back is one step | `tests/search.test.cjs`, "answers for each kind of shop": the re-pick adds no visit, and Back reaches the Overview |
+| Office line plural (Opus nit) | The plural follows the computers it counts: "Office default: {s} of {n} computers staffed", with `n` the office's computers. The key has no German entry yet, so nothing else to align | covered by the Schedules tests |
+
+Left for later chunks, as the brief says: City map against finder history (`#map` while the finder
+is on), and the phone Tab order in finding rows. Phone widths are optional from now on (a PC
+game), so none of this round is phone-only work.
+
+Validation on this working tree (Windows, Edge, `--test-concurrency=2`, normal priority):
+
+| Run | Result |
+| --- | --- |
+| `python build_web.py`, then `--check` | `web/ is up to date` |
+| finder, map, shell_routes, search, navigation (CLI target) | 229/229 (navigation + map 83, finder 67, shell_routes 25, search 54) |
+| shell_routes, search (`BOARD_TARGET=web`) | 79/79 (shell_routes 25, search 54) |
+| `python -m unittest tests.test_css_integrity tests.test_doc_registries` | 6 tests, OK |
+
+Changed in this round:
+- Source: `ba_dashboard.py`, `web/map.js`.
+- Tests: `tests/shell_routes.test.cjs`, `tests/search.test.cjs`.
+- Docs: `docs/ui-route-migration.md`, `docs/architecture.md`, this file.
+- Generated: `web/index.html`, `web/py/ba_dashboard.py`, `web/version.json`.
+
+Nothing is committed; the coordinator commits.

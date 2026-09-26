@@ -2,8 +2,8 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script>window.LEDGER_BUILD = "21a31f2764";</script>
-<link rel="stylesheet" href="community.css?v=21a31f2764">
+<script>window.LEDGER_BUILD = "ee1028788a";</script>
+<link rel="stylesheet" href="community.css?v=ee1028788a">
 <title>Big Copilot</title>
 <script>
 /* The remembered theme, before anything paints. It has to be an inline, blocking
@@ -15,7 +15,7 @@
 try{ var t = localStorage.getItem("ba_dash_theme"); if(t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); }catch(e){}
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d100f'/%3E%3Ccircle cx='16' cy='16' r='8' fill='%2343c07a'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="fonts/fonts.css?v=21a31f2764">
+<link rel="stylesheet" href="fonts/fonts.css?v=ee1028788a">
 <style>
 /* The map artwork keeps its approved dark palette in either dashboard theme. */
 .map-shortcut{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-left:5px;padding:4px;border:1px solid var(--rule);border-radius:4px;background:var(--surface);color:var(--ink-2);cursor:pointer;line-height:1;flex:none}
@@ -5067,7 +5067,7 @@ document.addEventListener('click', event => {
   <div class="map-dialog-head"><h2 id="locationMapTitle">Location map</h2><button type="button" id="closeLocationMap" class="ibtn" aria-label="Close map" data-tt-aria-label="nav.dlg.closemap" autofocus><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
   <div id="cityMapOverlay"></div>
 </dialog>
-<script>window.LEDGER_RELEASE = {"version":"21a31f2764","latest":{"pr":121,"date":"2026-09-25","title":"Hire and place staff for every site at once","summary":"Company › Payroll is now Staff. It adds up what each shop, office and factory still needs by role, moves spare people between sites first, and picks the most skilled of your headhunters' candidates, with filters for the demands you want to avoid. One confirm hires them, puts them at their sites and writes their hours, through the Big Copilot Link mod 0.3.0. Hires cannot be undone."}};</script>
+<script>window.LEDGER_RELEASE = {"version":"ee1028788a","latest":{"pr":121,"date":"2026-09-25","title":"Hire and place staff for every site at once","summary":"Company › Payroll is now Staff. It adds up what each shop, office and factory still needs by role, moves spare people between sites first, and picks the most skilled of your headhunters' candidates, with filters for the demands you want to avoid. One confirm hires them, puts them at their sites and writes their hours, through the Big Copilot Link mod 0.3.0. Hires cannot be undone."}};</script>
 <script>/* Embedded in the browser shell so the loaded release is the baseline even
  * when the first version check happens after another deployment. */
 (() => {
@@ -5155,8 +5155,8 @@ document.addEventListener('click', event => {
   });
 })();
 </script>
-<script src="app.js?v=21a31f2764"></script>
-<script src="community.js?v=21a31f2764"></script>
+<script src="app.js?v=ee1028788a"></script>
+<script src="community.js?v=ee1028788a"></script>
 
 <script>
 
@@ -16289,8 +16289,8 @@ function drawSchedules(){
       /* The office default where it plans the office (spOfficeRoster()). */
       const o = typeof gwOfficeRow === "function" ? gwOfficeRow(b.key) : null;
       return o && (o.shifts || []).length && o.computers
-        ? tt("co.sched.office.plan", {one: "Office default: {n} of {c} computer staffed", other: "Office default: {n} of {c} computers staffed"},
-          {n: o.staffedComputers || 0, c: o.computers})
+        ? tt("co.sched.office.plan", {one: "Office default: {s} of {n} computer staffed", other: "Office default: {s} of {n} computers staffed"},
+          {n: o.computers, s: o.staffedComputers || 0})
         : tt("co.sched.office", "Office: its staff and computers are on its page");
     }
     const base = plans.get(b.key);
@@ -18227,9 +18227,11 @@ function openFinder(preset = {}, focus = false){
 }
 /* Expansion › Find a location reached with no preset -- Back, Forward, a
    reload, the area's own row, the masthead's remembered view: the finder as
-   the reader left it, switched on, its filters, saved searches and pick
-   untouched (only openFinder() applies a preset). */
-function showFinder(){
+   the reader left it, switched on, its filters and saved searches untouched
+   (only openFinder() applies a preset). Its pick is the history entry's
+   (finderPickRestore()): `mode` is how the entry was reached, "push" for a
+   new visit, "none" or "replace" for Back, Forward and a reload. */
+function showFinder(mode = "push"){
   if(!premises()) return;
   if(typeof routeNext !== "undefined" && routeNext === null) routeNext = "expansion/finder";
   showPage("map");
@@ -18240,7 +18242,7 @@ function showFinder(){
     view.fs.on = true;
     view.ready.then(ok => { if(ok) view.update(); });
   }
-  finderPickRestore(view);
+  finderPickRestore(view, mode !== "push");
 }
 /* The building picked in the finder is kept on the history entry (nxPick),
    beside the route and the arrival, so a reload of Find a location -- or Back
@@ -18254,18 +18256,25 @@ function finderPickRemember(view){
     history.replaceState(Object.keys(st).length ? st : null, '', location.href);
   }catch(e){}
 }
-/* ...and given back once the finder has its results: where the building is
-   still one of them (the same availability, category and filters), it is
-   picked again, its row pressed and its card open; where it is not, the entry
-   forgets it rather than showing a pick the list does not hold. A pick made
-   since the load stands. */
-function finderPickRestore(view){
-  let key = null;
-  try{ key = (history.state || {}).nxPick || null; }catch(e){}
-  if(!key || view.selected) return;
+/* The history entry is the pick's source of truth. A new visit (the area's
+   row, the masthead, a task without a preset) has no pick of its own yet: it
+   takes the one on screen, so a reload of it keeps it. Back, Forward and a
+   reload show the entry's own: its building where the results still hold it
+   (the same availability, category and filters) -- picked again, its row
+   pressed and its card open, whatever else was picked since -- and no pick
+   where the entry has none or its building has left the results, exactly as a
+   plain reload of that entry shows. */
+const finderEntryPick = () => { try{ return (history.state || {}).nxPick || null; }catch(e){ return null; } };
+function finderPickRestore(view, replay){
+  const entry = location.hash;
   view.ready.then(ok => {
-    if(!ok || page !== 'map' || !view.finderOn() || view.selected) return;
-    if(view.rows().some(r => r.key === key)) view.select(key, false);
+    // The reader may have gone on while the map loaded: that visit decides.
+    if(!ok || page !== 'map' || !view.finderOn() || location.hash !== entry) return;
+    if(!replay){ finderPickRemember(view); return; }
+    const key = finderEntryPick();
+    if(key === view.selected) return;
+    if(key && view.rows().some(r => r.key === key)){ view.select(key, false); return; }
+    if(view.selected) view.deselect();
     else finderPickRemember(view);
   });
 }
@@ -21032,7 +21041,7 @@ const ROUTES = {
   "expansion/finder": {host: ["map"], after(o){
     if(typeof premises !== "function" || !premises()) return;
     if(o.preset && typeof openFinder === "function") openFinder(o.preset, !!o.focus);
-    else if(typeof showFinder === "function") showFinder(); }},
+    else if(typeof showFinder === "function") showFinder(o.historyMode || "push"); }},
   "expansion/factory": {host: ["growth", "plan"]},
   /* The map as the reader left it: with the finder on, that is Find a
      location, and the address says so (routeFor()). */
@@ -22631,9 +22640,13 @@ function ssFinder(preset){
   if(typeof premises === "function" && premises()) openFinder(preset);
   else showPage("map");
 }
-/* A hash the board already routes (#wiki/...): the hash listener opens it. */
+/* A hash the board already routes (#wiki/...): the hash listener opens it.
+   Another answer picked on the strip replaces the answer's own entry
+   (ssRepick), so the question stays one visit and the strip's Back one step. */
+let ssRepick = false;
 function ssHash(h){
   if(location.hash === h) openHash(h.slice(1), "none");
+  else if(ssRepick) location.replace(h);
   else location.hash = h;
 }
 /* The company's own shop types, the best-selling first: each has its own
@@ -22816,7 +22829,12 @@ function ssLand(qn, from, ticket, tries = 0, origin = null){
     if(!b) return;
     if(b.dataset.ss === "another"){ ssOpen(); return; }
     /* Another of the question's answers: asked again, with the same way back. */
-    if(b.dataset.ss === "pick"){ e.preventDefault(); qn.choose(b.dataset.pick); ssAsk(qn.id, from, origin); return; }
+    if(b.dataset.ss === "pick"){
+      e.preventDefault(); qn.choose(b.dataset.pick);
+      ssRepick = true;
+      try{ ssAsk(qn.id, from, origin); } finally { ssRepick = false; }
+      return;
+    }
     ssClearAsked();
     /* The crumb's own rule: Back while the entry carries the way back, else
        its address, else the portfolio. */

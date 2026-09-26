@@ -453,3 +453,72 @@ test('the building picked in Find a location comes back after a reload; one no l
   await page.waitForFunction(() => !(history.state || {}).nxPick);
   assert.deepEqual(await picked(), {selected: null, pressed: null, state: null});
 });
+
+// --- recheck (c1-recheck-code-sol, c1-recheck-functional): the finder's pick and history ------
+
+/* Find a location on the takeover list, ready, with the picked building's
+   state: the live pick, the pressed row, its card and the entry's nxPick. */
+async function finderOn(page){
+  await page.waitForFunction(() => typeof cityMapPage !== 'undefined' && cityMapPage && cityMapPage.finderOn());
+  await page.evaluate(() => cityMapPage.ready);
+}
+const finderPick = page => page.evaluate(() => ({
+  selected: cityMapPage.selected,
+  pressed: (document.querySelector('#cityMapPage .place.on') || {}).dataset?.pick || null,
+  card: !!document.querySelector('#cityMapPage .site.in:not([hidden])'),
+  state: (history.state || {}).nxPick || null, route}));
+const settled = (page, key) => page.waitForFunction(k => cityMapPage.selected === k
+  && (!k || (document.querySelector('#cityMapPage .place.on') || {}).dataset?.pick === k), key);
+
+test('two visits to Find a location keep their own picks through Back and Forward', async t => {
+  const page = await board(t, {hash: '#expansion/finder'});
+  await finderOn(page);
+  // The synthetic save has one rival to take over; a second, on another street
+  // address the map knows, gives two picks to tell apart. Nothing reloads here.
+  await page.evaluate(() => {
+    const P = premises(), rival = P.buildings.find(x => x.status === 'rival');
+    const other = [...cityMapPage.assets.byKey.keys()].find(k => /^ba:street_/.test(k) && !P.buildings.some(x => x.key === k));
+    P.buildings.push({...rival, key: other, address: 'Second rival'});
+  });
+  await page.locator('#cityMapPage [data-show="takeover"]').click();
+  await page.waitForSelector('#cityMapPage .place[data-pick]');
+  const [a, b] = await page.$$eval('#cityMapPage .place[data-pick]', rows => rows.slice(0, 2).map(r => r.dataset.pick));
+  assert.ok(a && b && a !== b, 'two rivals to pick between');
+  await page.locator(`#cityMapPage .place[data-pick="${a}"]`).click();
+  await settled(page, a);
+  // Overview, then Expansion from the masthead: a new visit, which takes the pick on screen.
+  await page.locator('#nav a[data-id="overview"]').click();
+  await page.locator('#nav a[data-id="expansion"]').click();
+  await finderOn(page);
+  await page.waitForFunction(k => (history.state || {}).nxPick === k, a);
+  assert.deepEqual(await finderPick(page), {selected: a, pressed: a, card: true, state: a, route: 'expansion/finder'});
+  await page.locator(`#cityMapPage .place[data-pick="${b}"]`).click();
+  await settled(page, b);
+  assert.equal((await finderPick(page)).state, b);
+  // Back to the Overview, then Back to the first visit: its own pick, not the one on screen.
+  await back(page); await back(page);
+  await settled(page, a);
+  assert.deepEqual(await finderPick(page), {selected: a, pressed: a, card: true, state: a, route: 'expansion/finder'}, 'Back');
+  // Forward twice: the second visit's pick again.
+  await forward(page); await forward(page);
+  await settled(page, b);
+  assert.deepEqual(await finderPick(page), {selected: b, pressed: b, card: true, state: b, route: 'expansion/finder'}, 'Forward');
+});
+
+test('a pick carried into Find a location by the masthead survives a reload of that visit', async t => {
+  const page = await board(t, {hash: '#expansion/finder'});
+  await finderOn(page);
+  await page.locator('#cityMapPage [data-show="takeover"]').click();
+  await page.waitForSelector('#cityMapPage .place[data-pick]');
+  const key = await page.locator('#cityMapPage .place[data-pick]').first().getAttribute('data-pick');
+  await page.locator(`#cityMapPage .place[data-pick="${key}"]`).click();
+  await settled(page, key);
+  await page.locator('#nav a[data-id="overview"]').click();
+  await page.locator('#nav a[data-id="expansion"]').click();
+  await finderOn(page);
+  await page.waitForFunction(k => (history.state || {}).nxPick === k, key);
+  await page.reload();
+  await finderOn(page);
+  await settled(page, key);
+  assert.deepEqual(await finderPick(page), {selected: key, pressed: key, card: true, state: key, route: 'expansion/finder'});
+});

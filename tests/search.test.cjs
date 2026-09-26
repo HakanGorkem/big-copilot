@@ -518,6 +518,7 @@ test('"Are my prices right?" answers for each kind of shop the company runs', as
   const page = await board();
   try {
     // Two kinds of shop: the best-selling one first, the other one click away.
+    const asked = await page.evaluate(() => [location.hash, history.length]);
     await page.evaluate(() => ssAsk('prices'));
     await page.waitForFunction(() => document.querySelector('#pageWiki .ss-asked'), null, {timeout: 5000});
     assert.match(await page.evaluate(() => location.hash), /businesstypes-clothingstore\/prices$/);
@@ -533,6 +534,12 @@ test('"Are my prices right?" answers for each kind of shop the company runs', as
     assert.deepEqual(index, [['view:prices:ba:businesstype_clothingstore', 'Game guide › Clothing Store'],
       ['view:prices:ba:businesstype_gym', 'Game guide › Gym']]);
     assert.equal(await page.evaluate(() => ssLands(SS_QUESTIONS.find(x => x.id === 'prices'))), 'Game guide › Gym › Prices in your save');
+    // The other answer took the first one's place: one visit, so Back is the Overview.
+    assert.equal(await page.evaluate(() => history.length), asked[1] + 1, 'a re-pick adds no visit');
+    await page.click('.ss-asked [data-ss="back"]');
+    await page.waitForFunction(() => page === 'today');
+    assert.deepEqual(await page.evaluate(() => [page, location.hash]), ['today', asked[0]]);
+    assert.equal(await page.locator('.ss-asked').count(), 0);
     // One kind of shop has nothing to pick between; none at all lands on the wiki.
     await page.evaluate(() => { D.businesses = D.businesses.filter(b => b.typeSlug !== 'ba:businesstype_gym'); });
     assert.equal(await page.evaluate(() => SS_QUESTIONS.find(x => x.id === 'prices').choices()), null);
