@@ -182,6 +182,12 @@ body .mast{top:var(--release-height,0px)}
 .news-dismiss svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .news-strip :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 @media(max-width:540px){.news-strip{gap:10px;padding-top:6px;padding-bottom:6px;font-size:11px}.news-copy a{white-space:normal}}
+/* On a phone with a board loaded the news keeps to two short lines, so the board's first finding stays on the
+   first screen: the tag and its link, then the sentence cut to one line (read whole by a screen reader). */
+@media(max-width:540px){body.has-board .news-strip{padding-top:4px;padding-bottom:4px}
+  body.has-board .news-copy{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px}
+  body.has-board .news-copy a{order:-1;margin-left:0}body.has-board .news-tag{order:-2;margin-right:0}
+  body.has-board .news-copy > span{flex:1 0 100%;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}}
 
 /* landing (generator) ------------------------------------------------------ */
 .landing{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:80px 0;perspective:1000px}

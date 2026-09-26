@@ -46,6 +46,15 @@ before(async () => {
   // every read and write there throws, which is the one case the ticks must
   // survive but not the case being tested.
   server = http.createServer((req, res) => {
+    /* The web build loads its own files beside the page (scripts, fonts):
+       those are web/'s, not the page again. */
+    const p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    const f = path.join(ROOT, 'web', p);
+    if(process.env.BOARD_TARGET === 'web' && p !== '/' && f.startsWith(path.join(ROOT, 'web')) && fs.existsSync(f) && fs.statSync(f).isFile()){
+      const type = {'.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.woff2': 'font/woff2', '.svg': 'image/svg+xml'}[path.extname(f)];
+      res.writeHead(200, type ? {'content-type': type} : {});
+      return fs.createReadStream(f).pipe(res);
+    }
     res.writeHead(200, {'content-type': 'text/html; charset=utf-8'});
     res.end(html);
   });
@@ -1493,7 +1502,10 @@ test('a row that says nothing about the shop\u2019s age does not call it new', a
 
 // --- reaching the block, and reading it without a pointer -------------------
 
-test('the Optimize staffing card lands on the Roster itself', async () => {
+/* The Overview's "Build shop schedules" (the Optimize staffing card's row, by
+   its id) opens Staffing › Schedules on the shop it names; that shop's Open
+   schedule lands on the Roster itself, under the same route. */
+test('Build shop schedules opens its shop in Schedules, and Open schedule lands on the Roster itself', async () => {
   const page = await shop('full');
   try {
     await page.evaluate(() => {
@@ -1502,9 +1514,12 @@ test('the Optimize staffing card lands on the Roster itself', async () => {
          through. The chart is not what this is about. */
       drawChart = () => {};
       drawOptimizeStaffing();
-      wireCards();
+      wireAll();
       $('optimizeStaffingCard').click();
     });
+    assert.deepEqual(await page.evaluate(() => [route, page, !!q('#secSchedules .nx-row.lit [data-sched-open]')]),
+      ['staffing/schedules', 'staffing', true], 'the shop the task names is lit');
+    await page.evaluate(() => q('#secSchedules .nx-row.lit [data-sched-open]').click());
     // The scroll's end state: the Roster near the top of the window, and
     // still there over three frames in a row.
     await page.waitForFunction(() => {
@@ -1515,10 +1530,12 @@ test('the Optimize staffing card lands on the Roster itself', async () => {
     }, null, {polling: 'raf'});
     const where = await page.evaluate(() => {
       return {top: Math.round(q('#sp-roster').getBoundingClientRect().top),
-        arrived: q('#sp-roster').classList.contains('sp-arrived'),
+        arrived: q('#sp-roster').classList.contains('xl-arrived'),
+        route,
         page: [...document.querySelectorAll('.page')].filter(p => !p.hidden).map(p => p.id)};
     });
     assert.deepEqual(where.page, ['pageCompany']);
+    assert.equal(where.route, 'staffing/schedules', "the shop's page stands under Staffing › Schedules");
     // At the top of the window, under the sticky head, rather than wherever
     // the sections above it were estimated to end.
     assert.ok(where.top >= 0 && where.top < 200, `the Roster landed at ${where.top}`);
@@ -1741,7 +1758,7 @@ test('a plan half of which waits on hires says what to delete and what to leave'
     // Not "delete the cleaning and security hours and drag these in": half of
     // "these" is dashed, and the hours under them would stand bare.
     assert.match(note, /Delete the cleaning and security hours the solid entries replace/);
-    assert.match(note, new RegExp(`leave what is under the ${counts.hire} dashed entry`));
+    assert.match(note, new RegExp(`leave what is under the ${counts.hire} dashed ${counts.hire === 1 ? 'entry' : 'entries'}`));
     assert.doesNotMatch(note, /drag these in instead/);
   } finally { await page.close(); }
 });
@@ -1856,6 +1873,33 @@ test('a measured shop names its plan the demand plan and offers the test beside 
     const steps = await page.locator('#sp-roster .sp-step').evaluateAll(
       b => b.map(x => x.innerText.replace(/\s+/g, ' ')));
     assert.ok(!steps.some(s => /^Open every day/.test(s)), steps.join(' | '));
+  } finally { await page.close(); }
+});
+
+test('Staffing › Schedules summarises the plan the shop shows, and follows a change of plan', async () => {
+  // c1-final-code-review, finding 2: the row read the demand plan while the
+  // shop's own Staffing showed (and would write) full cover.
+  const page = await shop('full');
+  try {
+    const counts = which => page.evaluate(([k, which]) => {
+      const base = spRosterRow(k), c = spRosterCounts(which === 'full' ? spFullRow(base) : base);
+      return `${c.now} entries now, ${c.staffed} in the plan`;
+    }, [KEY, which]);
+    const line = () => page.evaluate(k => {
+      const b = document.querySelector(`#secSchedules [data-sched-open="${CSS.escape(k)}"]`);
+      return b ? b.closest('.nx-row').querySelector('.st').textContent : null;
+    }, KEY);
+    const demand = await counts('demand'), full = await counts('full');
+    assert.notEqual(demand, full, 'the two plans differ, so the row can tell them apart');
+    await page.evaluate(() => { drawSchedules(); openRoute('staffing/schedules'); });
+    assert.ok((await line()).startsWith(demand), await line());
+    // The plan is picked on the shop's own page; Schedules is drawn again on its next visit.
+    await page.evaluate(k => openSite(k), KEY);
+    await page.evaluate(() => q('#sp-roster [data-plan="full"]').click());
+    await page.evaluate(() => openRoute('staffing/schedules'));
+    assert.ok((await line()).startsWith(full), `full cover: ${await line()}`);
+    await page.evaluate(k => { openSite(k); q('#sp-roster [data-plan="demand"]').click(); openRoute('staffing/schedules'); }, KEY);
+    assert.ok((await line()).startsWith(demand), `back to the demand plan: ${await line()}`);
   } finally { await page.close(); }
 });
 

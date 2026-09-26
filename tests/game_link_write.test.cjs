@@ -392,10 +392,10 @@ test('the site panel offers the write for its one shop', async (t) => {
   assert.equal(await btn.getAttribute('data-gw-sites'), JSON.stringify([GIFTS]));
 });
 
-/* Where Today's uniform buttons sit: inside their own finding row, clear of
-   the row's text, and never pushing the page sideways, on a desktop and on a
-   phone. Measured at rest and again with the row's detail line opened by
-   focusing a button, as a keyboard does. */
+/* Where the Overview's uniform buttons sit: inside their own finding row,
+   clear of the row's text, its Details and its action, and never pushing the
+   page sideways, on a desktop and on a phone. Measured at rest and again with
+   the row's Details open, reached from the keyboard. */
 test('the uniform buttons sit inside their finding row, clear of its text, at 1440 and 390 px', async (t) => {
   for (const width of [1440, 390]) {
     const page = await linked(t, {approved: true, viewport: {width, height: 900}});
@@ -408,7 +408,8 @@ test('the uniform buttons sit inside their finding row, clear of its text, at 14
       const bad = [];
       for (const row of rows) {
         const r = box(row);
-        const text = [...row.querySelectorAll(':scope > .mark, :scope > .site, :scope > .what, :scope > .amt, :scope > .go, :scope > .more')]
+        const text = [...row.querySelectorAll(':scope > .mark, :scope .ov-t .site, :scope .ov-t .what, :scope .ov-t .ov-k, :scope .ov-now, '
+          + ':scope > .ov-vz, :scope > .ov-det, :scope > .ov-ac, :scope > .ov-x')]
           .filter((el) => { const b = box(el); return b.width > 0 && b.height > 0; });
         for (const btn of row.querySelectorAll('.gw-find .gw-btn')) {
           const b = box(btn), name = btn.textContent.trim();
@@ -428,19 +429,16 @@ test('the uniform buttons sit inside their finding row, clear of its text, at 14
     assert.ok(rest.rows >= 2 && rest.buttons >= 3, `${width}px: ${JSON.stringify(rest)}`);
     assert.deepEqual(rest.bad, [], `${width}px at rest`);
     assert.equal(rest.sideways, false, `${width}px: the page scrolls sideways`);
-    // A keyboard on the button opens the row's detail line; the buttons keep clear of it.
-    await button(page, GIFTS).focus();
-    assert.equal(await page.evaluate(() => !!document.activeElement.closest('.find').querySelector(':scope > .more')), true,
-      `${width}px: the focused row has a detail line`);
-    await page.waitForFunction(() => {
-      const more = document.activeElement.closest('.find').querySelector(':scope > .more');
-      return getComputedStyle(more).opacity === '1' && more.getAnimations().every((a) => a.playState !== 'running');
-    });
-    assert.ok(await page.evaluate(() => document.activeElement.closest('.find').querySelector(':scope > .more')
-      .getBoundingClientRect().height) > 0, `${width}px: the detail line opens`);
+    // From the keyboard: the row's Details opens its pane; the buttons keep clear of it.
+    await button(page, GIFTS).evaluate((b) => b.closest('.find').querySelector('.ov-det').focus());
+    await page.keyboard.press('Enter');
+    assert.deepEqual(await page.evaluate(() => {
+      const row = document.activeElement.closest('.find');
+      return [document.activeElement.getAttribute('aria-expanded'), row.querySelector('.ov-x').getBoundingClientRect().height > 0];
+    }), ['true', true], `${width}px: Details opens its pane from the keyboard`);
     const open = await measure();
-    assert.deepEqual(open.bad, [], `${width}px with the detail line open`);
-    assert.equal(open.sideways, false, `${width}px: the page scrolls sideways with the detail line open`);
+    assert.deepEqual(open.bad, [], `${width}px with Details open`);
+    assert.equal(open.sideways, false, `${width}px: the page scrolls sideways with Details open`);
   }
 });
 
@@ -2194,4 +2192,91 @@ test('schedule: a cover-only plan keeps the serving entries in the game', async 
   assert.deepEqual((await applied())[0].body.days, [
     {d: 1, shifts: [{f: 8, t: 20, employeeId: ANA, itemInstanceId: REGISTER}]},
     {d: 3, shifts: [{f: 0, t: 12, employeeId: ANA, itemInstanceId: CLEAN}]}]);
+});
+
+/* --- hire (POST /write/hire, mod 0.3.0) ------------------------------------
+   The page's generic write path (LEDGER_SOURCE.write) against the mock's hire.
+   The Staff page (issue #89) builds these bodies from its plan; until it lands
+   the tests send them by hand. hireBody() and HIRE are the hooks its tests
+   can reuse: the fixture's candidates (tests/es3_fixture.py) and addresses. */
+const HIRE = {
+  ida: 'IIIIcandidateIIIIIIIIIII', oskar: 'OOOOcandidateOOOOOOOOOOO', ben: 'BBBBemployeeBBBBBBBBBBBB',
+  ana: 'AAAAemployeeAAAAAAAAAAAA', cy: 'CCCCemployeeCCCCCCCCCCCC',
+  gifts: {street: 'ba:street_secondavenue', number: 10}, corner: {street: 'ba:street_broadway', number: 2},
+  giftsRegister: 'REGISTERaaaaaaaaaaaaaa==ue', cornerRegister: 'REGISTERaaaaaaaaaaaaaa==ay',
+};
+const WRITES_WITH_HIRE = ['uniforms', 'imports', 'schedule', 'hire'];
+// The shift print of a business as the payload has it (businesses[].shiftPrint).
+const printOf = (key) => JSON.parse(payload).businesses.find((b) => b.key === key).shiftPrint;
+
+// Ida and Oskar hired into Gifts with a day each, Ben moved from Gifts (no
+// hours there) to Corner with a day, both weeks written.
+function hireBody() {
+  const at = (who, post, d) => ({d, shifts: [{f: 8, t: 20, employeeId: who, itemInstanceId: post}]});
+  return {
+    sites: [{address: HIRE.gifts, expect: printOf(GIFTS), openAllHours: false,
+             days: [at(HIRE.ana, HIRE.giftsRegister, 1), at(HIRE.ida, HIRE.giftsRegister, 3), at(HIRE.oskar, HIRE.giftsRegister, 4)]},
+            {address: HIRE.corner, expect: printOf('ba:street_broadway#2'), openAllHours: false,
+             days: [at(HIRE.cy, HIRE.cornerRegister, 2), at(HIRE.ben, HIRE.cornerRegister, 3)]}],
+    hires: [{candidateId: HIRE.ida, address: HIRE.gifts, expect: {wage: 26.5}, seenHoursLeft: 71},
+            {candidateId: HIRE.oskar, address: HIRE.gifts, expect: {wage: 22.0}, seenHoursLeft: 5}],
+    moves: [{employeeId: HIRE.ben, from: HIRE.gifts, to: HIRE.corner}],
+  };
+}
+const sourceWrite = (page, kind, body, dryRun) =>
+  page.evaluate(({kind, body, dryRun}) => window.LEDGER_SOURCE.write(kind, body, {dryRun}), {kind, body, dryRun});
+
+test('hire: a dry run and an apply through the page, which then reads the game again; no undo', async (t) => {
+  const page = await linked(t, {writes: WRITES_WITH_HIRE, approved: true});
+  const dry = await sourceWrite(page, 'hire', hireBody(), true);
+  assert.equal(dry.status, 200);
+  assert.equal(dry.error, null);
+  assert.equal(dry.body.kind, 'hire');
+  assert.equal(dry.body.ok, true);
+  assert.deepEqual(dry.body.hired.map((h) => h.name), ['Ida Nord', 'Oskar Lind']);
+  assert.deepEqual(dry.body.moved.map((m) => [m.name, m.from, m.to]), [['Ben Ode', 'HART. Gifts', 'HART. Corner']]);
+  assert.equal(dry.body.wageAdded, 48.5);
+  assert.deepEqual(await applied(), []);
+  const builds = await page.evaluate(() => window.builds);
+  const done = await sourceWrite(page, 'hire', hireBody(), false);
+  assert.equal(done.status, 200);
+  assert.equal(done.error, null);
+  assert.equal(typeof done.body.stamp, 'string');
+  assert.deepEqual((await applied()).map((w) => w.kind), ['hire']);
+  // The board follows the stamp the apply moved, as after any write.
+  await page.waitForFunction((n) => window.builds > n, builds);
+  const undo = await sourceWrite(page, 'undo', {kind: 'hire'}, false);
+  assert.deepEqual([undo.status, undo.error], [409, 'no_undo']);
+});
+
+test('hire: MyEmployees open blocks the dry run and refuses the apply, which the page reads', async (t) => {
+  const page = await linked(t, {writes: WRITES_WITH_HIRE, approved: true});
+  await configure({myEmployees: true});
+  const dry = await sourceWrite(page, 'hire', hireBody(), true);
+  assert.deepEqual([dry.status, dry.error, dry.body.ok, dry.body.blocked], [200, null, false, 'myemployees']);
+  const refused = await sourceWrite(page, 'hire', hireBody(), false);
+  assert.deepEqual([refused.status, refused.error, refused.body.reason], [409, 'cannot_write', 'myemployees']);
+  assert.deepEqual(await applied(), []);
+});
+
+test('hire: a candidate gone since the bytes is skipped, and the rest applies', async (t) => {
+  const page = await linked(t, {writes: WRITES_WITH_HIRE, approved: true});
+  await configure({hireGone: [HIRE.oskar]});
+  const dry = await sourceWrite(page, 'hire', hireBody(), true);
+  assert.equal(dry.body.ok, true);
+  assert.deepEqual(dry.body.skipped, [{candidateId: HIRE.oskar, name: 'Oskar Lind', reason: 'gone', hoursDropped: 12}]);
+  const done = await sourceWrite(page, 'hire', hireBody(), false);
+  assert.deepEqual([done.status, done.body.hired.map((h) => h.candidateId)], [200, [HIRE.ida]]);
+});
+
+test('hire: a refused row answers 409 with its scope, and nothing is written', async (t) => {
+  const page = await linked(t, {writes: WRITES_WITH_HIRE, approved: true});
+  const body = hireBody();
+  body.hires[0].expect.wage = 25;  // the game's wage moved on
+  const dry = await sourceWrite(page, 'hire', body, true);
+  assert.equal(dry.body.ok, false);
+  assert.deepEqual(dry.body.rows.filter((r) => r.scope === 'hire'), [{scope: 'hire', id: HIRE.ida, error: 'changed'}]);
+  const refused = await sourceWrite(page, 'hire', body, false);
+  assert.deepEqual([refused.status, refused.error], [409, 'changed']);
+  assert.deepEqual(await applied(), []);
 });

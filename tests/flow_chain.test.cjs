@@ -36,7 +36,14 @@ async function board(t, data, width){
   page.on('pageerror', e => errors.push(String(e)));
   t.after(() => assert.deepEqual(errors, [], 'no script error on the page'));
   await page.route('https://**', route => route.abort());
-  await page.route('http://board.test/**', route => route.fulfill({contentType: 'text/html', body: html}));
+  /* The web build loads its own scripts (app.js, community.js) beside the
+     page: those are web/'s files, not the page again. */
+  await page.route('http://board.test/**', route => {
+    const p = new URL(route.request().url()).pathname;
+    if(p === '/' || process.env.BOARD_TARGET !== 'web') return route.fulfill({contentType: 'text/html', body: html});
+    const f = path.join(root, 'web', decodeURIComponent(p));
+    return fs.existsSync(f) ? route.fulfill({path: f}) : route.fulfill({status: 404, body: ''});
+  });
   await page.goto('http://board.test/');
   await page.emulateMedia({reducedMotion: 'reduce'});
   await page.evaluate(data => {

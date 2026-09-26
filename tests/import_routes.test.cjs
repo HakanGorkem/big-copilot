@@ -699,7 +699,7 @@ test('a finding lands on its tab and row, lit, with a crumb back', async () => {
     // Not routed: the tab of the depot's kind, on the soda row, its group opened.
     const soda = await land('r8notrouted');
     assert.deepEqual([soda.tab, soda.at], ['warehouses', '0:soda']);
-    assert.match(soda.crumb, /from Today · Not routed/);
+    assert.match(soda.crumb, /from Needs attention · Not routed/);
     assert.equal(await page.locator('#secWarehouses tr[data-slug="soda"]').evaluate(r => r.classList.contains('sb-open')), true);
     // Too few hours: Factories, on the cake line.
     const cake = await land('r13hours');

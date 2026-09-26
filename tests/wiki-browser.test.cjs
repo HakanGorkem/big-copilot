@@ -81,7 +81,9 @@ test('a cold Wiki article link and reload work without a save', async t => {
   const {page, errors} = await fixture(t, {hash:'#wiki/businesstypes-giftshop'});
   await page.getByRole('heading', {name:'Gift Shop',exact:true,level:1}).waitFor();
   assert.equal(await page.locator('#landing').count(), 0);
-  assert.equal(await page.locator('#nav a[data-id]').count(), 6);
+  // The five places and the two references, all present without a save.
+  assert.equal(await page.locator('#nav a[data-id]').count(), 5);
+  assert.equal(await page.locator('#navRefs a[data-id]').count(), 2);
   await page.reload();
   await page.getByRole('heading', {name:'Gift Shop',exact:true,level:1}).waitFor();
   assert.match(page.url(), /#wiki\/businesstypes-giftshop$/);

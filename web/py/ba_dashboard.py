@@ -1829,6 +1829,12 @@ def extract(save: Save, names: Names, history_path: str | None = None) -> dict:
     # Staffing for factory lines, in each sizing; takes the lines' _posts.
     factory_staffing = _factory_staffing(
         save, names, businesses, supply.get("factories", {}), staff)
+    # Offices by Peter's office default, drawing on the unassigned people no
+    # shop's plan counts on; then the Staff page's key, which takes every
+    # plan's private `_hire` part off its row.
+    office_staffing = _office_staffing(
+        save, names, businesses, all_grids, staff, _bench_claimed(staffing))
+    hiring = _hiring(save, businesses, staffing, factory_staffing, office_staffing)
     alerts = _alerts(
         businesses, supply, chains, trends, hype, hour_findings, grids, day, gate
     )
@@ -1898,6 +1904,11 @@ def extract(save: Save, names: Names, history_path: str | None = None) -> dict:
         "hourFindings": hour_findings,
         "staffing": staffing,
         "factoryStaffing": factory_staffing,
+        "officeStaffing": office_staffing,
+        # The Staff page: the headhunters' candidates, best first, and what
+        # every site still needs by role. See _candidates() and _hiring().
+        "candidates": _candidates(save),
+        "hiring": hiring,
         "plan": plan,
         # Every game name the text knows -- items, business types,
         # neighbourhoods, stations, skills, job demands -- by the game's own
@@ -2045,16 +2056,38 @@ def _statement_history(save: Save, summaries: list) -> list:
     return history
 
 
+def _character(save: Save, instance: dict) -> dict:
+    """Who an employee or a candidate is: name, age in days and skills.
+
+    Current saves keep these on the instance's `characterData`; older ones keep
+    `name`, `ageInDays` and `skills` on the instance itself. One reader for both,
+    so a name never reads "?" only because the save is older. `skills` is in the
+    save's order, each `{"skill", "level"}`, and a skill the save has without a
+    value counts at 0.
+    """
+    char = save.deref(instance.get("characterData"))
+    source = char if isinstance(char, dict) else instance
+    return {
+        "name": source.get("name"),
+        "ageDays": source.get("ageInDays"),
+        "skills": [
+            {"skill": s.get("name"), "level": s.get("value") or 0}
+            for s in save.items(source.get("skills"))
+            if isinstance(s, dict)
+        ],
+    }
+
+
 def _staff(save: Save, names: Names):
     by_addr = collections.defaultdict(list)
     staff = []
     for e in save.items(save.root["EmployeeInstances"]):
-        char = save.deref(e.get("characterData")) or {}
-        skills = save.items(char.get("skills"))
+        char = _character(save, e)
+        skills = [{"name": s["skill"], "value": s["level"]} for s in char["skills"]]
         top = max(skills, key=lambda s: s["value"], default=None)
         rec = {
             "id": e.get("id"),
-            "name": char.get("name", "?"),
+            "name": char["name"] if char["name"] is not None else "?",
             "role": names.label(top["name"]) if top else "-",
             "skill": top["name"] if top else None,
             # Every skill, not just the top one: a character carries one or two,
@@ -2077,6 +2110,64 @@ def _staff(save: Save, names: Names):
     return by_addr, staff
 
 
+def _skill_rows(char: dict) -> list:
+    """A character's skills, highest first, levels rounded as _staff() rounds them.
+
+    Ties keep the save's order, which is a list and so a promise.
+    """
+    ordered = sorted(enumerate(char["skills"]), key=lambda e: (-e[1]["level"], e[0]))
+    return [{"skill": s["skill"], "level": int(round(s["level"]))} for _i, s in ordered]
+
+
+def _candidate_source(save: Save, info: dict) -> str:
+    """Where a candidate came from: a headhunter, the job board, an agency."""
+    if info.get("sourceHeadhunterId"):
+        return "headhunter"
+    if info.get("fromJobBoard"):
+        return "jobboard"
+    if save.address(info.get("sourceAddress")):
+        return "agency"
+    return "other"
+
+
+def _candidates(save: Save) -> list:
+    """The people the game offers to hire, one row each, best first.
+
+    From GameInstance.CandidateEmployeeInstances; an older save marks a finished
+    offer `hired` or `declined` rather than dropping it, and those are left out.
+    Ordered by top skill level (highest first), then wage (cheapest first),
+    then id, so the list is the same on every run. `hoursLeft` is the game's
+    countdown as of the save; a candidate leaves the list at 0. `age` is in the
+    game's years (ageInDays over gameVariables.daysPerYear, as the game counts
+    retirement), None when the save has no year length.
+    """
+    root = save.root
+    per_year = (save.deref(root.get("gameVariables")) or {}).get("daysPerYear")
+    rows = []
+    for c in save.items(root.get("CandidateEmployeeInstances")):
+        if not isinstance(c, dict) or c.get("hired") or c.get("declined"):
+            continue
+        char = _character(save, c)
+        skills = _skill_rows(char)
+        info = save.deref(c.get("candidateInfo")) or {}
+        age = char["ageDays"]
+        rows.append({
+            "id": c.get("id"),
+            "name": char["name"],
+            "age": int(age // per_year) if age is not None and per_year else None,
+            "skill": skills[0]["skill"] if skills else None,
+            "level": skills[0]["level"] if skills else 0,
+            "skills": skills,
+            "wage": money(c.get("hourlyWage") or 0),
+            "demands": _in_order(
+                {d for d in save.items(c.get("demands")) if isinstance(d, str)}),
+            "hoursLeft": info.get("hoursUntilExpiring"),
+            "source": _candidate_source(save, info),
+        })
+    rows.sort(key=lambda r: (-r["level"], r["wage"], str(r["id"])))
+    return rows
+
+
 def _cleanliness(save: Save, building: dict) -> float:
     """A building's cleanliness as the game scores it, from its saved dirt spots.
 
@@ -2089,6 +2180,29 @@ def _cleanliness(save: Save, building: dict) -> float:
     if not dirt or not visible:
         return 100.0
     return float(max(0, int(100 - sum(dirt) / len(dirt) - visible / len(dirt))))
+
+
+def _items_by_name(save: Save, registration: dict) -> dict:
+    """A building's items, as lists by item name."""
+    held = collections.defaultdict(list)
+    for holder in save.items(registration.get("itemInstances")):
+        item = save.deref(holder.get("$v")) if isinstance(holder, dict) else None
+        if item and item.get("itemName"):
+            held[item["itemName"]].append(item)
+    return held
+
+
+def _holds_demanded_item(save: Save, here: dict, setting) -> bool:
+    """Whether a building holds one of a "building" demand's items, as the game
+    counts it: an item that displays products only while it holds some."""
+    for slug in setting:
+        for item in here.get("ba:itemname_" + slug, ()):
+            if item["itemName"] not in DISPLAY_ITEMS or any(
+                c.get("itemName") and (c.get("amount") or 0) > 0
+                for c in save.items(item.get("cargoInstances"))
+            ):
+                return True
+    return False
 
 
 def _job_demands(save: Save, names: Names, businesses: list) -> None:
@@ -2119,11 +2233,7 @@ def _job_demands(save: Save, names: Names, businesses: list) -> None:
 
     def items_at(key):
         if key not in held:
-            held[key] = collections.defaultdict(list)
-            for holder in save.items(regs[key].get("itemInstances")):
-                item = save.deref(holder.get("$v")) if isinstance(holder, dict) else None
-                if item and item.get("itemName"):
-                    held[key][item["itemName"]].append(item)
+            held[key] = _items_by_name(save, regs[key])
         return held[key]
 
     def shifts(key, employee_id):
@@ -2165,15 +2275,7 @@ def _job_demands(save: Save, names: Names, businesses: list) -> None:
             desk = set(save.items(e.get("assignedWorkStationItems")))
             return any("ba:itemname_" + slug in desk for slug in setting)
         if kind == "building":
-            here = items_at(key)
-            for slug in setting:
-                for item in here.get("ba:itemname_" + slug, ()):
-                    if item["itemName"] not in DISPLAY_ITEMS or any(
-                        c.get("itemName") and (c.get("amount") or 0) > 0
-                        for c in save.items(item.get("cargoInstances"))
-                    ):
-                        return True
-            return False
+            return _holds_demanded_item(save, items_at(key), setting)
         if kind == "insurance":
             plan = plans.get(e.get("assignedHrManagerPlanId")) or {}
             cover = save.deref(plan.get("healthInsurancePlan")) or {}
@@ -6646,8 +6748,18 @@ def _plan_people(save: Save, staff: list) -> dict:
     person with no hours demand has **no band** — 225 of 227 on the reference
     save demand full time, but the plan may not invent one for the other two.
     """
-    demands = {}
+    demands, training = {}, set()
+    # The stations each person has a shift on now, at any site: an office's
+    # plan keeps somebody at their own desk where it can (_placement_rank()).
+    home = collections.defaultdict(set)
+    for reg in save.items(save.root.get("BuildingRegistrations")):
+        for day in save.items(reg.get("scheduleDays")):
+            for shift in save.items(day.get("workShifts")):
+                if isinstance(shift, dict) and shift.get("employeeId") is not None:
+                    home[shift["employeeId"]].add(shift.get("itemInstanceId"))
     for employee in save.items(save.root.get("EmployeeInstances")):
+        if save.deref(employee.get("trainingSession")):
+            training.add(employee.get("id"))
         demands[employee.get("id")] = [
             slug
             for slug in dict.fromkeys(save.items(employee.get("demands")))
@@ -6672,6 +6784,15 @@ def _plan_people(save: Save, staff: list) -> dict:
                 window for rule in rules if rule[0] == "noshift" for window in rule[1]
             ),
             "nocleaning": any(r[0] == "nocleaning" for r in rules),
+            # In training (trainingSession set): the game will not assign them
+            # to a business, so no plan counts on them from the bench.
+            "training": person["id"] in training,
+            # The weekly hours the game has them on now, at the one site they
+            # work: a hire's week never takes them below it (_fill_hire_weeks()).
+            "now": person.get("hours") or 0,
+            "home": home.get(person["id"], set()),
+            # Each desk or chair demand, as the item names that meet it.
+            "desks": [tuple("ba:itemname_" + name for name in r[1]) for r in rules if r[0] == "desk"],
         }
     return out
 
@@ -6821,6 +6942,13 @@ def _placement_rank(person: dict, state: dict, slot: dict, here: dict) -> tuple:
         # Headcount first: one more name on the roster is the expensive thing,
         # because it is one more person this site owes 30 hours to.
         0 if person["id"] in here["rostered"] else 1,
+        # Within that tier, the site's own person whose desk or chair demand
+        # this very station meets: otherwise a lawyer with no such demand takes
+        # the executive desk ahead of the one who asks for it, who is then put
+        # at a desk that breaks it. Only where the site's furniture is known
+        # (an office), and never somebody from the bench over the site's own.
+        0 if here.get("groups") and person["addr"] and person.get("desks")
+        and _desk_fits(person, slot, here) else 1,
         # Then whose floor is still at stake, emptiest week first. A part-timer
         # already past their ten hours waits behind a full-timer still under
         # thirty, and two people under theirs rise towards it together. Past the
@@ -6850,6 +6978,12 @@ def _placement_rank(person: dict, state: dict, slot: dict, here: dict) -> tuple:
         # the week and the site owes as few people thirty hours as it can.
         0.0 if on_roster else -((person["band"] or FULL_TIME)[1] - state["hours"]),
         0 if wants_day else 1,
+        # A desk or chair demand is met by the station's own furniture: the
+        # station that meets theirs first, then the one they work now, so a
+        # new week does not move a whole office to other desks (Peter's
+        # in-game test, 25 September 2026).
+        0 if _desk_fits(person, slot, here) else 1,
+        0 if slot["station"] in (person.get("home") or ()) else 1,
         0 if adjacent else 1,
         # A bench member is a last resort even at equal hours: drawing one costs
         # the checklist a MyEmployees step and binds them to this building, so
@@ -6858,6 +6992,19 @@ def _placement_rank(person: dict, state: dict, slot: dict, here: dict) -> tuple:
         person["wage"],
         str(person["id"]),
     )
+
+
+def _desk_fits(person: dict, slot: dict, here: dict) -> bool:
+    """Whether a station meets every desk or chair demand a person holds.
+
+    True for somebody with none, and where the site's furniture is not known.
+    """
+    wants = person.get("desks") or ()
+    groups = here.get("groups") or {}
+    if not wants or not groups:
+        return True
+    held = groups.get(slot["station"], ())
+    return all(any(name in held for name in names) for names in wants)
 
 
 def _cover_runs(need: list, rates: list, open_hours: list) -> dict:
@@ -6943,24 +7090,26 @@ HIRE_ORDERS = (
 )
 
 
-def _pack_hires(slots: list, count: int | None, order=HIRE_ORDERS[1]) -> int | None:
-    """Pack slots onto hires; how many it took, or None if `count` hires cannot.
+def _pack_hire_weeks(slots: list, count: int | None, order=HIRE_ORDERS[1]) -> list | None:
+    """Pack slots onto hires; each hire's week, or None if `count` hires cannot.
 
     With `count` None it is first fit, opening a hire whenever none has room:
     always succeeds, and was the whole count once. With a `count` it is the
     balanced packing: every slot goes to the emptiest hire who may take it, so
     the week spreads over all of them instead of filling the first few to their
     ceiling and leaving the last days to people who may take one shift a day.
+    Each hire is `{"hours", "busy", "slots"}`, the slots in the order placed.
     """
     order = sorted(slots, key=order)
-    hires = [{"hours": 0.0, "busy": [set() for _ in range(7)]} for _ in range(count or 0)]
+    fresh = lambda: {"hours": 0.0, "busy": [set() for _ in range(7)], "slots": []}  # noqa: E731
+    hires = [fresh() for _ in range(count or 0)]
     for slot in order:
         able = [i for i, hire in enumerate(hires) if _hire_fits(slot, hire)]
         if count is None:
             if able:
                 index = able[0]
             else:
-                hires.append({"hours": 0.0, "busy": [set() for _ in range(7)]})
+                hires.append(fresh())
                 index = len(hires) - 1
         elif able:
             index = min(able, key=lambda i: (hires[i]["hours"], i))
@@ -6969,11 +7118,18 @@ def _pack_hires(slots: list, count: int | None, order=HIRE_ORDERS[1]) -> int | N
         hire = hires[index]
         hire["hours"] += slot["to"] - slot["from"]
         hire["busy"][slot["wd"]].update(range(slot["from"], slot["to"]))
-    return len(hires)
+        hire["slots"].append(slot)
+    return hires
 
 
-def _hires_for(slots: list) -> int:
-    """How many new people the slots nobody here may work would actually take.
+def _pack_hires(slots: list, count: int | None, order=HIRE_ORDERS[1]) -> int | None:
+    """How many hires _pack_hire_weeks() took, or None if `count` hires cannot."""
+    hires = _pack_hire_weeks(slots, count, order)
+    return None if hires is None else len(hires)
+
+
+def _hire_weeks(slots: list) -> list:
+    """The weeks the new people the slots nobody here may work would take.
 
     Dividing the hours by a full week understates it: four uncovered twelve-hour
     weekend shifts are 48 hours, but two of them fall on the same day and the
@@ -6989,10 +7145,14 @@ def _hires_for(slots: list) -> int:
     what seven can work at 48 hours each. First fit in either order is kept as
     the ceiling, the clock's being the count as it always was, so the answer
     is never worse than it was. Deterministic throughout.
+
+    The Staff page puts one hired or moved person on each of these weeks, so
+    the packing itself is kept, not only its size.
     """
     if not slots:
-        return 0
-    worst = min(_pack_hires(slots, None, order) for order in HIRE_ORDERS)
+        return []
+    firsts = [_pack_hire_weeks(slots, None, order) for order in HIRE_ORDERS]
+    worst = min(firsts, key=len)  # the first order wins a tie, as min() always did
     total = sum(s["to"] - s["from"] for s in slots)
     floor = math.ceil(total / FULL_TIME[1])
     for wd in range(7):
@@ -7002,10 +7162,198 @@ def _hires_for(slots: list) -> int:
         floor = max(floor, math.ceil(sum(s["to"] - s["from"] for s in day) / OVERWORK_HOURS))
         for hour in range(24):
             floor = max(floor, sum(1 for s in day if s["from"] <= hour < s["to"]))
-    for count in range(floor, worst):
-        if any(_pack_hires(slots, count, order) is not None for order in HIRE_ORDERS):
-            return count
+    for count in range(floor, len(worst)):
+        for order in HIRE_ORDERS:
+            packed = _pack_hire_weeks(slots, count, order)
+            if packed is not None:
+                return packed
     return worst
+
+
+def _hire_floor(person: dict) -> float:
+    """The fewest hours a hire's week may leave somebody already placed here with.
+
+    Their hours demand's floor, and the weekly hours the game has them on now
+    at the one site they work: a hire is never why somebody works less.
+    """
+    band = person["band"][0] if person["band"] else 0
+    return max(band, (person.get("now") or 0) if person["addr"] else 0)
+
+
+def _spread_residue(residue: list, shifts: list, pool: list, state: dict, before: dict) -> list:
+    """Move the open shifts off the day they pile up on, by swapping days with staff.
+
+    The placer fills the people a site already has before it counts a hire, so
+    the shifts nobody can take pile up on whichever day their weeks ran out: at
+    a law firm of 84 lawyers, 267 hours all on a Friday, 22 of them at the same
+    hour, which packed onto 22 hires of one day each, 7 to 14 hours a week
+    (Peter's in-game test, 25 September 2026). The hires those hours need are
+    about ceil(hours / 50). While more open shifts than that run at one hour,
+    or more than that many 14-hour days of them fall on one day, one of them
+    goes to somebody here who is off that day, and one of their own shifts of
+    the role on another day, where the open ones are fewer, is opened in its
+    place: nobody's week breaks a rule or a demand for it (_can_work()), and
+    nobody drops under _hire_floor(). Returns the open shifts afterwards, the
+    same shift rows, reassigned in place. Deterministic.
+    """
+    if not residue:
+        return residue
+    skill = residue[0]["skill"]
+    residue = list(residue)
+    total = sum(s["to"] - s["from"] for s in residue)
+    limit = max(1, math.ceil(total / FULL_TIME[1]))
+    by_id = {person["id"]: person for person in pool}
+    stuck = set()
+
+    def load():
+        at = [[0] * 24 for _ in range(7)]
+        day = [0] * 7
+        for s in residue:
+            day[s["wd"]] += s["to"] - s["from"]
+            for hour in range(s["from"], s["to"]):
+                at[s["wd"]][hour] += 1
+        return at, day
+
+    def find(wd, hour, at, day):
+        rows = sorted((s for s in residue if s["wd"] == wd and s["from"] <= hour < s["to"]),
+                      key=lambda s: (s["from"], s["to"], str(s["station"])))
+        free = sorted((pid for pid in by_id if not state[pid]["busy"][wd]), key=str)
+        for open_row in rows:
+            for pid in free:
+                person = by_id[pid]
+                if not _usable(person, skill, open_row["kind"]):
+                    continue
+                own = sorted((s for s in shifts if s["employee"] == pid and s["skill"] == skill
+                              and s["wd"] != wd), key=lambda s: (s["wd"], s["from"]))
+                for mine in own:
+                    if any(at[mine["wd"]][h] + 1 > limit for h in range(mine["from"], mine["to"])):
+                        continue
+                    if day[mine["wd"]] + (mine["to"] - mine["from"]) > limit * OVERWORK_HOURS:
+                        continue
+                    trial = _copy_state(state[pid])
+                    trial["hours"] -= mine["to"] - mine["from"]
+                    trial["busy"][mine["wd"]].difference_update(range(mine["from"], mine["to"]))
+                    if not trial["busy"][mine["wd"]]:
+                        trial["days"].discard(mine["wd"])
+                    if not _can_work(person, trial, open_row):
+                        continue
+                    here = state[pid]["hours"] - before[pid][0]
+                    after = here - (mine["to"] - mine["from"]) + (open_row["to"] - open_row["from"])
+                    if after < min(_hire_floor(person), here):
+                        continue
+                    days_after = len(trial["days"] | {wd}) - before[pid][1]
+                    if person["days"] is not None and days_after < min(
+                            person["days"], len(state[pid]["days"]) - before[pid][1]):
+                        continue
+                    return open_row, person, mine
+        return None
+
+    for _ in range(4 * len(shifts) + 1):
+        at, day = load()
+        crowded = sorted(
+            (-at[wd][hour], wd, hour)
+            for wd in range(7) for hour in range(24)
+            if at[wd][hour] and (at[wd][hour] > limit or day[wd] > limit * OVERWORK_HOURS)
+            and (wd, hour) not in stuck
+        )
+        if not crowded:
+            break
+        _, wd, hour = crowded[0]
+        swap = find(wd, hour, at, day)
+        if swap is None:
+            stuck.add((wd, hour))
+            continue
+        open_row, person, mine = swap
+        theirs = state[person["id"]]
+        theirs["hours"] -= mine["to"] - mine["from"]
+        theirs["busy"][mine["wd"]].difference_update(range(mine["from"], mine["to"]))
+        if not theirs["busy"][mine["wd"]]:
+            theirs["days"].discard(mine["wd"])
+        if not any(other is not mine and other["employee"] == person["id"]
+                   and other["station"] == mine["station"] and other["wd"] == mine["wd"]
+                   for other in shifts):
+            theirs["stations"].discard((mine["station"], mine["wd"]))
+        mine.update(employee=None, name=None, fromBench=False)
+        _take_over(open_row, person, state)
+        residue.remove(open_row)
+        residue.append(mine)
+    return residue
+
+
+def _fill_hire_weeks(weeks: list, shifts: list, pool: list, state: dict, before: dict) -> list:
+    """Give each hire short of a full week whole shifts the site's own people can spare.
+
+    The placer fills the people a site already has up to their ceiling before
+    it counts a single hire, so what is left for the hires is whatever their
+    weeks could not reach: at a law firm of 84 lawyers that was 267 hours, all
+    on a Friday, and 22 hires on one day each, 7 to 14 hours a week against a
+    full-time demand nearly every candidate holds (Peter's in-game test, 25
+    September 2026). Here each hire under FULL_TIME[0] takes whole shifts of
+    the same role, on days it does not work yet, from the people holding the
+    most hours above their own floor -- the larger of their hours demand's
+    floor and the hours the game has them on now -- so nobody already here is
+    cut below the week they have, and nobody is left under their demands'
+    floor or short of a four- or five-day count. The hire keeps within 50
+    hours and the 14-hour day. The number of hires does not change; only which
+    of the plan's shifts are theirs. Deterministic: donors by most spare hours,
+    then id; shifts by day and hour.
+    """
+    if not weeks:
+        return weeks
+    by_id = {person["id"]: person for person in pool}
+
+    def spare(person):
+        # Only this site's week counts: a bench member's hours elsewhere are
+        # another plan's, and `before` is what they held when this one began.
+        return state[person["id"]]["hours"] - before[person["id"]][0] - _hire_floor(person)
+
+    skill = weeks[0]["slots"][0]["skill"] if weeks[0]["slots"] else None
+    for week in sorted(weeks, key=lambda w: w["hours"]):
+        while week["hours"] < FULL_TIME[0]:
+            best = None
+            for shift in shifts:
+                person = by_id.get(shift["employee"])
+                if person is None or shift["skill"] != skill:
+                    continue
+                hours = shift["to"] - shift["from"]
+                if week["busy"][shift["wd"]] or not _hire_fits(shift, week):
+                    continue
+                if spare(person) < hours:
+                    continue
+                theirs = state[person["id"]]
+                last = sum(
+                    1 for s in shifts
+                    if s["employee"] == person["id"] and s["wd"] == shift["wd"]
+                ) == 1
+                days_here = len(theirs["days"]) - before[person["id"]][1]
+                if last and person["days"] is not None and days_here <= person["days"]:
+                    continue
+                key = (-spare(person), str(person["id"]), shift["wd"], shift["from"],
+                       str(shift["station"]))
+                if best is None or key < best[0]:
+                    best = (key, shift, person)
+            if best is None:
+                break
+            _, shift, person = best
+            mine = state[person["id"]]
+            mine["hours"] -= shift["to"] - shift["from"]
+            mine["busy"][shift["wd"]].difference_update(range(shift["from"], shift["to"]))
+            if not mine["busy"][shift["wd"]]:
+                mine["days"].discard(shift["wd"])
+            if not any(other is not shift and other["employee"] == person["id"]
+                       and other["station"] == shift["station"] and other["wd"] == shift["wd"]
+                       for other in shifts):
+                mine["stations"].discard((shift["station"], shift["wd"]))
+            shift.update(employee=None, name=None, fromBench=False)
+            week["hours"] += shift["to"] - shift["from"]
+            week["busy"][shift["wd"]].update(range(shift["from"], shift["to"]))
+            week["slots"].append(shift)
+    return weeks
+
+
+def _hires_for(slots: list) -> int:
+    """How many new people the slots nobody here may work would take: _hire_weeks()."""
+    return len(_hire_weeks(slots))
 
 
 def _current_roster(save: Save, building: dict, stations: dict) -> dict:
@@ -7905,7 +8253,8 @@ def _staffing(
         if b.get("RentedByPlayer")
     }
     people = _plan_people(save, staff)
-    bench = [people[pid] for pid in _in_order(people) if not people[pid]["addr"]]
+    bench = [people[pid] for pid in _in_order(people)
+             if not people[pid]["addr"] and not people[pid]["training"]]
     everyone_on_bench = list(bench)
     curves = load_demand_curves()
     table = load_buildings()
@@ -8001,20 +8350,69 @@ def _staffing(
         scratch = {pid: _copy_state(entry) for pid, entry in site["before"].items()
                    if pid not in free}
         scratch.update({pid: _copy_state(shared[pid]) for pid in free})
+        # The Staff page's plan for the shop (Peter, 26 September 2026:
+        # "Staff the hours it's open, never change opening"): the hours it
+        # opens now and never more, placed from the same starting week as the
+        # full-cover plan, as the other choice to it. See _open_need().
+        opened_scratch = {pid: _copy_state(entry) for pid, entry in scratch.items()}
+        grid = site["grid"]
+        offered = any(s["skill"] for s in grid["stations"]) and any(grid["open"])
         try:
             full = _place_week(
-                site["grid"], _full_need(site["grid"]), ALL_DAY_OPEN, site["coverPosts"],
+                grid, _full_need(grid), ALL_DAY_OPEN, site["coverPosts"],
                 site["own"] + site_bench, people, business, site_bench, scratch,
             )
-            row = _finish_site(site, full, names, people)
+            opened = _place_week(
+                grid, _open_need(site), grid["open"], site["coverPosts"],
+                site["own"] + site_bench, people, business, site_bench, opened_scratch,
+            ) if offered else None
+            row = _finish_site(site, full, names, people, opened)
         except Exception:
             out[index] = failed(business)
             continue
+        # Whom either plan draws off the bench is this site's either way: the
+        # site panel follows full cover, the Staff page the open-hours plan.
+        drew_open = {p["id"] for p in opened["took"]} if opened else set()
         for pid in free:
-            shared[pid] = scratch[pid]
-        drawn = {p["id"] for p in full["took"]}
+            shared[pid] = opened_scratch[pid] if pid in drew_open and pid not in {
+                p["id"] for p in full["took"]} else scratch[pid]
+        drawn = {p["id"] for p in full["took"]} | drew_open
         left = [person for person in left if person["id"] not in drawn]
         out[index] = row
+    return out
+
+
+def _open_need(site: dict) -> dict:
+    """The need of the Staff page's plan for a shop, which never opens it longer.
+
+    A shop with complete data (DEMAND_RUN_DAYS): every station of every role,
+    the hours it opens now; the page uses it where the player runs full cover.
+    A shop without: its demand curve, with every open hour nothing has read
+    (basis `none`) given every station of the role (_open_floor()), which the
+    page uses in place of the demand plan -- an open hour needs its stations
+    before anything is measured (Peter, 26 September 2026). Hours the shop is
+    shut are left out by the placer either way.
+    """
+    if site["run"] >= DEMAND_RUN_DAYS:
+        return _full_need(site["grid"])
+    return _open_floor(site["need"], site["grid"])
+
+
+def _open_floor(need: dict, grid: dict) -> dict:
+    """A need curve with every open hour it reads nothing for (`none`) staffed in full."""
+    stations = collections.Counter(s["skill"] for s in grid["stations"])
+    out = {}
+    for skill, row in need.items():
+        count = stations.get(skill, 0)
+        cells = [list(day) for day in row["need"]]
+        basis = [list(day) for day in row["basis"]]
+        for wd in range(7):
+            for start, end in grid["open"][wd]:
+                for hour in range(max(0, start), min(24, end)):
+                    if count and basis[wd][hour] == "none":
+                        cells[wd][hour] = count
+                        basis[wd][hour] = "open"
+        out[skill] = dict(row, need=cells, basis=basis)
     return out
 
 
@@ -8111,9 +8509,15 @@ def _factory_staffing(save: Save, names, businesses: list, factories: dict, staf
             posts_of[("unnamed", site["s"], i)] = line.pop("_posts", [])
     people = _plan_people(save, staff)
     label = names.label(FACTORY_SKILL) if names else FACTORY_SKILL
+    buildings = {
+        site_key(_address_of(b)): b
+        for b in save.items(save.root.get("BuildingRegistrations"))
+        if isinstance(b, dict)
+    }
     out = {mode: [] for mode in SIZING_MODES}
     for site in sites:
         business = businesses[site["s"]]
+        building = buildings.get(business["key"])
         pool = [p for p in _site_pool(people, business, []) if _usable(p, FACTORY_SKILL, "serve")]
         workers = [
             p for p in staff
@@ -8123,22 +8527,31 @@ def _factory_staffing(save: Save, names, businesses: list, factories: dict, staf
         wage_day = money(sum(p["daily"] for p in workers) / len(workers)) if workers else 0.0
         for mode in SIZING_MODES:
             try:
-                row = _factory_site_plan(site, business, posts_of, pool, people, mode, label,
-                                         names, wage_day)
+                row = _factory_site_plan(save, building, site, business, posts_of, pool, people,
+                                         mode, label, names, wage_day)
             except Exception:
                 row = {"key": business["key"], "s": site["s"], "name": business["name"],
                        "failed": True}
             if row is not None and not detail and not row.get("failed"):
-                for field in ("stations", "people", "shifts", "placed", "shortHours"):
+                # The week itself stays (stations, people, shifts), so the Staff
+                # page can write it; the placer's own tables go.
+                for field in ("placed", "shortHours"):
                     row.pop(field, None)
             if row is not None:
                 out[mode].append(row)
     return out
 
 
-def _factory_site_plan(site, business, posts_of, pool, people, mode, label, names, wage_day):
-    """One factory's row of _factory_staffing() in one sizing, or None with no line."""
-    stations, runs, lines = [], {}, []
+def _factory_site_plan(save, building, site, business, posts_of, pool, people, mode, label,
+                       names, wage_day):
+    """One factory's row of _factory_staffing() in one sizing, or None with no line.
+
+    `current` is the factory's schedule as it stands (_current_roster()), so the
+    Staff page can keep the shifts on stations the plan does not own -- the
+    delivery drivers' -- when it replaces the week, and can tell a move source
+    whose people hold hours there.
+    """
+    stations, runs, lines, idle = [], {}, [], []
     unnamed_machines = 0
     todo = [(line, posts_of.get(("line", site["s"], i)) or [], line["needHours"][mode], line["item"], False)
             for i, line in enumerate(site["lines"])]
@@ -8151,6 +8564,13 @@ def _factory_site_plan(site, business, posts_of, pool, people, mode, label, name
                      msg("sp.py.factory.unnamed", "{workstation}, recipe not named",
                          workstation=tok(line.get("workstationKey"), line["workstation"])), True))
     for line, posts, hours, item, unnamed in todo:
+        if posts and not hours:
+            # A line this sizing leaves idle: its machines are still machines,
+            # listed with the factory worker's skill so the Staff page never
+            # keeps a live shift on one as it keeps a driver's.
+            idle.extend({"id": post, "skill": FACTORY_SKILL, "rate": 1,
+                         "name": f"{item}, position {position}"}
+                        for position, post in zip(line["slots"], posts))
         if not posts or not hours:
             continue
         if unnamed:
@@ -8199,13 +8619,23 @@ def _factory_site_plan(site, business, posts_of, pool, people, mode, label, name
         week = _place_week(grid, need, ALL_DAY_OPEN, [], trial, people, business, [], state)
         if all(shift["employee"] is not None for shift in week["shifts"]):
             break
-    table = _index_table(stations, (week["shifts"],),
-                         (week["shifts"], week["shortHours"], week["placed"]), people)
+    current = (
+        _current_roster(save, building, {s["id"]: dict(s, slug=None) for s in stations + idle})
+        if building is not None else {"shifts": 0, "fragments": 0, "list": []}
+    )
+    table = _index_table(stations + idle, (week["shifts"], current["list"]),
+                         (current["list"], week["shifts"], week["shortHours"], week["placed"]),
+                         people)
     count = week["headcount"][FACTORY_SKILL]
     worked = {shift["employee"] for shift in week["shifts"] if shift["employee"] is not None}
     headcount = {"needed": count["needed"], "min": count["min"], "have": len(pool),
                  "spare": len(pool) - len(worked), "hire": count["hire"]}
     workers = headcount["hire"] - headcount["spare"]
+    # The whole pool's spare, not only the trial's: everybody here the week
+    # gives no hours. The week was placed on its own trial, so its own ids
+    # are overwritten.
+    week["spareIds"] = _in_order({p["id"] for p in pool} - worked)
+    week["spareSkills"] = {pid: [FACTORY_SKILL] for pid in week["spareIds"]}
     return {
         "key": business["key"],
         "s": site["s"],
@@ -8218,6 +8648,11 @@ def _factory_site_plan(site, business, posts_of, pool, people, mode, label, name
         "stations": table["stations"],
         "people": table["people"],
         "shifts": [_shift_row(shift, table) for shift in week["shifts"]],
+        "current": {
+            "shifts": current["shifts"],
+            "fragments": current["fragments"],
+            "list": [_shift_row(r, table) for r in current["list"]],
+        },
         "placed": [
             {"p": table["person"][r["employee"]], "demand": r["demand"],
              "label": names.label(r["demand"]) if names else r["demand"],
@@ -8229,6 +8664,9 @@ def _factory_site_plan(site, business, posts_of, pool, people, mode, label, name
              "planned": r["planned"]}
             for r in week["shortHours"]
         ],
+        "addPeople": _add_people(week, people, names),
+        # The Staff page's part, taken off by _hiring(). See _hire_fields().
+        "_hire": _hire_fields(week),
     }
 
 
@@ -8438,7 +8876,8 @@ def _serving_hours(shifts: list) -> int:
     return sum(s["to"] - s["from"] for s in shifts if s["kind"] == "serve")
 
 
-def _place_week(grid, need, slots_open, cover_posts, pool, people, business, bench, state) -> dict:
+def _place_week(grid, need, slots_open, cover_posts, pool, people, business, bench, state,
+                groups=None) -> dict:
     """One week of shifts for one site, from one need curve: the placer itself.
 
     Everything after the need curve, in the scope's order: a. per-station cover
@@ -8559,6 +8998,9 @@ def _place_week(grid, need, slots_open, cover_posts, pool, people, business, ben
         for post in cover_posts
     ]
     here = {
+        # Each station's furniture group (_station_groups()), where the caller
+        # has the building: a desk demand is met at a station, not a site.
+        "groups": groups or {},
         "rostered": set(),
         "flex": {
             person["id"]: sum(
@@ -8602,6 +9044,15 @@ def _place_week(grid, need, slots_open, cover_posts, pool, people, business, ben
     for shift in shifts:
         if shift["employee"] is None:
             uncovered[shift["skill"]].append(shift)
+    # The residue packed onto hires, each hire's week then filled to a full
+    # week out of the hours the site's own people hold above what they have
+    # now (_fill_hire_weeks()), before anybody is counted as spare below.
+    hire_weeks = {
+        skill: _fill_hire_weeks(
+            _hire_weeks(_spread_residue(uncovered[skill], shifts, pool, state, before)),
+            shifts, pool, state, before)
+        for skill in _in_order(uncovered)
+    }
     shifts.sort(
         key=lambda s: (s["wd"], s["from"], s["to"], str(s["station"]), str(s["employee"]))
     )
@@ -8648,8 +9099,35 @@ def _place_week(grid, need, slots_open, cover_posts, pool, people, business, ben
     # e. The residue is a hiring line, never a broken demand, and a person the
     # plan leaves short of what their contract demands is a jobdemand warning
     # the player is about to earn, so it is said rather than bent away.
-    for skill, slots_left in uncovered.items():
-        headcount[skill]["hire"] = max(headcount[skill]["hire"], _hires_for(slots_left))
+    # The packing itself is kept per role (hireWeeks, for the Staff page): one
+    # week per person hired. `hire` can only exceed the packing where `min -
+    # have` says so with nothing left open, which the arithmetic rules out (the
+    # people working a role's slots are all counted in its `have`); an empty
+    # week pads it anyway, so the page's count and the weeks always agree.
+    for skill in _in_order(hire_weeks):
+        headcount[skill]["hire"] = max(headcount[skill]["hire"], len(hire_weeks[skill]))
+    for skill in _in_order(headcount):
+        weeks = hire_weeks.setdefault(skill, [])
+        while len(weeks) < headcount[skill]["hire"]:
+            weeks.append({"hours": 0.0, "busy": [set() for _ in range(7)], "slots": []})
+    # The site's own people this plan gives no hours in a role it plans: the
+    # ones a move may take elsewhere. Only roles the plan has, so a cashier at a
+    # shop whose serving hours are not measured yet is not offered away.
+    spare_ids = _in_order({
+        person["id"]
+        for person in pool
+        if person["addr"] and person["id"] not in worked
+        and any(_usable(person, skill, entry["kind"]) for skill, entry in headcount.items())
+    })
+    # And the roles each of them is spare in: a move keeps to one of these.
+    by_id = {person["id"]: person for person in pool}
+    spare_skills = {
+        pid: [
+            skill for skill in _in_order(headcount)
+            if _usable(by_id[pid], skill, headcount[skill]["kind"])
+        ]
+        for pid in spare_ids
+    }
     for entry in headcount.values():
         entry["hireHours"] = entry["hire"] * FULL_TIME[0]
     short_hours, short_days = [], []
@@ -8687,6 +9165,20 @@ def _place_week(grid, need, slots_open, cover_posts, pool, people, business, ben
                  "want": person["days"], "planned": planned}
             )
     short_hours.sort(key=lambda r: (r["hours"] - r["min"], str(r["employee"])))
+    # The site's own people this week gives fewer hours than the game has them
+    # on now (and some): the Staff page's review names them before a write
+    # replaces the week. Nobody the plan gives no hours at all: the write's
+    # own dry run names those (leftWithout).
+    fewer = sorted(
+        (
+            {"employee": person["id"], "name": person["name"], "now": person.get("now") or 0,
+             "hours": state[person["id"]]["hours"] - before[person["id"]][0]}
+            for person in pool
+            if person["addr"] and person["id"] in worked
+            and 0 < state[person["id"]]["hours"] - before[person["id"]][0] < (person.get("now") or 0)
+        ),
+        key=lambda r: (r["hours"] - r["now"], str(r["employee"])),
+    )
     short_days.sort(key=lambda r: (r["days"] - r["want"], str(r["employee"])))
 
     wage_of = {person["id"]: person["wage"] for person in pool}
@@ -8734,6 +9226,10 @@ def _place_week(grid, need, slots_open, cover_posts, pool, people, business, ben
         "slack": (slack_hours, slack_cost, budget),
         "weekly": weekly,
         "took": [person for person in bench if person["id"] in worked],
+        "hireWeeks": hire_weeks,
+        "spareIds": spare_ids,
+        "spareSkills": spare_skills,
+        "fewer": fewer,
     }
 
 
@@ -8774,6 +9270,51 @@ def _add_people(week: dict, people: dict, names) -> dict:
             for s in week["shifts"]
             if s["employee"] is None or s.get("fromBench")
         ),
+    }
+
+
+def _hire_fields(week: dict) -> dict:
+    """What the Staff page needs from one plan on top of the plan itself.
+
+    `hireWeeks`: one entry per person the plan hires, its role, hours, days and
+    the open entries (`p: null`) it would work, each by its index in the plan's
+    `shifts`, so the page can put a person's id on it. The fullest weeks first
+    within a role, so the best candidate gets the most hours. `spare`: the
+    site's own people this plan gives no hours in a role it plans, and
+    `spareSkills` the roles each is spare in (a move keeps to one of them).
+    `bench`: the unassigned people the plan already counts on (addPeople.assign).
+
+    Carried on the plan row as `_hire` and taken off it by _hiring().
+    """
+    index = {id(shift): i for i, shift in enumerate(week["shifts"])}
+    slot_key = lambda s: (s["wd"], s["from"], s["to"], str(s["station"]))  # noqa: E731
+    weeks = []
+    for skill in _in_order(week["hireWeeks"]):
+        packed = [
+            (sorted(hire["slots"], key=slot_key), hire)
+            for hire in week["hireWeeks"][skill]
+        ]
+        packed.sort(key=lambda e: (-sum(s["to"] - s["from"] for s in e[0]),
+                                   [slot_key(s) for s in e[0]]))
+        for slots, _hire in packed:
+            weeks.append({
+                "skill": skill,
+                "hours": sum(s["to"] - s["from"] for s in slots),
+                "days": len({s["wd"] for s in slots}),
+                "slots": [
+                    {"shift": index[id(s)], "d": s["wd"], "f": s["from"], "t": s["to"],
+                     "station": s["station"]}
+                    for s in slots
+                ],
+            })
+    return {
+        "hireWeeks": weeks,
+        "spare": list(week["spareIds"]),
+        "spareSkills": {pid: list(skills) for pid, skills in (week.get("spareSkills") or {}).items()},
+        "bench": [row["employee"] for row in week["bench"]],
+        # The site's own people this plan gives fewer hours than they have now.
+        "fewer": [{"id": r["employee"], "name": r["name"], "now": r["now"], "hours": r["hours"]}
+                  for r in week.get("fewer") or []],
     }
 
 
@@ -8840,6 +9381,8 @@ def _plan_fields(week: dict, table: dict, names, people: dict, cost: dict) -> di
         # Who the player has to add before the plan can be filled: bench people
         # to assign here and people to hire. See _add_people().
         "addPeople": add,
+        # The Staff page's part, taken off by _hiring(). See _hire_fields().
+        "_hire": _hire_fields(week),
     }
 
 
@@ -8910,13 +9453,13 @@ def _plan_site(
     }
 
 
-def _finish_site(site, full, names, people) -> dict:
+def _finish_site(site, full, names, people, opened=None) -> dict:
     """One retail site's row, from its demand plan and its full-cover plan."""
     save, business, building, grid = (
         site["save"], site["business"], site["building"], site["grid"])
     week, current, cover_posts = site["week"], site["current"], site["coverPosts"]
     wage_of = dict(site["wage"])
-    for person in full["took"]:
+    for person in full["took"] + (opened["took"] if opened else []):
         wage_of[person["id"]] = person["wage"]
     # Two lookup tables, so the many rows below can be indices rather than
     # repeated 24-character ids. Everything a row points at is here: every
@@ -8925,8 +9468,8 @@ def _finish_site(site, full, names, people) -> dict:
     lists = lambda w: (w["shifts"], w["shortHours"], w["shortDays"], w["placed"], w["bench"])  # noqa: E731
     table = _index_table(
         grid["stations"] + cover_posts,
-        (week["shifts"], full["shifts"], current["list"]),
-        (current["list"],) + lists(week) + lists(full),
+        (week["shifts"], full["shifts"], current["list"]) + ((opened["shifts"],) if opened else ()),
+        (current["list"],) + lists(week) + lists(full) + (lists(opened) if opened else ()),
         people,
     )
     cost = {
@@ -8984,6 +9527,16 @@ def _finish_site(site, full, names, people) -> dict:
             "daysMeasured": site["run"],
             "daysNeeded": DEMAND_RUN_DAYS,
         },
+        # The Staff page's plan (_open_need()): the hours the shop opens now,
+        # never an hour more (`openAllHours` false); `complete` whether it is
+        # full cover of those hours (complete data) or the demand plan with
+        # every unread open hour staffed (not yet).
+        **({"openCover": {
+            key: value
+            for key, value in _plan_fields(opened, table, names, people, cost).items()
+            if key not in ("need", "basis")
+        } | {"open": grid["open"], "openAllHours": False,
+             "complete": site["run"] >= DEMAND_RUN_DAYS}} if opened else {}),
         # The hand-over: the demand data is complete while the game runs full
         # cover, and the demand plan would change something. See
         # _demand_data_complete().
@@ -9015,6 +9568,673 @@ def _finish_site(site, full, names, people) -> dict:
             "open": business.get("daysOpen"),
         },
     }
+
+
+# --- hiring: the Staff page (issue #89, docs/staff-hire-plan.md section 2)
+#
+# The skills a business accepts when the player assigns somebody to it, as the
+# game's own check has them (AssignToBusinessAndHireMassAction and
+# AssignBusinessMassAction): the business type's employeePrimarySkills, plus
+# Cleaning where the building type's requiredBuildingSkills holds it
+# (BuildingTypeData.NeedsCleaning), Security Guard where the type carries the
+# allowtheft tag, and Delivery Driver where the building type requires it. Read
+# from the businesstypes and buildingtypes Addressables bundles at build 3682:
+# retail, office, cinema and theatre buildings need cleaning; warehouses (which
+# factories use) need nothing, and no building type requires a driver. A type
+# missing here accepts nobody, so the page proposes no hire there rather than
+# one the mod refuses (`no_skill`); the game-update checklist re-reads the
+# bundles.
+_SHOP_SKILLS = ("ba:skill_customerservice", "ba:skill_securityguard", CLEANING_SKILL)
+ASSIGN_SKILLS = {
+    "ba:businesstype_bookstore": _SHOP_SKILLS,
+    "ba:businesstype_clothingstore": _SHOP_SKILLS,
+    "ba:businesstype_electronicsstore": _SHOP_SKILLS,
+    "ba:businesstype_florist": _SHOP_SKILLS,
+    "ba:businesstype_fruitandvegetablestore": _SHOP_SKILLS,
+    "ba:businesstype_giftshop": _SHOP_SKILLS,
+    "ba:businesstype_jewelrystore": _SHOP_SKILLS,
+    "ba:businesstype_liquorstore": _SHOP_SKILLS,
+    "ba:businesstype_supermarket": _SHOP_SKILLS,
+    "ba:businesstype_coffeeshop": ("ba:skill_customerservice", CLEANING_SKILL),
+    "ba:businesstype_fastfoodrestaurant": ("ba:skill_customerservice", CLEANING_SKILL),
+    "ba:businesstype_gym": ("ba:skill_gymtrainer", "ba:skill_securityguard", CLEANING_SKILL),
+    "ba:businesstype_hairdresser": (
+        "ba:skill_hairstylist", "ba:skill_customerservice", "ba:skill_securityguard",
+        CLEANING_SKILL),
+    "ba:businesstype_nightclub": ("ba:skill_dj", "ba:skill_customerservice", CLEANING_SKILL),
+    "ba:businesstype_cinema": (
+        "ba:skill_projectionist", "ba:skill_customerservice", CLEANING_SKILL),
+    "ba:businesstype_theater": (
+        "ba:skill_actor", "ba:skill_stagecrew", "ba:skill_customerservice", CLEANING_SKILL),
+    "ba:businesstype_eventplanningagency": ("ba:skill_eventplanner", CLEANING_SKILL),
+    "ba:businesstype_graphicdesigner": ("ba:skill_graphicdesigner", CLEANING_SKILL),
+    "ba:businesstype_lawfirm": ("ba:skill_lawyer", CLEANING_SKILL),
+    "ba:businesstype_travelagency": ("ba:skill_travelagent", CLEANING_SKILL),
+    "ba:businesstype_webdevelopmentagency": ("ba:skill_programmer", CLEANING_SKILL),
+    "ba:businesstype_headquarters": (
+        "ba:skill_purchasingagent", "ba:skill_logisticsmanager", "ba:skill_hrmanager",
+        "ba:skill_headhunter", "ba:skill_pricingmanager", CLEANING_SKILL),
+    "ba:businesstype_warehouse": ("ba:skill_deliverydriver",),
+    "ba:businesstype_factory": ("ba:skill_deliverydriver", "ba:skill_factoryworker"),
+}
+FACTORY_TYPES = COST_CENTRE_TYPES - OVERHEAD_TYPES
+
+# Peter's office default (25 Sep 2026, docs/mod-write-back-scope.md): "computers
+# staffed 24/7 = 3 in a 50-capacity building, proportionally fewer in smaller
+# ones (at least 1); every computer 8 to 22 on weekdays; half the computers 8 to
+# 22 on weekends." For every office: round(3 x door / 50) computers, at least 1
+# and at most all of them, are staffed around the clock every day; on weekdays
+# every computer is also staffed OFFICE_DAY; on weekends ceil(C / 2) computers
+# are, the always-on ones counting among them. The door is the building's
+# customerCapacity, the office grid's `door`.
+OFFICE_ALWAYS_ON = 3  # computers around the clock ...
+OFFICE_FULL_DOOR = 50  # ... in a building of this capacity
+OFFICE_DAY = (8, 22)
+OFFICE_WEEKEND = (6, 0)  # Saturday and Sunday, as day % 7
+
+
+def _office_always_on(computers: int, door: int) -> int:
+    """How many computers the office default staffs around the clock."""
+    wanted = math.floor(OFFICE_ALWAYS_ON * (door or 0) / OFFICE_FULL_DOOR + 0.5)
+    return min(computers, max(1, wanted))
+
+
+def _office_runs(computers: int, open_hours: list, door: int) -> tuple:
+    """Which hours each computer is staffed by the office default.
+
+    Returns ({station index: [hours per weekday]}, always-on count). Computers
+    are staffed in station order, so the first ones are the always-on ones.
+
+    An hour the office is shut in the save is left out: nobody works a closed
+    office, and the write does not change opening hours. So an office open 9
+    to 17 gets every computer 9 to 17 on weekdays and its always-on computers
+    only 9 to 17 as well, and a day it is shut gets nobody. A save that holds
+    no opening hours at all for the office is not clipped.
+    """
+    if not computers:
+        return {}, 0
+    always = _office_always_on(computers, door)
+    opened = [
+        {hour for start, end in open_hours[wd] for hour in range(max(0, start), min(24, end))}
+        for wd in range(7)
+    ]
+    if not any(opened):
+        opened = [set(range(24)) for _ in range(7)]
+    day = set(range(*OFFICE_DAY))
+    weekend = math.ceil(computers / 2)
+    runs = {}
+    for index in range(computers):
+        week = []
+        for wd in range(7):
+            hours = set()
+            if index < always:
+                hours = set(range(24))
+            elif wd not in OFFICE_WEEKEND or index < weekend:
+                hours = set(day)
+            week.append(hours & opened[wd])
+        if any(week):
+            runs[index] = week
+    return runs, always
+
+
+def _office_staffing(save: Save, names, businesses: list, grids: list, staff: list,
+                     claimed: set) -> list:
+    """A week for every office by Peter's office default, one row per office.
+
+    The shop placer (_place_week) over a synthetic grid, as a factory's is: one
+    role, the office's professional skill (its type's first accepted skill),
+    one station per computer, the hours _office_runs() gives each. The pool is
+    the office's own staff with that skill, then the unassigned people no
+    shop's plan counts on (`claimed` are the ones some shop plan does), handed
+    out in office order the way _staffing() hands out the bench. An office the
+    placer falls over on is one `failed` row.
+
+    The row has the shop row's fields a write reads (`stations`, `people`,
+    `shifts`, `current`, `roles`, `open`, `openAllHours` false) and its plan
+    fields (`need`, `headcount`, `addPeople`, `shortHours`, ...), plus
+    `alwaysOn`, `computers` and `staffedComputers`.
+    """
+    by_key = {b["key"]: b for b in businesses}
+    buildings = {
+        site_key(_address_of(b)): b
+        for b in save.items(save.root.get("BuildingRegistrations"))
+        if b.get("RentedByPlayer")
+    }
+    people = _plan_people(save, staff)
+    bench = [
+        people[pid] for pid in _in_order(people)
+        if not people[pid]["addr"] and not people[pid]["training"] and pid not in claimed
+    ]
+    state = {pid: _fresh_state() for pid in people}
+    offices = sorted(
+        (
+            (by_key[g["key"]], buildings[g["key"]], g)
+            for g in grids
+            if g["key"] in by_key and g["key"] in buildings
+            and by_key[g["key"]]["status"] == "office"
+        ),
+        key=lambda row: (row[0]["name"] or "", row[0]["key"]),
+    )
+    out = []
+    for business, building, grid in offices:
+        skill = next(iter(ASSIGN_SKILLS.get(business["typeSlug"], ())), None)
+        if not skill or not grid["stations"]:
+            continue
+        pool = [p for p in _site_pool(people, business, bench) if _usable(p, skill, "serve")]
+        scratch = {p["id"]: _copy_state(state[p["id"]]) for p in pool}
+        try:
+            row, took = _office_site_plan(save, names, business, building, grid, skill,
+                                          pool, people, bench, scratch)
+        except Exception:
+            out.append({"key": business["key"], "name": business["name"],
+                        "typeSlug": business["typeSlug"], "failed": True})
+            continue
+        state.update(scratch)
+        taken = {p["id"] for p in took}
+        bench = [p for p in bench if p["id"] not in taken]
+        out.append(row)
+    return out
+
+
+def _unrepresentable(save: Save, building: dict) -> int:
+    """How many of a building's shifts _current_roster() cannot list as they are."""
+    bad = 0
+    for scheduled in save.items(building.get("scheduleDays")):
+        for shift in save.items(scheduled.get("workShifts")):
+            start, end = shift.get("startingHour"), shift.get("endingHour")
+            if not isinstance(start, int) or not isinstance(end, int) or not 0 <= start < end <= 24:
+                bad += 1
+    return bad
+
+
+def _office_site_plan(save, names, business, building, grid, skill, pool, people, bench,
+                      state) -> tuple:
+    """One office's row of _office_staffing(), and who it drew off the bench."""
+    label = names.label(skill) if names else skill
+    stations = [
+        {"id": s["id"], "slug": s["slug"], "name": s["name"], "skill": skill,
+         "rate": OFFICE_POST_RATE}
+        for s in grid["stations"]
+    ]
+    runs, always = _office_runs(len(stations), grid["open"], grid["door"])
+    slots_open = grid["open"] if any(grid["open"]) else ALL_DAY_OPEN
+    need = {skill: {
+        "need": [[sum(1 for days in runs.values() if hour in days[wd]) for hour in range(24)]
+                 for wd in range(7)],
+        "basis": [["office"] * 24 for _ in range(7)],
+        "stations": runs,
+    }}
+    fake = {"roles": [{"skill": skill, "label": label}], "stations": stations}
+    usable_bench = [p for p in bench if _usable(p, skill, "serve")]
+    week = _place_week(fake, need, slots_open, [], pool, people, business, usable_bench,
+                       state, groups=_station_groups(save, building))
+    current = _current_roster(save, building, {s["id"]: s for s in stations})
+    bad = _unrepresentable(save, building)
+    lists = (week["shifts"], week["shortHours"], week["shortDays"], week["placed"],
+             week["bench"])
+    table = _index_table(stations, (week["shifts"], current["list"]),
+                         (current["list"],) + lists, people)
+    wage_of = {
+        pid: person["wage"] for pid, person in people.items()
+        if person["addr"] and site_key(person["addr"]) == business["key"]
+    }
+    cost = {"current": money(_current_cost(current, wage_of)), "currentCover": 0.0}
+    fields = _plan_fields(week, table, names, people, cost)
+    fields.pop("basis", None)
+    row = {
+        "key": business["key"],
+        "name": business["name"],
+        "typeSlug": business["typeSlug"],
+        "skill": skill,
+        "label": label,
+        # Computers staffed around the clock by the office default.
+        "alwaysOn": always,
+        # Shifts in the game's week _current_roster() drops or clamps (no
+        # hours, reversed, outside 0-24): the page cannot send them back as
+        # they are, so an office write, which keeps every entry, is refused.
+        **({"unrepresentable": bad} if bad else {}),
+        "computers": len(stations),
+        "staffedComputers": len(runs),
+        # The hours the plan staffs against: the office's own (around the
+        # clock where the save holds none). The write never changes them
+        # (`openAllHours` false).
+        "open": slots_open,
+        "openAllHours": False,
+        "stations": table["stations"],
+        "people": table["people"],
+        "roles": [{"skill": skill, "label": label,
+                   "stations": [table["station"][s["id"]] for s in stations]}],
+        **fields,
+        "current": {
+            "shifts": current["shifts"],
+            "fragments": current["fragments"],
+            "list": [_shift_row(r, table) for r in current["list"]],
+        },
+    }
+    return row, week["took"]
+
+
+def _business_kind(business: dict) -> str | None:
+    """The Staff page's kind of site, or None for one it has nothing to say about."""
+    slug = business.get("typeSlug")
+    if business.get("status") == "vacant" or slug == EMPTY_TYPE:
+        return None
+    if business.get("status") == "retail":
+        return "shop"
+    if business.get("status") == "office":
+        return "office"
+    if slug in FACTORY_TYPES:
+        return "factory"
+    if slug == "ba:businesstype_headquarters":
+        return "hq"
+    if slug in OVERHEAD_TYPES:
+        return "warehouse"
+    return None
+
+
+# How the Staff page judges each kind of demand a candidate holds: `schedule`
+# against the hire week the person gets, `station` against the stations that
+# week puts them on (the site's `stations`), `site` against the site's facts,
+# `company` once for everybody.
+DEMAND_SCOPE = {
+    "hours": "schedule", "days": "schedule", "daysoff": "schedule", "noshift": "schedule",
+    "nocleaning": "schedule",
+    "desk": "station", "building": "site", "clean": "site",
+    "insurance": "company", "happiness": "company",
+}
+
+
+def _station_groups(save: Save, registration: dict) -> dict:
+    """Each item's furniture group: {item id: {item names}}.
+
+    The game's assignedWorkStationItems, which a desk or chair demand reads
+    (WorksOnItem), is every item of the group each station a person has a
+    shift on stands in: follow `parentId` up to the root item, usually the
+    desk, and take it and everything stacked on it (computer, chair, monitor,
+    mousepad, phone). Rebuilt this way from the schedule it matched the saved
+    list for every employee of three offices on two saves (26 September 2026).
+    """
+    items = []
+    for holder in save.items(registration.get("itemInstances")):
+        item = save.deref(holder.get("$v")) if isinstance(holder, dict) else None
+        if item and item.get("id") is not None:
+            items.append(item)
+    by_id = {item["id"]: item for item in items}
+    kids = collections.defaultdict(list)
+    for item in items:
+        if item.get("parentId") in by_id:
+            kids[item["parentId"]].append(item)
+
+    def root(item):
+        seen = set()
+        while item.get("parentId") in by_id and item["id"] not in seen:
+            seen.add(item["id"])
+            item = by_id[item["parentId"]]
+        return item
+
+    def names(item, seen):
+        if item["id"] in seen:
+            return set()
+        seen.add(item["id"])
+        out = {item.get("itemName")} - {None}
+        for kid in kids[item["id"]]:
+            out |= names(kid, seen)
+        return out
+
+    groups = {}
+    out = {}
+    for item in items:
+        top = root(item)
+        if top["id"] not in groups:
+            groups[top["id"]] = names(top, set())
+        out[item["id"]] = groups[top["id"]]
+    return out
+
+
+# The fewest station-hours a week the Staff page names as a site's own staff
+# with no hours: less is a shift the player moved, not a week left empty.
+UNSTAFFED_MIN_HOURS = 8
+
+
+def _unstaffed(row: dict, shifts, own: set, training=frozenset()) -> dict | None:
+    """The plan's hours the site's own people would work that nobody works in
+    the game's week now, when there are UNSTAFFED_MIN_HOURS or more.
+
+    Peter's live game (26 September 2026): a liquor store with its four
+    cashiers still assigned but their hours taken off in BizMan. The plan
+    fills the register with those four and hires nobody, so the Staff page
+    said nothing. `shifts` is the plan's (the row's index tables), `row`
+    carries the game's week as `current.list`.
+
+    Counted per role, weekday and hour: the site's own people the plan puts
+    on the role then, less everybody on the role's stations in the game's
+    week then, never below none -- so somebody on register 2 where the plan
+    uses register 1 is not a gap. Only hours a planned shift gives the site's
+    own people count, so a hire's week is never counted here as well. Only
+    roles where some of them (`idle`) have no hours at the site at all in the
+    game's week, and nobody in training: a plan that merely differs from the
+    week is the site page's to show. Returns {hours, roles: [{skill, hours,
+    idle}]}, or None.
+    """
+    stations, people = row.get("stations") or [], row.get("people") or []
+    person = lambda p: people[p]["id"] if p is not None and 0 <= p < len(people) else None  # noqa: E731
+    skill = lambda s: stations[s].get("skill") if s is not None and 0 <= s < len(stations) else None  # noqa: E731
+    now = collections.Counter()
+    working = set()
+    for entry in (row.get("current") or {}).get("list") or ():
+        for hour in range(entry.get("f", 0), entry.get("t", 0)):
+            now[(skill(entry.get("s")), entry.get("d"), hour)] += 1
+        if person(entry.get("p")) and entry.get("t", 0) > entry.get("f", 0):
+            working.add(person(entry.get("p")))
+    want = collections.Counter()
+    cells = collections.defaultdict(set)  # (role, person): their planned hours
+    for entry in shifts:
+        pid = person(entry.get("p"))
+        if pid is None or pid not in own:
+            continue
+        role = skill(entry.get("s"))
+        for hour in range(entry.get("f", 0), entry.get("t", 0)):
+            want[(role, entry.get("d"), hour)] += 1
+            cells[(role, pid)].add((entry.get("d"), hour))
+    gap = collections.Counter()
+    for (role, day, hour), n in want.items():
+        gap[role] += max(0, n - now[(role, day, hour)])
+    # Idle: nothing at the site in the game's week, not in training, and some
+    # of their own planned hours left with nobody on.
+    idle = collections.Counter(
+        role for (role, pid), hours in cells.items()
+        if pid not in working and pid not in training
+        and any(want[(role, d, h)] > now[(role, d, h)] for d, h in hours)
+    )
+    roles = [
+        {"skill": role, "hours": gap[role], "idle": idle[role]}
+        for role in _in_order(gap) if gap[role]
+    ]
+    roles = [r for r in roles if r["idle"]]
+    total = sum(r["hours"] for r in roles)
+    if total < UNSTAFFED_MIN_HOURS:
+        return None
+    return {"hours": total, "roles": roles}
+
+
+def _station_roots(save: Save, registration: dict) -> list:
+    """The root item of every furniture group of a site (a desk, a table).
+
+    For a site with no plan (headquarters, warehouse), whose people are placed
+    by the player: the desk demands its desks meet, one entry per group.
+    """
+    items = []
+    for holder in save.items(registration.get("itemInstances")):
+        item = save.deref(holder.get("$v")) if isinstance(holder, dict) else None
+        if item and item.get("id") is not None:
+            items.append(item)
+    ids = {item["id"] for item in items}
+    return [item["id"] for item in items if item.get("parentId") not in ids]
+
+
+def _station_facts(save: Save, registration: dict, stations) -> dict:
+    """The desk and chair demands each of a site's stations meets.
+
+    {station id: [demand slugs]}, the stations with none left out. A person
+    meets such a demand when a station they work stands in a group holding one
+    of its items (_station_groups()), which is the game's own test.
+    """
+    groups = _station_groups(save, registration)
+    desk = [(slug, setting) for slug, (kind, setting, _p) in sorted(JOB_DEMANDS.items())
+            if kind == "desk"]
+    out = {}
+    for sid in sorted({s for s in stations if s is not None}, key=str):
+        held = groups.get(sid, set())
+        met = [slug for slug, setting in desk
+               if any("ba:itemname_" + name in held for name in setting)]
+        if met:
+            out[str(sid)] = met
+    return out
+
+
+def _site_facts(save: Save, registration: dict) -> dict:
+    """Whether a site meets each site-level demand, as _job_demands() judges it.
+
+    A desk or chair demand is not one of them: it is about the stations the
+    person works (_station_facts()), not whether the site holds such an item
+    anywhere, which said met for every lawyer at a firm with one executive
+    desk (Peter's in-game test, 25 September 2026).
+    """
+    here = _items_by_name(save, registration)
+    clean = None
+    out = {}
+    for slug in sorted(JOB_DEMANDS):
+        kind, setting, _priority = JOB_DEMANDS[slug]
+        if DEMAND_SCOPE.get(kind) != "site":
+            continue
+        if kind == "clean":
+            if clean is None:
+                clean = _cleanliness(save, registration)
+            out[slug] = clean >= setting
+        elif kind == "building":
+            out[slug] = _holds_demanded_item(save, here, setting)
+    return out
+
+
+def _company_facts(save: Save) -> dict:
+    """Whether the company meets each company-level demand for a new hire.
+
+    Health insurance is a person's own HR manager plan, and a hire joins none
+    (54 of Peter's test hires had no assignedHrManagerPlanId): `"plan"` where
+    some HR manager's plan, its manager in place (not being replaced), offers
+    that tier or better, so the player has one to add them to; False where none
+    does. A happy boss: the player's happiness, True or False.
+    """
+    root = save.root
+    by_id = {e.get("id"): e for e in save.items(root.get("EmployeeInstances"))}
+    best = -1
+    for plan in save.items(root.get("hrManagerPlans")):
+        cover = save.deref(plan.get("healthInsurancePlan")) or {}
+        manager = by_id.get(plan.get("assignedEmployeeId")) or {}
+        if cover and manager and not manager.get("isBeingReplaced"):
+            best = max(best, cover.get("planType") or 0)
+    happiness = root.get("Happiness") or 0
+    out = {}
+    for slug in sorted(JOB_DEMANDS):
+        kind, setting, _priority = JOB_DEMANDS[slug]
+        if kind == "insurance":
+            out[slug] = "plan" if best >= setting else False
+        elif kind == "happiness":
+            out[slug] = happiness >= setting
+    return out
+
+
+def _bench_claimed(staffing: list) -> set:
+    """The unassigned people some shop's plan (either variant) counts on."""
+    out = set()
+    for row in staffing:
+        for plan in (row, row.get("fullCover") or {}, row.get("openCover") or {}):
+            out.update((plan.get("_hire") or {}).get("bench", ()))
+    return out
+
+
+def _hiring(save: Save, businesses: list, staffing: list, factory_staffing: dict,
+            office_staffing: list) -> dict:
+    """The Staff page's payload key `hiring` (docs/staff-hire-plan.md, 2.3).
+
+    Takes each plan row's `_hire` off it. One site per business the player runs,
+    in the `businesses` order; `people` describes everybody a site's `spare` or
+    `bench`, or the top-level `bench`, names, so the page can place them, and
+    whether each is in training (`training`), whom the page never moves.
+    """
+    regs = {
+        site_key(_address_of(b)): b
+        for b in save.items(save.root.get("BuildingRegistrations"))
+        if b.get("RentedByPlayer")
+    }
+    shops = {row["key"]: row for row in staffing}
+    factories = collections.defaultdict(dict)
+    for mode in SIZING_MODES:
+        for row in factory_staffing.get(mode, []):
+            factories[row["key"]][mode] = row
+    offices = {row["key"]: row for row in office_staffing}
+
+    def take(row):
+        return (row or {}).pop("_hire", None)
+
+    def rows_of(kind, key):
+        """The plan rows of one site, whose stations the page may place people on."""
+        if kind == "shop":
+            return [shops.get(key)]
+        if kind == "factory":
+            return list(factories.get(key, {}).values())
+        if kind == "office":
+            return [offices.get(key)]
+        return []
+
+    # Each site's own people: whom a plan's shifts there may already count on.
+    own = collections.defaultdict(set)
+    training = set()
+    for employee in save.items(save.root.get("EmployeeInstances")):
+        addr = save.address(employee.get("assignedAddress")) if isinstance(employee, dict) else None
+        if addr:
+            own[site_key(addr)].add(employee.get("id"))
+        if isinstance(employee, dict) and save.deref(employee.get("trainingSession")):
+            training.add(employee.get("id"))
+    sites = []
+    for business in businesses:
+        kind = _business_kind(business)
+        reg = regs.get(business["key"])
+        if kind is None or reg is None:
+            continue
+        plans = {}
+        no_hours = False
+        if kind == "shop":
+            row = shops.get(business["key"])
+            demand = take(row)
+            full = take((row or {}).get("fullCover"))
+            opened = take((row or {}).get("openCover"))
+            if row and not row.get("failed") and demand is not None:
+                # Peter (26 September 2026): "Staff the hours it's open, never
+                # change opening." The Staff page never uses full cover, whose
+                # write opens a shop 0 to 24: it has the open-hours plan
+                # (`open`, _open_need()) instead. Without complete data that
+                # plan replaces the demand plan, whose unread open hours had
+                # nobody on the stations (Evil Genius); with it, the page
+                # takes `open` only where the player runs full cover. A shop
+                # the game opens no hour has no plan until it has hours.
+                if not any(row.get("open") or ()):
+                    no_hours = True
+                elif opened is not None and not (row.get("openCover") or {}).get("complete"):
+                    plans["open"] = opened
+                else:
+                    plans["demand"] = demand
+                    if opened is not None:
+                        plans["open"] = opened
+        elif kind == "factory":
+            for mode, row in factories.get(business["key"], {}).items():
+                found = take(row)
+                if found is not None:
+                    plans[mode] = found
+        elif kind == "office":
+            found = take(offices.get(business["key"]))
+            if found is not None:
+                plans["office"] = found
+        # Staff with no hours (_unstaffed()): the hours a site's own people
+        # would work that nobody works in the game's week now, against the
+        # plans its Staffing block writes -- a shop's demand plan and full
+        # cover, which the page picks between as that block does; an office's
+        # office default.
+        unstaffed = {}
+        base = shops.get(business["key"]) if kind == "shop" else offices.get(business["key"]) if kind == "office" else None
+        if base and not base.get("failed"):
+            pairs = (("demand", base.get("shifts")), ("full", (base.get("fullCover") or {}).get("shifts"))) \
+                if kind == "shop" else (("office", base.get("shifts")),)
+            for mode, shifts in pairs:
+                gap = _unstaffed(base, shifts or (), own.get(business["key"], set()), training)
+                if gap:
+                    unstaffed[mode] = gap
+        sites.append({
+            "key": business["key"],
+            "name": business["name"],
+            "kind": kind,
+            "address": {"street": reg.get("StreetName"), "number": reg.get("StreetNumber")},
+            "planned": kind in ("shop", "office", "factory"),
+            # A shop the game opens no hour: no plan until it has hours.
+            **({"noHours": True} if no_hours else {}),
+            **({"unstaffed": unstaffed} if unstaffed else {}),
+            "new": not business.get("staff"),
+            "accepts": list(ASSIGN_SKILLS.get(business["typeSlug"], ())),
+            "plans": {mode: plans[mode] for mode in _in_order(plans)},
+            "facts": _site_facts(save, reg),
+            # The desk and chair demands each station of the site meets: the
+            # page judges them against the stations a person's week is on.
+            "stations": _station_facts(save, reg, [
+                station["id"] for row in rows_of(kind, business["key"])
+                for station in (row or {}).get("stations") or ()
+            ] or _station_roots(save, reg)),
+        })
+    # Rows of sites the list above skips still lose their private field.
+    for row in staffing:
+        take(row)
+        take(row.get("fullCover"))
+        take(row.get("openCover"))
+    for rows in factories.values():
+        for row in rows.values():
+            take(row)
+    for row in office_staffing:
+        take(row)
+
+    employees = [e for e in save.items(save.root.get("EmployeeInstances")) if isinstance(e, dict)]
+    bench = _in_order({
+        e.get("id") for e in employees if not save.address(e.get("assignedAddress"))
+    })
+    named = set(bench)
+    for site in sites:
+        for plan in site["plans"].values():
+            named.update(plan["spare"])
+            named.update(plan["bench"])
+    people = {}
+    for e in employees:
+        if e.get("id") not in named:
+            continue
+        char = _character(save, e)
+        addr = save.address(e.get("assignedAddress"))
+        people[e.get("id")] = {
+            "name": char["name"],
+            "skills": _skill_rows(char),
+            "wage": money(e.get("hourlyWage") or 0),
+            "site": site_key(addr) if addr else None,
+            "hours": e.get("assignedWeeklyHours") or 0,
+            "demands": _in_order(
+                {d for d in save.items(e.get("demands")) if isinstance(d, str)}),
+            # In training (the game's IsTraining: trainingSession set). The
+            # game's move turns them away, so the page moves nobody in training
+            # and leaves them out of the bench a plan counts on.
+            "training": bool(save.deref(e.get("trainingSession"))),
+        }
+    return {
+        "sites": sites,
+        "bench": bench,
+        "people": {pid: people[pid] for pid in _in_order(people)},
+        "demandKinds": {
+            slug: DEMAND_SCOPE[JOB_DEMANDS[slug][0]]
+            for slug in sorted(JOB_DEMANDS)
+            if JOB_DEMANDS[slug][0] in DEMAND_SCOPE
+        },
+        "company": _company_facts(save),
+        "recruiting": _recruiting(save),
+    }
+
+
+def _recruiting(save: Save) -> dict:
+    """How many of the company's headhunters are recruiting each skill now.
+
+    {skill: headhunters}, from headhunterPlans: a plan with somebody assigned
+    and isRecruiting set, by its skillRecruiting. The Staff page says where to
+    find people for a role its candidates cannot fill (Where to find them).
+    """
+    out = collections.Counter()
+    for plan in save.items(save.root.get("headhunterPlans")):
+        if isinstance(plan, dict) and plan.get("assignedEmployeeId") and plan.get("isRecruiting") \
+                and isinstance(plan.get("skillRecruiting"), str):
+            out[plan["skillRecruiting"]] += 1
+    return {skill: out[skill] for skill in sorted(out)}
 
 
 def _lower_first(text: str) -> str:
@@ -14258,6 +15478,11 @@ section:hover .sp-promo u{animation:sp-pull 1.3s ease-in infinite}
 .person .sp-i{color:var(--warn);margin-left:-2px}
 .person .sp-i svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .sp-roster{display:flex;flex-direction:column;border-top:1px solid var(--rule)}
+.sp-offroster{display:flex;flex-wrap:wrap;gap:10px 28px;margin:4px 0 14px}
+.sp-offroster>div{display:flex;flex-direction:column;gap:6px}
+.sp-offroster span{font:500 10px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.sp-offroster b{font:500 20px/1 "IBM Plex Mono",monospace;color:var(--ink)}
+.sp-offroster s{color:var(--ink-3);font-size:15px}
 .sp-rrow{display:grid;grid-template-columns:200px 1fr auto;gap:18px;align-items:center;min-height:48px;border-bottom:1px solid var(--rule-soft)}
 .sp-rbtn{display:flex;align-items:center;gap:10px;min-height:44px;padding:0;border:0;background:none;color:var(--ink);font:500 13.5px/1.2 Archivo,sans-serif;cursor:pointer;text-align:left}
 .sp-rbtn i{flex:none;width:26px;height:26px;border-radius:50%;background:var(--raised);display:grid;place-items:center;font:600 9.5px/1 "IBM Plex Mono",monospace;font-style:normal;color:var(--ink-2)}
@@ -14445,6 +15670,10 @@ select.linepick.sp-pick{border-color:var(--warn);font-size:12.5px;padding:5px 8p
    along its shelf as the page scrolls ---------------------------------------- */
 .orb{position:absolute;left:0;top:0;width:100px;height:100px;z-index:6;cursor:pointer;will-change:transform;opacity:0}
 .orb.live{opacity:1}
+/* Until the sphere is wired it is invisible, and it must not take a click
+   meant for the masthead under it. */
+.orb:not(.live),.orb.nx-off{pointer-events:none}
+.orb.nx-off{visibility:hidden}
 .orb i{
   display:block;width:100%;height:100%;border-radius:50%;
   background:radial-gradient(circle at var(--hx,32%) var(--hy,30%),#d9ffe8 0%,#7fe3a8 14%,var(--accent) 38%,#146b3c 78%,#0b3d23 100%);
@@ -14891,6 +16120,767 @@ body:has(#changelogDialog[open]){overflow:hidden}
   #sp-shelves > table{display:block;overflow-x:auto;max-width:100%}
   #sp-shelves td.l{white-space:nowrap}
 }
+/* ===== the redesign's shell and Overview (docs/ui-route-migration.md) =========
+   Five destinations in the masthead, City map and Game guide beside them, the
+   area's own views in a row under it, a strip that says why the reader
+   arrived, and the Overview: company figures, Needs attention first, then the
+   thirteen tasks. Every class is nx- (shell) or ov- (Overview), because the
+   board's classes are global. */
+:root{--neg-soft:#ff625722;--warn-soft:#f0913a22;--info-soft:#6ea8ff1f;--ink-3:#808a84}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){--neg-soft:#cc2a201a;--warn-soft:#b34d001a;--info-soft:#2a5ea81a;--ink-3:#636c71;--warn:#b34d00}}
+:root[data-theme="light"]{--neg-soft:#cc2a201a;--warn-soft:#b34d001a;--info-soft:#2a5ea81a;--ink-3:#636c71;--warn:#b34d00}
+.nx-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.nx-i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+/* the masthead: 76 px, the five places labelled, the two references after a rule */
+.mast{height:76px;gap:18px}
+.wordmark{font-size:24px}
+.mast .wordmark{max-width:220px}
+.brand{align-items:center}
+.brand .dot{align-self:flex-end;margin-bottom:5px}
+.nx-co{display:inline-grid;place-items:center;width:26px;height:26px;margin-left:4px;border-radius:6px;border:0;background:none;color:var(--ink-3);cursor:pointer;padding:0}
+.nx-co:hover,.nx-co[aria-expanded="true"]{color:var(--ink);background:var(--surface)}
+.nx-co:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.nav{gap:2px;margin-left:4px;align-items:center}
+.nav a{position:relative;height:40px;padding:0 10px;gap:7px;border-radius:7px;font-size:14px}
+.nav a:hover{background:var(--surface)}
+.nav a:focus-visible,.nx-more:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.nav .ink{bottom:-19px}
+.nx-n{font:600 10.5px/1 "IBM Plex Mono",monospace;padding:3px 6px;border-radius:9px;background:var(--neg);color:#fff}
+.nx-refs{display:flex;align-items:center;gap:0;margin-left:auto;padding-left:8px;border-left:1px solid var(--rule);flex:none}
+.nx-refs a{position:relative;display:flex;align-items:center;gap:6px;height:36px;padding:0 8px;border-radius:7px;font-size:13px;font-weight:500;color:var(--ink-3);text-decoration:none;transition:color .15s}
+.nx-refs a:hover,.nx-refs a.on{color:var(--ink);background:var(--surface)}
+.nx-refs a.on{box-shadow:inset 0 -2px 0 var(--accent)}
+.nx-refs a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.nx-refs a svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.nx-refs a.off{opacity:.55}
+.mast .ss-q,.mast .ss-qbtn{margin-left:0}
+.nx-more{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:7px;border:0;background:none;color:var(--ink-3);cursor:pointer;padding:0}
+.nx-more:hover,.nx-more[aria-expanded="true"]{color:var(--ink);background:var(--surface)}
+.nx-more svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8}
+section,.sitehead{scroll-margin-top:140px}
+/* the area's own views, one row under the masthead; on a phone a row of pills
+   that scrolls sideways inside itself */
+.nx-local{display:flex;align-items:center;gap:4px;min-height:52px;border-bottom:1px solid var(--rule-soft);overflow-x:auto;scrollbar-width:none}
+.nx-local::-webkit-scrollbar{display:none}
+.nx-local .lab{flex:none;font:500 10.5px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-right:10px}
+.nx-local a{flex:none;display:flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:7px;color:var(--ink-2);font-size:13.5px;font-weight:500;text-decoration:none;white-space:nowrap}
+.nx-local a:hover{color:var(--ink);background:var(--surface)}
+.nx-local a.on{background:var(--ink);color:var(--ground)}
+.nx-local a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.nx-local a small{font:600 10.5px/1 "IBM Plex Mono",monospace;color:var(--warn)}
+.nx-local a.on small{color:var(--ground);opacity:.75}
+/* why the reader is here, and the way back */
+.nx-arrive{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin-top:16px;font-size:13px;color:var(--ink-2)}
+.nx-arrive .nx-back{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 12px 0 9px;border-radius:15px;background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);color:var(--ink);font:600 12.5px/1 Archivo,sans-serif;cursor:pointer}
+.nx-arrive .nx-back svg{width:14px;height:14px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nx-arrive .nx-back:hover{border-color:var(--accent)}
+.nx-arrive .nx-back:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.nx-arrive b{color:var(--ink);font-weight:600}
+/* The strip is the way back; a site page's own crumb does not repeat it. */
+body.nx-arrived .ss-crumbs .ss-crumb.from{display:none}
+.nx-arrive .nx-x{margin-left:auto;border:0;background:none;color:var(--ink-3);cursor:pointer;font:inherit;font-size:12px;padding:4px}
+.nx-arrive .nx-x:hover{color:var(--ink)}
+/* the utilities menu (··· and, on a phone, Map & more): hung off <body> */
+.nx-menu{position:fixed;z-index:61;min-width:230px;padding:6px;border-radius:12px;background:var(--surface);border:1px solid var(--rule);box-shadow:0 20px 60px #0007}
+.nx-menu[hidden]{display:none}
+.nx-menu .lab{display:block;padding:10px 10px 4px;font:500 10px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.nx-menu a,.nx-menu button{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:0 10px;border-radius:8px;border:0;background:none;color:var(--ink);font:500 13.5px/1.2 Archivo,sans-serif;text-align:left;text-decoration:none;cursor:pointer}
+.nx-menu a:hover,.nx-menu button:hover,.nx-menu a:focus-visible,.nx-menu button:focus-visible{background:var(--raised);outline:none}
+.nx-menu svg{width:16px;height:16px;stroke:var(--ink-3);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+/* the phone's bar: the five places, labelled, and Map & more */
+.nx-tabs{display:none}
+/* Narrower windows. web/map.css and web/wiki.css still carry the old
+   masthead's rules for these widths (a six-tab row that wraps); the shell's
+   own rules below are written as specifically (.wrap .mast) and come later,
+   so they decide. */
+@media (max-width:1420px){
+  .wrap .mast .nav a > svg{display:none}
+  .wrap .mast .nav a{padding:0 8px;font-size:13.5px}
+  .wrap .mast .nx-refs a{padding:0 6px}
+  .wrap .mast .nx-refs a > svg{display:none}
+}
+/* A tablet: the places take a row of their own under the brand, labelled
+   with their icons; the references, the search button and the clock stay up
+   top. The sphere steps out: its shelf is the one-row masthead's gap. */
+@media (max-width:1279px){
+  .wrap .mast{flex-wrap:wrap;height:auto;min-height:0;row-gap:0;padding:8px 0 0;gap:0 14px}
+  .wrap .mast .brand{max-width:none;min-width:0;height:48px}
+  .wrap .mast .clock{max-width:none}
+  .wrap .mast .clock b{font-size:14px}
+  .wrap .mast .nav a.on{background:none}
+  .wrap .mast .ss-q{display:none}
+  .wrap .mast .ss-qbtn{display:grid}
+  .wrap .mast .nav{order:5;flex-basis:100%;width:100%;margin:0;border-top:1px solid var(--rule-soft)}
+  .wrap .mast .nav a{height:46px;flex:1;justify-content:center;padding:0 4px}
+  .wrap .mast .nav a > svg{display:block}
+  .wrap .mast .nav .ink{display:block;bottom:-1px}
+  .wrap .mast .orb{display:block}
+  section,.sitehead{scroll-margin-top:170px}
+  .ov-sticky{top:112px}
+}
+.wrap .mast.nx-measure > *{flex-shrink:0}
+/* The same two rows wherever the one row would not fit: a long company name,
+   a longer translation (nxFitMast() sets nx-wrap). */
+.wrap .mast.nx-wrap{flex-wrap:wrap;height:auto;min-height:0;row-gap:0;padding:8px 0 0;gap:0 14px}
+.wrap .mast.nx-wrap .brand{max-width:none;min-width:0;height:48px}
+.wrap .mast.nx-wrap .clock{max-width:none}
+.wrap .mast.nx-wrap .clock b{font-size:14px}
+.wrap .mast.nx-wrap .nav a.on{background:none}
+.wrap .mast.nx-wrap .ss-q{display:none}
+.wrap .mast.nx-wrap .ss-qbtn{display:grid}
+.wrap .mast.nx-wrap .nav{order:5;flex-basis:100%;width:100%;margin:0;border-top:1px solid var(--rule-soft)}
+.wrap .mast.nx-wrap .nav a{height:46px;flex:1;justify-content:center;padding:0 4px}
+.wrap .mast.nx-wrap .nav a > svg{display:block}
+.wrap .mast.nx-wrap .nav .ink{display:block;bottom:-1px}
+.wrap .mast.nx-wrap .orb{display:block}
+body:has(.mast.nx-wrap) .ov-sticky{top:112px}
+@media (max-width:560px){
+  .wrap .mast{flex-wrap:nowrap;height:58px;padding:0;gap:10px}
+  .wrap .mast .brand{height:auto}
+  .wrap .mast .wordmark{font-size:21px;max-width:190px}
+  .wrap .mast .nav,.wrap .mast .nx-refs,.wrap .mast .orb{display:none}
+  .wrap .mast .ss-qbtn{margin-left:auto}
+  section,.sitehead{scroll-margin-top:76px}
+  .ov-sticky{top:58px}
+  .ov-sticky b,.ov-sticky .quiet{display:none}
+  .nx-btn{white-space:normal;text-align:left}
+  .wrap{padding-bottom:96px}
+  .nx-tabs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));position:fixed;left:0;right:0;bottom:0;z-index:40;padding:4px 2px calc(4px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--ground) 96%,transparent);border-top:1px solid var(--rule);backdrop-filter:blur(8px)}
+  .nx-tabs a,.nx-tabs button{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:52px;padding:4px 0;border:0;border-radius:10px;background:none;color:var(--ink-3);font:500 10.5px/1.1 Archivo,sans-serif;letter-spacing:-.01em;text-align:center;text-decoration:none;cursor:pointer;min-width:0}
+  .nx-tabs a span:not(.nx-n),.nx-tabs button span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .nx-tabs svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .nx-tabs a.on{color:var(--accent);background:var(--accent-soft)}
+  .nx-tabs a.off{opacity:.5}
+  .nx-tabs .nx-n{position:absolute;top:3px;left:calc(50% + 6px);font-size:9.5px;padding:2px 5px}
+  .nx-tabs a:focus-visible,.nx-tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .nx-local{min-height:56px;gap:6px}
+  .nx-local .lab{display:none}
+  .nx-local a{height:40px;border-radius:20px;border:1px solid var(--rule)}
+  .nx-local a.on{border-color:var(--ink)}
+}
+
+/* ----- chunk 1 corrections (review round 1) -------------------------------- */
+/* A loss reads as one, figure and line. */
+#kpis .kpi.ov-neg .v{color:var(--neg)}
+#kpis .kpi.ov-neg .spark polyline{stroke:var(--neg)}
+#kpis .kpi.ov-neg .spark .area,#kpis .kpi.ov-neg .spark .pt{fill:var(--neg)}
+/* The severity filters are switches: on is filled and ticked, off is an
+   outline with a hollow dot -- both in full-strength text. */
+.ov-head .sev,.ov-head .sev.off{opacity:1;color:var(--ink-2);border-color:var(--rule)}
+.ov-head .sev[aria-pressed="true"]{background:var(--surface);color:var(--ink);border-color:var(--ink-3)}
+.ov-head .sev[aria-pressed="false"] i{background:transparent!important;box-shadow:inset 0 0 0 1.5px currentColor}
+.ov-head .sev[aria-pressed="false"] span{text-decoration:line-through;text-decoration-thickness:1px}
+/* A filter unfolds every row it keeps. */
+#alerts.ov-sev .ov-later:not(.hide){display:grid}
+/* Where the keyboard lands on arrival. */
+.nx-arrive:focus{outline:none}
+.nx-arrive:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:8px}
+.ov-news:focus{outline:2px solid var(--info);outline-offset:2px}
+/* Names wrap; they are never cut or pushed off the screen. */
+#alertSection .find.ov-f .what,.ov-now,.nx-arrive b,.nx-card b,.nx-row .nm,.nx-row .st{overflow-wrap:anywhere;min-width:0}
+#alertSection .find.ov-f .site{white-space:normal;flex-wrap:wrap;overflow:visible;min-width:0}
+#alertSection .find.ov-f .site .ss-sl{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.ov-l1{max-width:100%}
+.ov-l1 > *{max-width:100%}
+.nx-row .nm > span:last-child{white-space:normal}
+/* The phone's company line, and the four figures it opens. */
+.ov-ctx{display:none}
+@media (max-width:560px){
+  .ov-ctx{display:flex;align-items:center;flex-wrap:wrap;gap:4px 16px;min-height:44px;padding:6px 0;border-bottom:1px solid var(--rule-soft);font:500 12.5px/1.2 "IBM Plex Mono",monospace;color:var(--ink-2)}
+  .ov-ctx span{display:inline-flex;align-items:baseline;gap:6px}
+  .ov-ctx small{font:inherit;color:var(--ink-3)}
+  .ov-ctx b{font-weight:500;color:var(--ink)}
+  .ov-ctx b.neg{color:var(--neg)}
+  .ov-kmore{margin-left:auto;display:inline-flex;align-items:center;gap:4px;min-height:36px;padding:0 4px;border:0;background:none;color:var(--ink-2);font:500 12.5px/1 Archivo,sans-serif;cursor:pointer}
+  .ov-kmore[aria-expanded="true"] svg{transform:rotate(180deg)}
+  .ov-kmore:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+  #pageToday:not(.ov-kopen) #kpis{display:none}
+  #pageToday.ov-kopen #kpis.kpis{margin-top:10px}
+  #alertSection{margin-top:14px}
+  .ov-head h2{font-size:22px}
+  /* The masthead keeps the day and the source's word, and wraps rather than
+     push the page sideways when a name is long or the text is large. */
+  .wrap .mast{flex-wrap:wrap;height:auto;min-height:58px;padding:6px 0;row-gap:2px}
+  .wrap .mast .brand{min-width:0;flex:0 1 auto}
+  .wrap .mast .wordmark{max-width:100%;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;line-height:1.1}
+  .wrap .mast .clock{display:block;margin-left:0;flex:none}
+  .wrap .mast .clock > b{font-size:12px}
+  .wrap .mast .clock > small{display:none}
+  .wrap .mast .clock > small:has(.live){display:block;font-size:0;margin-top:1px}
+  .wrap .mast .clock > small:has(.live) .live{font-size:10px}
+  .wrap .mast .clock > small:has(.live) .flag,.wrap .mast .clock > small:has(.live) .fv-diff{display:none}
+  /* The source strip of the site in one line: its word, its buttons; the
+     file line keeps one line and says the rest on the menu. */
+  .wrap .source-row .strip{margin-top:6px;padding:6px 10px;gap:8px;flex-wrap:nowrap}
+  .wrap .source-row .strip .st{flex-wrap:nowrap;min-width:0;gap:8px}
+  .wrap .source-row .strip .file{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;line-height:1.3}
+  .wrap .source-row .strip .right{gap:6px}
+}
+/* ----- chunk 1, review round 2: the phone's first screen -------------------
+   A critical finding and its action above the bottom bar on a 320 x 568
+   phone, the hosted board's source strip and news included: each row reads
+   headline, then action, then the evidence (the DOM keeps headline, evidence,
+   action, so a screen reader hears why before what to do); the head is one
+   tight block; what the board checked follows the list. */
+.ov-metafoot{display:none}
+@media (max-width:560px){
+  #alertSection .find.ov-f .ov-t{display:contents}
+  #alertSection .find.ov-f .ov-l1{grid-column:2/-1;grid-row:1}
+  #alertSection .find.ov-f .ov-ac{grid-row:2}
+  #alertSection .find.ov-f .ov-det{grid-row:2}
+  #alertSection .find.ov-f .ov-now{grid-column:2/-1;grid-row:3}
+  #alertSection .find.ov-f .ov-vz{grid-row:4}
+  #alertSection .find.ov-f > .gw-find{grid-row:5}
+  #alertSection .find.ov-f .ov-x{grid-row:6}
+  #pageToday #alertSection .find.ov-f{padding:10px 0;row-gap:6px}
+  .ov-head{gap:8px}
+  .ov-head .sev{min-height:32px;padding:0 10px}
+  #alertHead .ov-meta{display:none}
+  .ov-metafoot{display:block}
+  .ov-metafoot .ov-meta{margin:14px 0 4px}
+  #pageToday #alertSection{margin-top:8px}
+  #pageToday #alerts .ov-band{margin-top:4px;padding-top:8px}
+  /* The day and the source's word on one line under the name. */
+  .wrap .mast .clock{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:12px;flex:1 1 100%;text-align:left;margin:0}
+  .wrap .mast .clock > small:has(.live){margin-top:0}
+  /* Customize checks is its icon here (its words stay its name and its tip),
+     so it and All tools share the row with the severity filters. */
+  #alertKindsToggle > span{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+  #alertKindsToggle.nx-btn{min-width:36px;min-height:32px;padding:0 9px;justify-content:center}
+  .ov-head .aside{gap:6px}
+  .ov-head .aside .nx-btn{min-height:32px}
+  .ov-ctx{min-height:40px;padding:4px 0}
+  /* An action's words never run past its button: tighter, and a longer one
+     (a translation, larger text) takes a second line inside it. */
+  #alertSection .find.ov-f .ov-ac .nx-btn{padding:0 10px;gap:6px;white-space:normal;text-align:left;line-height:1.2;overflow-wrap:anywhere;hyphens:auto;min-width:0}
+}
+/* A board with no save shows the Game guide alone; the phone's bar has
+   nothing else to offer it. */
+body.no-save .nx-tabs{display:none}
+
+/* the company figures: one strip, a line under each */
+/* Every figure gets the same width (the long-figure sizes are read off it), so
+   the rules between them are drawn in the gaps, not on the cells. */
+#kpis.kpis{gap:0 22px;margin-top:20px;border-bottom:1px solid var(--rule-soft);
+  background:linear-gradient(var(--rule-soft),var(--rule-soft)) calc(25% - 5.5px) 4px/1px calc(100% - 18px) no-repeat,linear-gradient(var(--rule-soft),var(--rule-soft)) 50% 4px/1px calc(100% - 18px) no-repeat,linear-gradient(var(--rule-soft),var(--rule-soft)) calc(75% + 5.5px) 4px/1px calc(100% - 18px) no-repeat}
+#kpis .kpi{background:none;border:0;border-radius:0;padding:4px 0 14px;gap:6px}
+@media (max-width:1040px){#kpis.kpis{background:linear-gradient(var(--rule-soft),var(--rule-soft)) 50% 4px/1px calc(100% - 18px) no-repeat}}
+#kpis .kpi::before{inset:-4px 10px -4px -10px}
+#kpis .spark{height:28px;margin-top:6px}
+#kpis .spark svg{height:28px}
+#kpis a.kpi.td-go:hover .v{color:var(--accent)}
+
+/* Needs attention: the product's first block */
+#alertSection{margin-top:26px;content-visibility:visible}
+.ov-head{display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px}
+.ov-head h2{margin:0;font-size:28px;font-weight:700;letter-spacing:-.03em;line-height:1.1}
+.ov-head .sev{min-height:32px;background:none;font:500 12.5px/1 "IBM Plex Mono",monospace;border:1px solid transparent}
+.ov-head .sev:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ov-head .sev span{font-family:Archivo,sans-serif;font-size:12.5px}
+.ov-head .aside{margin-left:auto;display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.nx-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:34px;padding:0 13px;border-radius:8px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);font:600 12.5px/1.15 Archivo,sans-serif;cursor:pointer;white-space:nowrap;text-decoration:none;transition:border-color .15s,transform .25s cubic-bezier(.34,1.56,.64,1),background .15s}
+.nx-btn:hover{border-color:var(--ink-3)}
+.nx-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.nx-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.nx-btn.pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.nx-btn.pri:hover{transform:translateX(2px)}
+.nx-btn.ghost{background:transparent}
+.nx-btn.sm{min-height:30px;padding:0 10px;font-size:12px;border-radius:7px}
+.nx-btn.pill{border-radius:17px}
+#alertKindsToggle.nx-btn{width:auto;height:auto}
+.ov-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px 18px;margin:10px 0 12px;font-size:13px;color:var(--ink-2)}
+.ov-meta svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ov-meta b{color:var(--ink);font-weight:600}
+.ov-meta > span,.ov-meta > a{display:inline-flex;align-items:center;gap:6px}
+#alerts:not(.ov-all) .ov-later{display:none}
+.ov-task > span:first-child{grid-column:1;grid-row:1}
+.ov-meta a{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2);text-decoration:none}
+.ov-meta a:hover{color:var(--ink)}
+.ov-meta a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.ov-news{display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 12px;border-radius:10px;border:1px solid color-mix(in srgb,var(--info) 40%,transparent);background:var(--info-soft);font-size:13px}
+.ov-news[hidden]{display:none}
+.ov-news button{margin-left:auto}
+#alerts.finds{border-top:1px solid var(--rule)}
+.ov-band{display:flex;align-items:center;gap:10px;padding:14px 0 6px;font:500 10.5px/1.2 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase}
+.ov-band.crit{color:var(--neg)}.ov-band.watch{color:var(--warn)}.ov-band.opp{color:var(--accent)}
+.ov-band.hide{display:none}
+/* a finding: the place and the problem, what matters now, a picture, Details
+   and the action. Critical rows are two lines; warnings one. */
+#alertSection .find.ov-f{grid-template-columns:18px minmax(0,1fr) minmax(0,300px) auto minmax(150px,auto);gap:4px 18px;padding:12px 6px 12px 0;cursor:default;border-radius:0}
+#alertSection .find.ov-f:hover{background:linear-gradient(90deg,transparent,var(--surface) 10%)}
+#alertSection .find.ov-f .mark{grid-column:1;grid-row:1/3;width:10px;height:10px;align-self:center}
+#alertSection .find.ov-f.crit .mark{box-shadow:0 0 0 4px var(--neg-soft)}
+.ov-t{grid-column:2;grid-row:1/3;display:flex;flex-direction:column;gap:5px;min-width:0}
+.ov-t .ov-l1{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;min-width:0}
+#alertSection .find.ov-f .site{font-size:13px;color:var(--ink-2)}
+#alertSection .find.ov-f .what{font-size:15.5px;line-height:1.3}
+#alertSection .find.ov-f.crit .what{font-size:17px;letter-spacing:-.01em}
+.ov-k{font:500 10.5px/1 "IBM Plex Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.ov-now{font-size:13.5px;color:var(--ink-2);line-height:1.4}
+.ov-now b{font-weight:600;color:var(--neg)}
+.find.watch .ov-now b{color:var(--warn)}
+#alertSection .find.ov-f .more{display:none}
+.ov-vz{grid-column:3;grid-row:1/3;display:flex;flex-direction:column;gap:4px;justify-content:center;min-width:0}
+.ov-vz .amt{text-align:left}
+#alertSection .find.ov-f .amt{font-size:14px}
+.ov-det{grid-column:4;grid-row:1/3;align-self:center}
+.ov-det svg{transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
+.ov-det[aria-expanded="true"]{background:var(--surface);border-color:var(--ink-3)}
+.ov-det[aria-expanded="true"] svg{transform:rotate(180deg)}
+.ov-ac{grid-column:5;grid-row:1/3;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.ov-ac .nx-btn{min-width:170px;justify-content:space-between}
+#alertSection .find.ov-f .go{display:none}
+#alertSection .find.ov-f > .gw-find{grid-column:2/-1;grid-row:3;margin:4px 0 0}
+.find.watch.ov-f .ov-ac .nx-btn,.find.opp.ov-f .ov-ac .nx-btn{background:transparent;border-color:transparent;color:var(--accent);min-width:0;padding-right:0}
+.find.watch.ov-f .ov-ac .nx-btn:hover,.find.opp.ov-f .ov-ac .nx-btn:hover{border-color:transparent;transform:translateX(3px)}
+.find.ov-new .ov-k::after{content:attr(data-new);margin-left:8px;padding:2px 5px;border-radius:4px;background:var(--info-soft);color:var(--info);letter-spacing:.04em}
+.find.ov-lit{outline:2px solid var(--accent);outline-offset:-2px;border-radius:10px}
+.ov-x{grid-column:2/-1;grid-row:4;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin:8px 0 2px;border:1px solid var(--rule-soft);border-radius:12px;background:color-mix(in srgb,var(--surface) 75%,transparent);cursor:auto}
+.ov-x[hidden]{display:none}
+.ov-x > div{padding:12px 16px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.ov-x > div + div{border-left:1px solid var(--rule-soft)}
+.ov-x .lab{font:500 10px/1.2 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.ov-x p{margin:0;font-size:13px;color:var(--ink-2);line-height:1.45}
+.ov-x a{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:500;color:var(--info);text-decoration:none}
+.ov-x a:hover{text-decoration:underline;text-underline-offset:3px}
+.ov-x a svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+/* the pictures: two or three bars on one scale, lamps, a week's cover */
+.ov-cmp{display:grid;grid-template-columns:auto minmax(60px,1fr) auto;gap:5px 10px;align-items:center;font-size:12px;color:var(--ink-2)}
+.ov-cmp .bar{height:8px;border-radius:2px;background:var(--rule-soft);position:relative;overflow:hidden}
+.ov-cmp .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--ink-3)}
+.ov-cmp .bar i.a{background:var(--accent)}.ov-cmp .bar i.w{background:var(--warn)}.ov-cmp .bar i.n{background:var(--neg)}
+.ov-cmp .n{font:500 12px/1 "IBM Plex Mono",monospace;color:var(--ink);text-align:right;white-space:nowrap}
+.ov-lamps{display:flex;flex-wrap:wrap;gap:6px}
+.ov-lamp{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 10px 0 7px;border-radius:14px;font-size:12px;font-weight:600;border:1.5px solid color-mix(in srgb,var(--neg) 55%,transparent);background:var(--neg-soft);color:var(--neg)}
+.ov-lamp svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ov-lamp.w{border-color:color-mix(in srgb,var(--warn) 55%,transparent);background:var(--warn-soft);color:var(--warn)}
+.ov-cov{display:flex;flex-direction:column;gap:4px}
+.ov-cov .days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.ov-cov .d{height:12px;border-radius:2px;background:var(--accent);opacity:.85}
+.ov-cov .d.half{background:linear-gradient(90deg,var(--accent) 0 50%,transparent 50%),repeating-linear-gradient(135deg,var(--neg) 0 2px,transparent 2px 5px);opacity:1}
+.ov-cov .d.dry{background:repeating-linear-gradient(135deg,var(--neg) 0 2px,transparent 2px 5px);opacity:.9}
+.ov-cov .ax{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;font:500 9.5px/1 "IBM Plex Mono",monospace;color:var(--ink-3);text-align:center}
+/* one line a warning */
+#alertSection .find.ov-f.ov-one{grid-template-columns:18px minmax(0,1fr) auto auto minmax(150px,auto);min-height:50px;padding:6px 6px 6px 0}
+.ov-one .ov-t{flex-direction:row;align-items:baseline;gap:4px 14px;flex-wrap:wrap}
+.ov-one .ov-t .site{min-width:0}
+.ov-one .ov-vz{grid-column:3}
+.ov-more{display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px;padding:14px 0 0;font-size:13px;color:var(--ink-2)}
+.ov-more .sep{width:1px;height:16px;background:var(--rule)}
+.ov-more .nx-btn,.ov-head .nx-btn{max-width:100%;min-width:0}
+#alertMinor.td-minor{margin-top:6px}
+.ov-empty{padding:18px 0 14px;border-bottom:1px solid var(--rule-soft)}
+.ov-empty b{display:block;font-size:17px;color:var(--accent);margin-bottom:4px}
+.ov-empty p{margin:0;color:var(--ink-2);font-size:13px}
+/* the queue is long: a slim bar keeps All tools in reach */
+.ov-sticky{position:sticky;top:76px;z-index:4;display:none;align-items:center;flex-wrap:wrap;gap:6px 12px;min-height:48px;margin:0 0 -48px;padding:6px 0;background:color-mix(in srgb,var(--ground) 94%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--rule)}
+.ov-sticky.on{display:flex}
+.ov-sticky b{font-size:15px}
+.ov-sticky .aside{margin-left:auto;display:flex;gap:8px}
+/* All tools: four panels, thirteen tasks */
+.ov-toolshead{display:flex;align-items:baseline;gap:14px;margin:0 0 14px}
+.ov-toolshead h2{margin:0;font-size:20px;font-weight:700;letter-spacing:-.02em}
+.ov-toolshead h2:focus{outline:none}
+.ov-tp{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.ov-p{position:relative;display:flex;flex-direction:column;border-radius:14px;background:var(--surface);border:1px solid var(--rule-soft);padding:16px 16px 8px;overflow:hidden;transition:border-color .2s}
+.ov-p:hover{border-color:var(--rule)}
+.ov-ph{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:62px}
+.ov-ph b{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:600}
+.ov-ph b svg{width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ov-ill{width:min(118px,42%);height:auto;aspect-ratio:118/56;flex:0 1 auto;min-width:0;transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
+.ov-ph b{min-width:0;overflow-wrap:anywhere}
+.wrap .sitefoot .sf-link{overflow-wrap:anywhere;min-width:0}
+.ov-p:hover .ov-ill{transform:translateY(-2px) scale(1.04)}
+.ov-ill .oi-ln{fill:none;stroke:var(--ink-3);stroke-width:2;stroke-linecap:round}
+.ov-ill .oi-ln.wk{stroke-dasharray:4 4}
+.ov-ill .oi-ln.lit{stroke:var(--accent)}
+.ov-ill .oi-nd{fill:var(--ground);stroke:var(--rule);stroke-width:1.5}
+.ov-ill .oi-nd.a{stroke:var(--accent)}
+.ov-ill .oi-cell{fill:var(--accent);opacity:.75}
+.ov-ill .oi-gap{fill:none;stroke:var(--neg);stroke-width:1.3}
+.ov-ill .oi-bar{fill:var(--accent);opacity:.8}
+.ov-ill .oi-bar.n{fill:var(--neg)}
+.ov-ill .oi-dotw{fill:var(--warn)}.ov-ill .oi-dotg{fill:var(--accent)}
+.ov-ill .oi-wall{fill:none;stroke:var(--ink-2);stroke-width:2}
+.ov-ill .oi-flr{fill:color-mix(in srgb,var(--accent) 12%,transparent)}
+.ov-ill .oi-pin{fill:var(--accent)}
+.ov-task{display:grid;grid-template-columns:minmax(0,1fr) auto 14px;align-items:center;gap:2px 10px;min-height:42px;padding:6px 0;border-top:1px solid var(--rule-soft);font-size:14px;font-weight:600;color:var(--ink);text-decoration:none}
+.ov-task > svg{width:14px;height:14px;stroke:var(--ink-3);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s,stroke .15s;grid-column:3;grid-row:1}
+.ov-task:hover > svg{stroke:var(--accent);transform:translateX(3px)}
+.ov-task:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.ov-task .c{grid-column:2;grid-row:1;font:600 11px/1 "IBM Plex Mono",monospace;padding:3px 7px;border-radius:9px;background:var(--warn-soft);color:var(--warn);white-space:nowrap}
+.ov-task .c.b{background:var(--neg-soft);color:var(--neg)}
+.ov-task .c.q{background:none;color:var(--ink-3);font-weight:500;padding:3px 0}
+.ov-task .soon{grid-column:2;grid-row:1;font:600 10px/1 "IBM Plex Mono",monospace;letter-spacing:.04em;padding:3px 6px;border-radius:9px;background:var(--raised);color:var(--ink-3);white-space:nowrap}
+.ov-task .soon.live{background:var(--accent-soft);color:var(--accent)}
+.ov-task .soon:empty{display:none}
+.ov-task .what{grid-column:1/-1;grid-row:2;font-size:12px;font-weight:400;color:var(--ink-3);line-height:1.35;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.ov-task .what:empty,.ov-task .go{display:none}
+.ov-task.off{color:var(--ink-2)}
+@media (max-width:1180px){
+  .ov-tp{grid-template-columns:repeat(2,minmax(0,1fr))}
+  /* A critical row in two lines: the words and the picture, then Details
+     and the action. A warning keeps its one line. */
+  #alertSection .find.ov-f{grid-template-columns:18px minmax(0,1fr) minmax(0,240px);row-gap:8px}
+  #alertSection .find.ov-f:not(.ov-one) .mark{align-self:start;margin-top:8px}
+  .ov-t{grid-row:1}
+  .ov-vz{grid-column:3;grid-row:1}
+  .ov-det{grid-column:2;grid-row:2;justify-self:start}
+  .ov-ac{grid-column:3;grid-row:2;align-items:flex-end}
+  #alertSection .find.ov-f.ov-one{grid-template-columns:18px minmax(0,1fr) auto auto auto;row-gap:0}
+  .ov-one .ov-t{grid-row:1}
+  .ov-one .ov-vz{grid-column:3;grid-row:1}
+  .ov-one .ov-det{grid-column:4;grid-row:1}
+  .ov-one .ov-ac{grid-column:5;grid-row:1}
+}
+@media (max-width:760px){
+  #kpis.kpis{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:12px}
+  #alertSection .find.ov-f,#alertSection .find.ov-f.ov-one{grid-template-columns:16px minmax(0,1fr) auto;gap:6px 10px;padding:12px 0}
+  #alertSection .find.ov-f .mark{grid-row:1;align-self:start;margin-top:6px}
+  .ov-t,.ov-one .ov-t{grid-column:2/-1;grid-row:1;flex-direction:column;align-items:flex-start;gap:4px}
+  .ov-t .ov-l1{flex-direction:column;align-items:flex-start;gap:3px}
+  .ov-vz,.ov-one .ov-vz{grid-column:2/-1;grid-row:2}
+  .ov-ac,.ov-one .ov-ac{grid-column:2;grid-row:3;align-items:stretch}
+  .ov-ac .nx-btn{min-height:44px;min-width:0;width:100%}
+  .find.watch.ov-f .ov-ac .nx-btn,.find.opp.ov-f .ov-ac .nx-btn{border-color:var(--rule);justify-content:space-between;padding:0 13px}
+  .ov-det,.ov-one .ov-det{grid-column:3;grid-row:3;min-height:44px}
+  #alertSection .find.ov-f > .gw-find{grid-column:2/-1;grid-row:4;margin:2px 0 0}
+  .ov-x{grid-row:5;grid-column:1/-1;grid-template-columns:1fr}
+  .ov-x > div + div{border-left:0;border-top:1px solid var(--rule-soft)}
+  .ov-head h2{font-size:24px}
+  .ov-head .aside{margin-left:0}
+  .ov-tp{grid-template-columns:minmax(0,1fr)}
+  .ov-task{min-height:46px}
+  .ov-sticky{top:58px}
+}
+@media (prefers-reduced-motion:reduce){.ov-sticky{transition:none}.ov-ill,.ov-det svg{transition:none}}
+/* the adapters: Standards' subjects, a shop's prices, the Staffing lists */
+.nx-lead{display:flex;flex-wrap:wrap;gap:10px}
+.nx-card{display:flex;flex-direction:column;gap:6px;min-width:190px;flex:1 1 190px;padding:14px 16px;border-radius:12px;background:var(--surface);border:1px solid var(--rule-soft);color:inherit;text-decoration:none;cursor:pointer;font:inherit;text-align:left}
+button.nx-card{appearance:none}
+.nx-card:hover{border-color:var(--rule)}
+.nx-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.nx-card b{display:flex;align-items:center;gap:8px;font-size:14.5px;font-weight:600}
+.nx-card b svg{width:17px;height:17px;stroke:var(--accent);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.nx-card .n{font:500 22px/1 "IBM Plex Mono",monospace}
+.nx-card .n.bad{color:var(--neg)}.nx-card .n.warn{color:var(--warn)}.nx-card .n.ok{color:var(--accent)}
+.nx-card small{font-size:12.5px;color:var(--ink-2);line-height:1.35}
+.nx-list{display:flex;flex-direction:column;border-top:1px solid var(--rule)}
+.nx-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto;gap:4px 16px;align-items:center;min-height:52px;padding:8px 6px 8px 0;border-bottom:1px solid var(--rule-soft)}
+.nx-row.lit{background:linear-gradient(90deg,transparent,var(--accent-soft) 12%);box-shadow:inset 3px 0 0 var(--accent);padding-left:12px}
+.nx-row .nm{display:flex;align-items:center;gap:8px;min-width:0;font-weight:600}
+.nx-row .nm > span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.nx-row .nm > svg{width:17px;height:17px;flex:none;stroke:var(--ink-3);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.nx-card b .hood{margin-right:-2px}
+.nx-row .st{font-size:13px;color:var(--ink-2)}
+.nx-row .st b{color:var(--ink);font-weight:600}
+.nx-row .st .bad{color:var(--neg)}.nx-row .st .warn{color:var(--warn)}
+.nx-row .ac{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.nx-part{margin:22px 0 8px;font:500 10.5px/1.2 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.nx-part:first-child{margin-top:4px}
+@media (max-width:760px){
+  .nx-row{grid-template-columns:minmax(0,1fr);gap:6px}
+  .nx-row .ac{justify-content:flex-start}
+  .nx-row .ac .nx-btn{min-height:44px}
+}
+/* Staffing > Staff needs (main's Company > Staff): hiring for every site
+   (drawStaff), the second design
+   (mockup/staff-hire-v2). The page's classes are hs-; the review dialog keeps
+   the write dialogs' gw- shell and its own hr- rows. */
+#secStaff svg,.gw-dlg.hr-wide svg,.hs-sheet svg,#hsDemPop svg{stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.hs-head{display:flex;align-items:center;flex-wrap:wrap;gap:12px 24px}
+.hs-head h2{margin:0;font-size:28px;font-weight:600;letter-spacing:-.02em}
+.hs-head .aside{margin-left:auto}
+.hs-link{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2);white-space:nowrap}
+.hs-link i{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.hs-link.off i{background:var(--ink-3);box-shadow:0 0 0 4px color-mix(in srgb,var(--ink-3) 20%,transparent)}
+.hs-link.old i{background:var(--warn);box-shadow:0 0 0 4px color-mix(in srgb,var(--warn) 20%,transparent)}
+.hs-i{display:inline-grid;place-items:center}
+.hs-i svg{width:15px;height:15px}
+/* buttons: only where you act */
+.hs-cta{display:inline-flex;align-items:center;justify-content:center;gap:10px;height:48px;padding:0 22px;border-radius:12px;border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);font:600 15px/1 Archivo,sans-serif;cursor:pointer;white-space:nowrap;transition:filter .15s,transform .2s cubic-bezier(.34,1.56,.64,1)}
+.hs-cta:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.hs-cta svg{width:17px;height:17px}
+.hs-cta.wide{width:100%}
+.hs-cta[aria-disabled="true"],.hs-cta:disabled{background:transparent;border:1px dashed var(--rule);color:var(--ink-3);cursor:not-allowed;filter:none;transform:none}
+.hs-btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);font:500 12.5px/1 Archivo,sans-serif;cursor:pointer;white-space:nowrap;transition:border-color .15s,transform .2s}
+.hs-btn:hover{border-color:var(--ink-3);transform:translateY(-1px)}
+.hs-btn svg{width:13px;height:13px}
+.hs-note{margin:0;font-size:12.5px;line-height:1.45;color:var(--ink-3);text-wrap:pretty}
+.hs-shead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.hs-shead h3{margin:0;font-size:18px;font-weight:600;letter-spacing:-.01em}
+/* the split: open places left, the order and quick hire right */
+.hs-split{display:grid;grid-template-columns:minmax(0,1fr) 332px;gap:36px;align-items:start;margin-top:28px}
+.hs-right{display:flex;flex-direction:column;gap:18px}
+@media (min-height:960px){.hs-right{position:sticky;top:20px}}
+.hs-order{display:flex;flex-direction:column;gap:16px;padding:20px;border-radius:14px;background:var(--surface);border:1px solid var(--rule)}
+.hs-order h3,.hs-kick{margin:0;font:500 10.5px/1 "IBM Plex Mono",monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.hs-ol{display:flex;flex-direction:column;gap:12px;margin:0;padding:0;list-style:none}
+.hs-ol li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:baseline}
+.hs-ol li span{font-size:14px;font-weight:600;color:var(--ink)}
+.hs-ol li b{font:500 20px/1 "IBM Plex Mono",monospace}
+.hs-ol li small{grid-column:1/-1;font-size:12px;color:var(--ink-3);line-height:1.4}
+.hs-ol li.short span,.hs-ol li.short b{color:var(--warn)}
+.hs-sum{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:baseline;padding-top:14px;border-top:1px solid var(--rule-soft);font-size:13px;color:var(--ink-2)}
+.hs-sum b{font:500 18px/1.2 "IBM Plex Mono",monospace;color:var(--ink);text-align:right}
+.hs-gate{display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:10px;border:1px dashed var(--rule);font-size:13px;color:var(--ink-2);line-height:1.5}
+.hs-gate b{color:var(--ink);font-weight:600}
+.hs-gate ol{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.hs-gate.warn{border-style:solid;border-color:color-mix(in srgb,var(--warn) 55%,transparent);background:color-mix(in srgb,var(--warn) 7%,transparent)}
+.hs-gate.warn b{color:var(--warn)}
+/* the filter bar and its dropdowns */
+.hs-fbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px}
+.hs-sel{position:relative;display:inline-flex;align-items:center;gap:8px;height:34px;max-width:100%;padding:0 10px 0 12px;border-radius:9px;border:1px solid var(--rule);background:var(--surface);color:var(--ink-2);font:500 13px/1 Archivo,sans-serif;cursor:pointer;white-space:nowrap;transition:border-color .15s;box-sizing:border-box}
+.hs-sel:hover,.hs-sel[aria-expanded="true"],.hs-sel:focus-within{border-color:var(--ink-3)}
+.hs-sel b{color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.hs-sel b.set{color:var(--accent)}
+.hs-sel>svg{width:12px;height:12px;color:var(--ink-3);transform:rotate(90deg)}
+.hs-sel select{appearance:none;-webkit-appearance:none;border:0;background:transparent;color:var(--ink);font:600 13px/1 Archivo,sans-serif;padding:0 2px;margin:0;cursor:pointer;outline:none;max-width:100%;min-width:0}
+.hs-sel select.set{color:var(--accent)}
+.hs-sel select option{color:var(--ink);background:var(--surface)}
+.hs-fsum{font-size:12.5px;color:var(--ink-3);margin-left:auto}
+.hs-fsum b{color:var(--ink-2);font-weight:500;font-family:"IBM Plex Mono",monospace}
+.hs-shops{margin:-6px 0 12px}
+/* the demand list: hangs off <body> (or the sheet), placed against its button */
+#hsDemPop{position:fixed;z-index:60;width:330px;max-width:calc(100vw - 24px);max-height:min(460px,calc(100vh - 24px));overflow:auto;padding:8px;border-radius:12px;background:var(--surface);border:1px solid var(--rule);box-shadow:0 24px 50px -20px #000c;box-sizing:border-box}
+#hsDemPop[hidden]{display:none}
+#hsDemPop .ph{padding:6px 8px 8px;font-size:12px;color:var(--ink-3);line-height:1.4}
+.hs-opt{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 8px;border-radius:7px;font-size:13px;color:var(--ink);cursor:pointer}
+.hs-opt:hover{background:var(--raised)}
+.hs-opt small{font:500 11.5px/1 "IBM Plex Mono",monospace;color:var(--ink-3)}
+#hsDemPop .pf{display:flex;justify-content:space-between;align-items:center;padding:8px 8px 2px;border-top:1px solid var(--rule-soft);margin-top:6px}
+#hsDemPop .pf button{border:0;background:none;padding:0;font:inherit;font-size:12.5px;color:var(--ink-2);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+/* A Staff select's options, in place of the system's list: hangs off <body>
+   (or the sheet or dialog), placed against its field, like the demand list. */
+#hsSelPop{position:fixed;z-index:61;min-width:160px;max-width:calc(100vw - 24px);max-height:min(360px,calc(100vh - 24px));overflow:auto;padding:6px;border-radius:12px;background:var(--surface);border:1px solid var(--rule);box-shadow:0 24px 50px -20px #000c;box-sizing:border-box;outline:none}
+#hsSelPop[hidden]{display:none}
+.hs-selopt{display:grid;grid-template-columns:minmax(0,1fr) 14px;gap:10px;align-items:center;padding:8px 10px;border-radius:7px;font:500 13px/1.25 Archivo,sans-serif;color:var(--ink);cursor:pointer;white-space:nowrap}
+.hs-selopt:hover,.hs-selopt.on{background:var(--raised)}
+.hs-selopt[aria-selected="true"]{color:var(--accent);font-weight:600}
+.hs-selopt[aria-disabled="true"]{color:var(--ink-3);cursor:default}
+.hs-selopt svg{width:14px;height:14px;opacity:0}
+.hs-selopt[aria-selected="true"] svg{opacity:1}
+.hs-selopt.ph{color:var(--ink-3)}
+.hs-cb{appearance:none;-webkit-appearance:none;margin:0;width:18px;height:18px;border-radius:5px;border:1.5px solid var(--ink-3);background:transparent;display:inline-grid;place-items:center;cursor:pointer;vertical-align:middle;flex:none;transition:background .15s,border-color .15s}
+.hs-cb::after{content:"";width:9px;height:5px;border-left:2px solid var(--on-accent);border-bottom:2px solid var(--on-accent);transform:rotate(-45deg) scale(0);margin-top:-3px;transition:transform .2s cubic-bezier(.34,1.56,.64,1)}
+.hs-cb:checked{background:var(--accent);border-color:var(--accent)}
+.hs-cb:checked::after{transform:rotate(-45deg) scale(1)}
+.hs-cb:disabled{opacity:.35;cursor:not-allowed}
+.hs-cb:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* the open places table */
+.hs-scroll{overflow-x:auto}
+.hs-t th,.hs-t td{padding:12px;vertical-align:middle}
+.hs-t th.l,.hs-t td.l{text-align:left}
+.hs-t tbody td{color:var(--ink-2)}
+.hs-t td.hs-rn{font-family:Archivo,sans-serif;white-space:normal;min-width:130px}
+.hs-t td.hs-rn b{display:block;color:var(--ink);font-weight:600;font-size:14px}
+.hs-t td.hs-rn small{display:block;margin-top:3px;font-size:12px;color:var(--ink-3);line-height:1.45}
+.hs-t td.num{color:var(--ink)}
+.hs-t td.num small{display:block;margin:4px 0 0;color:var(--ink-3);font-size:11.5px}
+.hs-t td.warn,.hs-t td .warn{color:var(--warn)}
+.hs-t td.dim{color:var(--ink-3)}
+.hs-t td.act{width:1%;padding-right:4px;text-align:right}
+.hs-t td.txt{font-family:Archivo,sans-serif;white-space:normal;font-size:13px}
+.hs-t tr.hs-subrow td{padding-top:0;border-bottom:1px solid var(--rule-soft)}
+.hs-t tr.has-sub td{border-bottom:0}
+.hs-t tfoot td{font-size:13px;color:var(--ink);border-bottom:0}
+.hs-t tfoot td.l{font-family:Archivo,sans-serif;font-weight:600}
+.hs-tag{font:600 9.5px/1 "IBM Plex Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--info);margin-left:6px}
+.hs-re{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 14px;border-radius:10px;background:var(--raised);font-size:13px;color:var(--ink-2);text-align:left;white-space:normal;transition:opacity .25s}
+.hs-re+.hs-re{margin-top:6px}
+.hs-re.off{opacity:.5}
+.hs-re .hs-i{color:var(--accent)}
+.hs-re b{color:var(--ink);font-weight:600}
+.hs-re label{margin-left:auto;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;color:var(--ink);font-weight:500;cursor:pointer}
+.hs-facts2{margin:14px 0 0;font-size:13px;color:var(--ink-3)}
+/* Where to find them: one line per role still short, under the roles table */
+.hs-find{margin:14px 0 0;padding:12px 14px;border:1px solid var(--rule-soft);border-radius:10px}
+.hs-find h4{margin:0 0 8px;font:500 10px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.hs-find ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.hs-find li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:13px;color:var(--ink-2);line-height:1.4}
+.hs-find li b{color:var(--ink);font-weight:600}
+.hs-find li .to{display:inline-flex;align-items:center;gap:4px;color:var(--ink-3)}
+.hs-find li .to svg{width:12px;height:12px}
+.hs-find li a.to{color:var(--accent);text-decoration:none}
+.hs-find li a.to:hover{text-decoration:underline;text-underline-offset:3px}
+.hs-facts2 b{font:500 13.5px/1 "IBM Plex Mono",monospace;color:var(--ink)}
+.hs-facts2 b.warn{color:var(--warn)}
+/* quick hire */
+.hs-quick{display:flex;flex-direction:column;gap:14px;padding:18px 20px 20px;border-radius:14px;background:var(--surface);border:1px solid var(--rule-soft)}
+.hs-quick .qh{display:flex;align-items:center;gap:10px}
+.hs-quick .qh .hs-i{width:28px;height:28px;border-radius:8px;background:var(--raised);color:var(--ink-2)}
+.hs-quick .qh h3{margin:0;font-size:15px;font-weight:600}
+.hs-quick .qh .sub{margin-left:auto;font-size:12px;color:var(--ink-3)}
+.hs-quick .qf{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.hs-quick .fld{display:flex;flex-direction:column;gap:5px;min-width:0}
+.hs-quick .fld.wide{grid-column:1/-1}
+.hs-quick .fld>span:first-child{font:500 10px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.hs-quick .hs-sel{width:100%;justify-content:space-between;background:var(--ground)}
+.hs-quick .hs-sel select{flex:1;width:100%}
+.hs-quick .hs-sel select.empty{color:var(--ink-3);font-weight:500}
+.hs-num{display:grid;grid-template-columns:34px minmax(0,1fr) 34px;height:34px;border-radius:9px;border:1px solid var(--rule);background:var(--ground);overflow:hidden}
+.hs-num button{border:0;background:none;color:var(--ink-2);font:500 16px/1 Archivo,sans-serif;cursor:pointer}
+.hs-num button:hover{background:var(--raised);color:var(--ink)}
+.hs-num button:disabled{opacity:.35;cursor:default;background:none}
+.hs-num b{display:grid;place-items:center;font:500 14px/1 "IBM Plex Mono",monospace;outline:none;border-radius:6px}
+.hs-num b:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
+.hs-held{color:var(--info)}
+.hs-match{font-size:13px;color:var(--ink-2)}
+.hs-match.none{margin:0;color:var(--ink-3)}
+.hs-match .warn{color:var(--warn)}
+.hs-match summary{display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none}
+.hs-match summary::-webkit-details-marker{display:none}
+.hs-match summary b{font:500 15px/1 "IBM Plex Mono",monospace;color:var(--accent)}
+.hs-match summary svg{width:12px;height:12px;color:var(--ink-3);margin-left:auto;transition:transform .2s}
+.hs-match[open] summary svg{transform:rotate(90deg)}
+.hs-match ul,.hs-qlist{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column}
+.hs-match ul{max-height:220px;overflow:auto}
+.hs-match li small,.hs-qlist li small{display:block;font-size:11px;margin-top:2px}
+.hs-match li .warn,.hs-qlist .warn{color:var(--warn)}
+.hs-c td.nm .hs-why{display:none;font-family:Archivo,sans-serif;font-size:11.5px;font-weight:400;white-space:normal;margin-top:2px}
+.hs-match li,.hs-qlist li{display:grid;grid-template-columns:minmax(0,1fr) 44px 64px;gap:8px;padding:6px 0;border-bottom:1px solid var(--rule-soft);font-size:12.5px;color:var(--ink)}
+.hs-qlist li.h{grid-template-columns:minmax(0,1fr) 44px 64px 44px}
+.hs-match .m,.hs-qlist .m{font:500 12px/1.4 "IBM Plex Mono",monospace;color:var(--ink-2);text-align:right}
+/* current staff: payroll, set apart */
+.hs-apart{margin-top:64px;padding-top:28px;border-top:1px solid var(--rule)}
+.hs-pay{display:grid;grid-template-columns:1.3fr 1fr;gap:48px;align-items:start;margin-top:14px}
+.hs-pay h3{margin:0 0 4px;font-size:17px;font-weight:600}
+.hs-pay .facts{display:flex;flex-direction:column;gap:14px}
+.hs-pay .facts div{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:10px;border-bottom:1px solid var(--rule-soft);font-size:13px;color:var(--ink-2)}
+.hs-pay .facts b{font:500 15px/1 "IBM Plex Mono",monospace;color:var(--ink)}
+.hs-pay .facts b.warn{color:var(--warn)}
+.hs-pay .roles{margin-top:12px}
+.hs-pay .role{grid-template-columns:150px 1fr 44px}
+/* change picks: one role over the page */
+dialog.hs-sheet{position:fixed;inset:0 0 0 auto;margin:0;width:min(940px,100%);max-width:100%;height:100%;max-height:100vh;padding:0;border:0;border-left:1px solid var(--rule);background:var(--ground);color:var(--ink);box-shadow:-30px 0 80px -30px #000c;box-sizing:border-box}
+dialog.hs-sheet[open]{display:flex;flex-direction:column}
+dialog.hs-sheet::backdrop{background:#000;opacity:.45}
+.hs-sh{display:flex;align-items:flex-start;gap:16px;padding:26px 32px 18px;border-bottom:1px solid var(--rule-soft)}
+.hs-sh h2{margin:0;font-size:22px;font-weight:600;letter-spacing:-.015em}
+.hs-sh p{margin:6px 0 0;font-size:13.5px;color:var(--ink-2)}
+.hs-sh .gw-x{margin-left:auto}
+.hs-sb{flex:1;overflow:auto;padding:18px 32px 24px}
+.hs-scope{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:-2px 0 6px;font-size:12.5px;color:var(--ink-3)}
+.hs-radio{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-2);cursor:pointer}
+.hs-radio input{accent-color:var(--accent);margin:0}
+.hs-grp{display:flex;align-items:baseline;gap:10px;margin:18px 0 6px}
+.hs-grp b{font-size:13.5px;font-weight:600}
+.hs-grp span{font:500 12px/1 "IBM Plex Mono",monospace;color:var(--ink-3)}
+.hs-legend{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font:400 12px/1 Archivo,sans-serif!important;color:var(--warn)!important}
+.hs-legend i{width:8px;height:8px;border-radius:2px;background:var(--warn)}
+.hs-c th,.hs-c td{padding:9px 10px}
+.hs-c tbody td{color:var(--ink-2)}
+.hs-c tbody tr.on td{color:var(--ink)}
+.hs-c tbody tr.on{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.hs-c td.nm{font-family:Archivo,sans-serif;text-align:left}
+.hs-c td.nm b{font-weight:600}
+.hs-c td.dem{font-family:Archivo,sans-serif;text-align:left;white-space:normal;font-size:12.5px;min-width:200px}
+.hs-c td.dem .warn{color:var(--warn)}
+.hs-c td.to{font-family:Archivo,sans-serif;text-align:left;font-size:12.5px;white-space:normal}
+.hs-c td.to .warn{color:var(--warn)}
+.hs-c td.exp.warn{color:var(--warn)}
+.hs-c td.none{text-align:left;font-family:Archivo,sans-serif;color:var(--ink-3)}
+.hs-sk{display:inline-block;vertical-align:middle;width:46px;height:4px;border-radius:2px;background:var(--rule);margin-right:8px;overflow:hidden}
+.hs-sk i{display:block;height:100%;width:var(--w);background:var(--accent)}
+.hs-more{display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin-top:10px;font-size:12.5px;color:var(--ink-3)}
+.hs-sf{display:flex;align-items:center;flex-wrap:wrap;gap:12px 16px;padding:16px 32px 22px;border-top:1px solid var(--rule);background:var(--surface)}
+.hs-sf .tot{display:flex;gap:28px}
+.hs-sf .tot div{display:flex;flex-direction:column;gap:5px}
+.hs-sf .tot span{font:500 10px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.hs-sf .tot b{font:500 17px/1 "IBM Plex Mono",monospace}
+.hs-sf .end{margin-left:auto;display:flex;gap:14px;align-items:center}
+.hs-sf .hs-cta{height:42px;font-size:14px}
+.hr-new{font:600 9px/1 "IBM Plex Mono",monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--info);border:1px solid color-mix(in srgb,var(--info) 45%,transparent);border-radius:4px;padding:3px 4px}
+/* the review */
+.gw-dlg.hr-wide{width:min(640px,calc(100vw - 32px))}
+.hr-u{font-size:12px;color:var(--ink-3);font-family:Archivo,sans-serif}
+.hr-dsites{display:flex;flex-direction:column;border-top:1px solid var(--rule-soft)}
+.hr-dsite{border-bottom:1px solid var(--rule-soft)}
+.hr-dhead{display:grid;grid-template-columns:minmax(0,1fr) auto 84px 14px;gap:12px;align-items:center;width:100%;padding:9px 2px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:8px;transition:background .15s}
+.hr-dhead:hover{background:var(--ground)}
+.hr-dhead .nm{display:flex;align-items:center;gap:8px;min-width:0;font-size:13.5px;font-weight:500}
+.hr-dhead .nm .s{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hr-dhead .plan{display:block;font-size:11.5px;color:var(--ink-3);font-weight:400;margin-top:2px}
+.hr-dhead .c{font:500 11.5px/1.35 "IBM Plex Mono",monospace;color:var(--ink-2);text-align:right;white-space:nowrap}
+.hr-dhead .c .mvc{display:block;color:var(--accent)}
+.hr-dhead .c .cst{display:block;color:var(--ink-3)}
+.hr-dhead>svg{width:13px;height:13px;color:var(--ink-3);transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
+.hr-dsite.open .hr-dhead>svg{transform:rotate(90deg)}
+.hr-dots{display:flex;flex-wrap:wrap;max-width:180px;gap:3px;align-items:center;justify-content:flex-end}
+.hr-dots i{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.hr-dots i.mv{background:transparent;box-shadow:inset 0 0 0 1.5px var(--accent)}
+.hr-dots i.gap{background:transparent;box-shadow:inset 0 0 0 1.5px var(--warn);opacity:.9}
+.hr-dots i.done{animation:pop .4s cubic-bezier(.34,1.56,.64,1)}
+.hr-dots i.wait{background:var(--rule)}
+.hr-dpeople{padding:2px 0 12px}
+.hr-dp{display:grid;grid-template-columns:minmax(0,1fr) 110px 44px 50px 118px 40px;gap:10px;align-items:center;padding:5px 4px;font-size:12.5px;border-radius:6px}
+.hr-dp:hover{background:var(--ground)}
+.hr-dp .who{min-width:0}
+.hr-dp .who b{font-weight:500}
+.hr-dp .who small{display:block;color:var(--ink-3);font-size:11px;margin-top:1px}
+.hr-dp .who small.mv{color:var(--accent)}
+.hr-dp .r{font-size:12px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hr-dp .m{font:500 11.5px/1 "IBM Plex Mono",monospace;color:var(--ink-2);text-align:right}
+.hr-dp.gap .who b{color:var(--warn)}
+.hr-dp.hd{padding-top:0;padding-bottom:2px}
+.hr-dp.hd>span{font:500 9.5px/1 "IBM Plex Mono",monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.hr-wk{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}
+.hr-wk i{height:12px;border-radius:2px;background:var(--rule-soft)}
+.hr-wk i.on{background:var(--accent);opacity:.85}
+.hr-wk.gap i.on{background:transparent;box-shadow:inset 0 0 0 1px var(--warn);opacity:1}
+.hr-wkd{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;text-align:center}
+.hr-lock{display:flex;align-items:flex-start;gap:7px;margin:0;font-size:12px;color:var(--ink-3)}
+.hr-lock svg{width:13px;height:13px;margin-top:1px}
+.hr-prog{position:relative;height:4px;border-radius:2px;background:var(--rule);overflow:hidden}
+.hr-prog i{position:absolute;top:0;bottom:0;width:40%;border-radius:2px;background:var(--info);animation:gw-slide 1.2s ease-in-out infinite}
+.hr-struck{text-decoration:line-through;text-decoration-color:var(--warn)}
+.gw-call .gw-mini-b[disabled]{opacity:.5;cursor:progress}
+@media (max-width:1100px){
+  .hs-split{grid-template-columns:minmax(0,1fr)}
+  .hs-right{position:static;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start}
+}
+@media (max-width:700px){
+  .hs-head h2{font-size:24px}
+  .hs-head .aside{margin-left:0}
+  /* The phone: what the button does and the button first, then the roles. */
+  .hs-split{display:flex;flex-direction:column;align-items:stretch;gap:22px;margin-top:18px}
+  .hs-right{display:contents}
+  .hs-order{order:0}
+  .hs-left{order:1;min-width:0}
+  .hs-quick{order:2}
+  .hs-fsum{margin-left:0;flex-basis:100%}
+  .hs-t .opt{display:none}
+  /* Open places on a phone: a card a role, its action under it. */
+  .hs-roles thead{display:none}
+  .hs-roles,.hs-roles tbody,.hs-roles tfoot{display:block;width:100%}
+  .hs-roles tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px 12px;padding:12px 0;border-bottom:1px solid var(--rule-soft)}
+  .hs-roles tr.has-sub{border-bottom:0;padding-bottom:6px}
+  .hs-roles tr.hs-subrow{display:block;padding:0 0 12px}
+  .hs-roles td{display:block;padding:0;border:0;text-align:left;white-space:normal;min-width:0}
+  .hs-roles td.hs-rn{grid-column:1/-1}
+  .hs-roles td[data-l]::before{content:attr(data-l);display:block;margin-bottom:3px;font:500 10px/1 "IBM Plex Mono",monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  .hs-roles td.act{grid-column:1/-1;width:auto;padding:2px 0 0;text-align:left}
+  .hs-roles td.act:empty,.hs-roles tfoot td:empty{display:none}
+  .hs-roles tfoot tr{border-bottom:0}
+  .hs-roles tfoot td.l{grid-column:1/-1}
+  .hs-t th,.hs-t td{padding:10px 8px}
+  .hs-re label{margin-left:0}
+  .hs-pay{grid-template-columns:minmax(0,1fr);gap:24px}
+  .hs-pay .role{grid-template-columns:120px 1fr 40px}
+  .hs-sh{padding:18px 16px 14px}
+  .hs-sb{padding:14px 16px 20px}
+  .hs-sf{padding:12px 16px 16px}
+  .hs-sf .end{margin-left:0;width:100%;justify-content:space-between}
+  .hs-c .opt{display:none}
+  .hs-c td.nm{white-space:normal}
+  .hs-c td.nm .hs-why{display:block}
+  .hr-dhead{grid-template-columns:minmax(0,1fr) auto 14px}
+  .hr-dhead .hr-dots{display:none}
+  .hr-dp{grid-template-columns:minmax(0,1fr) 44px 90px}
+  .hr-dp .r,.hr-dp>.m:nth-of-type(3),.hr-dp>.m:nth-of-type(4){display:none}
+}
+@media (prefers-reduced-motion:reduce){#secStaff *,.gw-dlg.hr-wide *,.hs-sheet *{animation:none!important;transition:none!important}}
+
 </style>
 <script>
 /*__I18N_SCRIPT__*/
@@ -14898,8 +16888,11 @@ body:has(#changelogDialog[open]){overflow:hidden}
 <!--__BANNER__-->
 <div class="wrap">
   <header class="mast" id="mast">
-    <div class="brand" id="brand"><span class="wordmark" id="title"></span><span class="dot" id="dot"></span></div>
-    <nav class="nav" id="nav" aria-label="Board pages" data-tt-aria-label="nav.label"></nav>
+    <div class="brand" id="brand"><span class="wordmark" id="title"></span><span class="dot" id="dot"></span><button type="button" class="nx-co" id="mastCo" hidden aria-haspopup="true" aria-expanded="false" aria-label="Switch save or company" data-tt-aria-label="nav.co.switch"><svg class="nx-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button></div>
+    <!-- The five places and the two references, built by the board script
+         from AREAS and REFS; the utilities menu hangs off <body>. -->
+    <nav class="nav" id="nav" aria-label="Main" data-tt-aria-label="nav.label"></nav>
+    <nav class="nx-refs" id="navRefs" aria-label="Reference and utilities" data-tt-aria-label="nav.refs.label"></nav>
     <div class="clock tr" id="clock" tabindex="0"
       data-tip="Game time when the save was written. Day 1 was a Monday."></div>
     <div class="orb" id="orb" aria-hidden="true"><i></i><u></u></div>
@@ -14908,35 +16901,64 @@ body:has(#changelogDialog[open]){overflow:hidden}
        the local server page leaves them empty and they take no room. -->
   <div class="source-row" id="sourceRow"></div>
   <div class="source-note" id="sourceNote"></div>
+  <!-- The area's own views, and why the reader is here (paintShell()). -->
+  <nav class="nx-local" id="localNav" hidden></nav>
+  <div class="nx-arrive" id="arrive" role="status" tabindex="-1" hidden></div>
 
   <div class="page" id="pageToday">
+    <div class="ov-ctx" id="ovCtx"></div>
     <div class="kpis" id="kpis"></div>
 
-    <section class="sec rv" id="alertSection">
-      <!-- drawAlerts() fills the head (title, ? mark, the three severity
-           counters) around this tune button, which is bound once at boot and
-           is moved into each fresh head rather than rebuilt. -->
+    <section class="sec rv" id="alertSection" aria-labelledby="ovTitle">
+      <!-- drawAlerts() fills the head (title, the three severity filters, All
+           tools) around this Customize checks button, which is bound once at
+           boot and is moved into each fresh head rather than rebuilt. -->
       <div id="alertHead">
-        <button type="button" class="ibtn tr" id="alertKindsToggle" aria-expanded="false"
-          data-tip="Which kinds of finding make the list" data-tt-tip="today.kinds.toggle"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg></button>
+        <button type="button" class="nx-btn sm ghost" id="alertKindsToggle" aria-expanded="false"
+          data-tip="Which kinds of finding make the list" data-tt-tip="today.kinds.toggle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg><span data-tt="today.kinds.customize">Customize checks</span></button>
       </div>
+      <div class="ov-sticky" id="ovSticky" aria-hidden="true"></div>
+      <p class="ov-news" id="ovNews" role="status" hidden></p>
       <div class="finds" id="alerts"></div>
+      <div class="ov-more" id="ovMore" hidden></div>
+      <!-- A phone reads what the board checked, and the reader's marks, under
+           the list rather than between the heading and the first finding. -->
+      <div class="ov-metafoot" id="ovMetaFoot"></div>
       <p class="silenced" id="silenced"><b></b> · <a class="link" href="#" data-tt="today.silenced.undo">undo</a></p>
       <div class="td-minor" id="alertMinor"></div>
     </section>
 
-    <!-- Next moves: each card carries what it can say about this save, filled
-         by paintPlanImports() (from the change checklist), drawFindLocation()
-         and drawOptimizeStaffing(). The cards tilt from wireCards(). -->
+    <!-- All tools: the thirteen tasks, in four stable groups (drawTools()).
+         Three rows carry what they can say about this save, as the Next moves
+         cards did: paintPlanImports() (from the change checklist),
+         drawOptimizeStaffing() and drawFindLocation() fill their badge and
+         line, found by the same ids. -->
     <section class="sec rv" id="secMoves">
-      <div class="sechead"><h2 data-tt="today.moves.title">Next moves</h2>
-        <span class="why" data-tt-tip="today.moves.why" data-tip="Tools for the decisions you make each week, each one opening the page that does the work. Plan imports opens the change checklist on Supply; Optimize staffing opens Staffing on the shop with the most work to save, a week to copy into BizMan &rsaquo; Schedule; Find a location opens the finder on the Map." tabindex="0"><i>?</i></span></div>
-      <div class="moves">
-        <a class="move rv" href="#supply" id="planImportsCard"><span class="soon"></span><span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4M8 14h3M13 14h3M8 18h3"></path></svg></span><b data-tt="today.moves.plan.title">Plan imports</b><span class="what"></span><span class="go" data-tt="today.moves.plan.go">Opens the change checklist</span></a>
-        <a class="move rv" href="#secDetail" id="optimizeStaffingCard"><span class="soon">SOON</span><span class="ic"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20a6.5 6.5 0 0 1 13 0"></path><circle cx="17" cy="9" r="2.5"></circle><path d="M15.5 14.5a5 5 0 0 1 6 5"></path></svg></span><b data-tt="today.moves.staff.title">Optimize staffing</b><span class="what">Hours built from your customer count: registers, building capacity and the schedule each person asked for.</span><span class="go">Opens the shop&#39;s Staffing</span></a>
-        <a class="move rv" href="#map" id="findLocationCard"><span class="soon">SOON</span><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"></path><circle cx="12" cy="10" r="2.2"></circle></svg></span><b data-tt="today.moves.find.title">Find a location</b><span class="what">Free buildings ranked by demand, rivals and the building capacity you would get.</span><span class="go" data-tt="today.moves.find.go">Opens the finder on the map</span></a>
+      <div class="ov-toolshead" id="tools"><h2 id="toolsTitle" tabindex="-1" data-tt="today.tools.title">All tools</h2></div>
+      <div class="ov-tp" id="toolPanels">
+        <div class="ov-p"><div class="ov-ph"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 8.5 12 4l8.5 4.5v8L12 21l-8.5-4.5z"></path><path d="M3.5 8.5 12 13l8.5-4.5M12 13v8"></path></svg><span data-tt="nav.area.supply">Supply</span></b><svg class="ov-ill" viewBox="0 0 118 56" aria-hidden="true"><path class="oi-ln wk" d="M16 28 H52"></path><path class="oi-ln lit" d="M64 28 C80 28 80 14 96 14"></path><path class="oi-ln lit" d="M64 28 C80 28 80 42 96 42"></path><circle class="oi-nd" cx="12" cy="28" r="8"></circle><rect class="oi-nd a" x="50" y="18" width="18" height="20" rx="3"></rect><rect class="oi-nd" x="96" y="6" width="16" height="16" rx="3"></rect><rect class="oi-nd" x="96" y="34" width="16" height="16" rx="3"></rect></svg></div>
+          <a class="ov-task" href="#supply/imports" data-ov-route="supply/imports" id="planImportsCard"><span data-tt="today.task.imports">Calculate import amounts</span><span class="soon"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg><span class="what"></span><span class="go"></span></a><a class="ov-task" href="#supply/deliveries" data-ov-route="supply/deliveries"><span data-tt="today.task.deliveries">Set delivery targets</span><span class="c" data-ov-count="deliveries" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a><a class="ov-task" href="#supply/production" data-ov-route="supply/production"><span data-tt="today.task.production">Plan factory running hours</span><span class="c" data-ov-count="production" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a><a class="ov-task" href="#supply/flow" data-ov-route="supply/flow"><span data-tt="today.task.flow">Trace goods through the company</span><span class="c" data-ov-count="flow" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a></div>
+        <div class="ov-p"><div class="ov-ph"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20a6.5 6.5 0 0 1 13 0"></path><circle cx="17" cy="9" r="2.5"></circle><path d="M15.5 14.5a5 5 0 0 1 6 5"></path></svg><span data-tt="nav.area.staffing">Staffing</span></b><svg class="ov-ill" viewBox="0 0 118 56" aria-hidden="true"><rect class="oi-cell" x="4.0" y="6" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="13.2" y="6" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="22.4" y="6" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="31.6" y="6" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="40.8" y="6" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="50.0" y="6" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="59.2" y="6" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="68.4" y="6" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="77.6" y="6" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="86.8" y="6" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="96.0" y="6" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="105.2" y="6" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="4.0" y="17" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="13.2" y="17" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="22.4" y="17" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="31.6" y="17" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="40.8" y="17" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="50.0" y="17" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="59.2" y="17" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="68.4" y="17" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="77.6" y="17" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="86.8" y="17" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="96.0" y="17" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="105.2" y="17" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="4.0" y="28" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="13.2" y="28" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="22.4" y="28" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="31.6" y="28" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="40.8" y="28" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="50.0" y="28" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="59.2" y="28" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="68.4" y="28" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="77.6" y="28" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="86.8" y="28" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="96.0" y="28" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="105.2" y="28" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="4.0" y="39" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="13.2" y="39" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="22.4" y="39" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="31.6" y="39" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="40.8" y="39" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="50.0" y="39" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="59.2" y="39" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="68.4" y="39" width="7.6" height="9" rx="1.5"></rect><rect class="oi-cell" x="105.2" y="39" width="7.6" height="9" rx="1.5"></rect><rect class="oi-gap" x="77.6" y="39" width="26" height="9" rx="1.5" stroke-dasharray="3 2"></rect></svg></div>
+          <a class="ov-task" href="#staffing/schedules" data-ov-route="staffing/schedules" id="optimizeStaffingCard"><span data-tt="today.task.schedules">Build shop schedules</span><span class="soon"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg><span class="what"></span><span class="go"></span></a><a class="ov-task" href="#staffing/needs" data-ov-route="staffing/needs" data-ov-into="#secStaff"><span data-tt="today.task.hire">See whom to hire</span><span class="c" data-ov-count="hire" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a><a class="ov-task" href="#staffing/needs" data-ov-route="staffing/needs" data-ov-into="#nxDemands"><span data-tt="today.task.demands">Resolve staff demands</span><span class="c" data-ov-count="demands" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a></div>
+        <div class="ov-p"><div class="ov-ph"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16"></path><path d="M14 10h5a1 1 0 0 1 1 1v10M4 21h17M8 8h2M8 12h2M8 16h2M17 14h1M17 18h1"></path></svg><span data-tt="nav.area.businesses">Businesses</span></b><svg class="ov-ill" viewBox="0 0 118 56" aria-hidden="true"><rect class="oi-bar" x="8" y="14" width="16" height="30" rx="2"></rect><rect class="oi-bar" x="30" y="22" width="16" height="22" rx="2"></rect><rect class="oi-bar" x="52" y="8" width="16" height="36" rx="2"></rect><rect class="oi-bar" x="74" y="28" width="16" height="16" rx="2"></rect><rect class="oi-bar n" x="96" y="44" width="16" height="9" rx="2"></rect><line x1="4" x2="114" y1="44" y2="44" stroke="var(--rule)"></line><circle class="oi-dotg" cx="16" cy="6" r="3"></circle><circle class="oi-dotg" cx="38" cy="14" r="3"></circle><circle class="oi-dotg" cx="60" cy="0" r="3"></circle><circle class="oi-dotw" cx="82" cy="20" r="3"></circle><circle class="oi-dotw" cx="104" cy="44" r="3"></circle></svg></div>
+          <a class="ov-task" href="#businesses/results" data-ov-route="businesses/results"><span data-tt="today.task.results">Compare business profits</span><span class="c" data-ov-count="results" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a><a class="ov-task" href="#businesses/prices" data-ov-route="businesses/prices"><span data-tt="today.task.prices">Check prices and product sales</span><span class="c" data-ov-count="prices" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a><a class="ov-task" href="#businesses/standards" data-ov-route="businesses/standards"><span data-tt="today.task.standards">Improve customer satisfaction</span><span class="c" data-ov-count="standards" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a></div>
+        <div class="ov-p"><div class="ov-ph"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18 10 12l4 4 6-7"></path><path d="M15 9h5v5"></path></svg><span data-tt="nav.area.expansion">Expansion</span></b><svg class="ov-ill" viewBox="0 0 118 56" aria-hidden="true"><rect class="oi-flr" x="30" y="10" width="80" height="42"></rect><path class="oi-wall" d="M30 10 H110 V52 H78 M62 52 H30 Z"></path><path class="oi-wall" d="M86 10 V28 H110" style="stroke-width:1.3"></path><path class="oi-pin" d="M18 4a9 9 0 0 1 9 9c0 7-9 15-9 15s-9-8-9-15a9 9 0 0 1 9-9z"></path><circle cx="18" cy="13" r="3.2" fill="var(--ground)"></circle></svg></div>
+          <a class="ov-task" href="#expansion/finder" data-ov-route="expansion/finder" id="findLocationCard"><span data-tt="today.task.finder">Find a suitable location</span><span class="soon"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg><span class="what"></span><span class="go"></span></a><a class="ov-task" href="#expansion/factory" data-ov-route="expansion/factory"><span data-tt="today.task.factory">Plan a new factory</span><span class="c" data-ov-count="factory" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a><a class="ov-task" href="#expansion/demand" data-ov-route="expansion/demand"><span data-tt="today.task.demand">Explore market demand</span><span class="c" data-ov-count="demand" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a></div>
       </div>
     </section>
+  </div>
+
+  <!-- Staffing: the shop schedules, who is needed and asks for what, and the
+       payroll. Schedules and Staff needs list the businesses and open the
+       schedule and crew on each one's own page (docs/ui-route-migration.md). -->
+  <div class="page" id="pageStaffing" hidden>
+    <div class="sechead subhead" hidden><nav class="seg" id="staffingNav" aria-label="Staffing views" data-tt-aria-label="nav.sub.staffing"></nav></div>
+    <section class="sec rv" id="secSchedules" data-sub="schedules"></section>
+    <section class="sec rv" id="secNeeds" data-sub="needs"></section>
+    <!-- Hiring for every site (drawStaff(), docs/staff-hire-plan.md): open
+         places, candidates, Quick hire and staff with no hours. -->
+    <section class="sec rv" id="secStaff" data-sub="needs"></section>
+    <section class="sec rv" id="secPayroll" data-sub="payroll"></section>
   </div>
 
   <!-- Supply, by object (R13): one tab each for shops, warehouses and
@@ -14946,7 +16968,7 @@ body:has(#changelogDialog[open]){overflow:hidden}
        is a view of the tab on screen, its one svg#flow moved into that tab's
        .sb-diag (sbPlaceFlow()). -->
   <div class="page" id="pageSupply" hidden>
-    <div class="sechead subhead sb-sub"><nav class="seg sb-tabs" id="supplyNav" aria-label="Supply" data-tt-aria-label="nav.sub.supply"></nav>
+    <div class="sechead subhead sb-sub"><span class="lab nx-scope" data-tt="sb.scope">Scope</span><nav class="seg sb-tabs" id="supplyNav" aria-label="Scope" data-tt-aria-label="sb.scope"></nav>
       <div class="aside"><span class="seg sb-mode" id="sbMode" aria-label="Which rows to list" data-tt-aria-label="sb.mode.label"></span><span class="seg sb-view" id="sbView" aria-label="List or diagram" data-tt-aria-label="sb.view.label"></span></div></div>
     <div id="sbStrip"></div>
 
@@ -14958,7 +16980,7 @@ body:has(#changelogDialog[open]){overflow:hidden}
   </div>
 
   <div class="page" id="pageGrowth" hidden>
-    <div class="sechead subhead"><nav class="seg" id="growthNav" aria-label="Growth views" data-tt-aria-label="nav.sub.growth"></nav></div>
+    <div class="sechead subhead" hidden><nav class="seg" id="growthNav" aria-label="Growth views" data-tt-aria-label="nav.sub.growth"></nav></div>
 
     <section class="sec rv" id="secMarket" data-sub="market">
       <div class="sechead"><h2 data-tt="gr.market.title">Market demand</h2>
@@ -14993,22 +17015,29 @@ body:has(#changelogDialog[open]){overflow:hidden}
        at a time behind the secondary nav. Each section's head and body are
        drawn by its own draw*(). -->
   <div class="page" id="pageCompany" hidden>
-    <div class="sechead subhead"><nav class="seg" id="companyNav" aria-label="Company views" data-tt-aria-label="nav.sub.company"></nav></div>
+    <div class="sechead subhead" hidden><nav class="seg" id="companyNav" aria-label="Company views" data-tt-aria-label="nav.sub.company"></nav></div>
 
     <section class="sec rv" id="secDaily" data-sub="results">
       <div id="dailyHead"></div>
       <div id="dailyBox"></div>
     </section>
 
-    <section class="sec rv" id="secPortfolio" data-sub="results">
+    <!-- Standards: the portfolio's Operations comparison under the subjects it
+         answers for (drawStandards()); the portfolio below it is the same
+         section Results shows. -->
+    <section class="sec rv" id="secStandards" data-sub="standards"></section>
+
+    <section class="sec rv" id="secPortfolio" data-sub="results standards">
       <div id="portHead"></div>
       <div style="overflow-x:auto"><table id="portfolio"></table></div>
     </section>
 
     <section class="sec rv" id="secDetail" data-sub="results" hidden><div id="sitePanel"></div></section>
 
+    <!-- Products & prices: a shop's live prices and the price guides
+         (drawPriceShops()), then the company's product sales. -->
+    <section class="sec rv" id="secPrices" data-sub="products"></section>
     <section class="sec rv" id="secProducts" data-sub="products"></section>
-    <section class="sec rv" id="secPayroll" data-sub="payroll"></section>
     <section class="sec rv" id="secGoals" data-sub="milestones"></section>
   </div>
 
@@ -15025,6 +17054,7 @@ body:has(#changelogDialog[open]){overflow:hidden}
     </div>
   </div>
 <!--__FOOTER__-->
+  <nav class="nx-tabs" id="phoneNav" aria-label="Main" data-tt-aria-label="nav.label"></nav>
 </div>
 <dialog class="changelog-dialog" id="changelogDialog" aria-labelledby="changelogTitle" aria-describedby="changelogIntro">
   <div class="changelog-head"><div><h2 id="changelogTitle" data-tt="nav.dlg.changelog.title">Changelog</h2><p id="changelogIntro" data-tt="nav.dlg.changelog.intro">What's changed in Big Copilot.</p></div><button type="button" class="btn2" id="closeChangelog" autofocus data-tt="nav.dlg.close">Close</button></div>
@@ -17159,6 +19189,7 @@ function drawMast(){
   /* The save name is the player's own text: set it as text, never as markup.
      The green dot after it is the brand's one flourish (and the coin). */
   $("title").textContent = m.save.trim();
+  $("title").title = m.save.trim();
   /* Day 1 was a Monday; the year comes from the save's own calendar. */
   const wd = navShortDay(((m.day - 1) % 7 + 7) % 7);
   const year = ((m.cityDate || "").match(/Year (\d+)/) || [])[1];
@@ -17251,6 +19282,7 @@ function drawKpis(){
            tt("today.kpi.profit.none.tip", "No finished day in this save yet; there is no profit comparison to show")),
      sub: D.daily.length ? tt("today.kpi.profit.vs", "vs 7-day") : tt("today.kpi.profit.noDay", "no finished day"),
      spark: hist(d => d.profit),
+     neg: k.profitYesterday < 0,
      /* The day's result has a page of its own; the tile is the way in. */
      go: "secDaily", goTip: tt("today.kpi.profit.go", "Open Company › Results, the daily result")},
     {id: "revenue", l: tt("today.kpi.revenue", "Revenue yesterday"), v: fmt(k.revenue),
@@ -17288,7 +19320,7 @@ function drawKpis(){
   const seen = !!q("#kpis .kpi.in");
   const tag = t => t.go ? "a" : "div";
   $("kpis").innerHTML = tiles.map(t => `
-    <${tag(t)} class="kpi rv${seen ? " in" : ""}${t.go ? " td-go" : ""}" data-kpi="${t.id}"${t.go ? ` href="#${t.go}" data-go="${t.go}" aria-label="${attr(`${t.l} ${t.v}. ${t.goTip}`)}"` : ""}>
+    <${tag(t)} class="kpi rv${seen ? " in" : ""}${t.go ? " td-go" : ""}${t.neg ? " ov-neg" : ""}" data-kpi="${t.id}"${t.go ? ` href="#${t.go}" data-go="${t.go}" aria-label="${attr(`${t.l} ${t.v}. ${t.goTip}`)}"` : ""}>
       <span class="lab">${t.l}${t.go ? `<span class="td-go-ic" data-tip="${attr(t.goTip)}">${icon("go")}</span>` : ""}</span>
       <span class="v" style="--n:${String(t.v).replace(/<[^>]*>/g, "").length}">${t.v}</span>
       <div class="row">${t.chip}<span class="sub">${t.sub}</span></div>
@@ -17299,6 +19331,20 @@ function drawKpis(){
     e.preventDefault();
     reveal(a.dataset.go);
   });
+  drawKpiLine();
+}
+/* On a phone the four figures fold into one line -- profit and cash, the
+   game day being the masthead's clock right above -- so Needs attention is on
+   the first screen; the line opens the four figures (revenue and net worth
+   among them) in place. */
+function drawKpiLine(){
+  const host = $("ovCtx");
+  if(!host || !hasData()) return;
+  const k = D.kpi;
+  const open = !!($("pageToday") && $("pageToday").classList.contains("ov-kopen"));
+  host.innerHTML = `<span><small>${tt("today.ctx.profit", "Profit")}</small><b class="${k.profitYesterday < 0 ? "neg" : ""}">${fmt(k.profitYesterday)}</b></span>`
+    + `<span><small>${tt("today.ctx.cash", "Cash")}</small><b>${compact(k.cash)}</b></span>`
+    + `<button type="button" class="ov-kmore" aria-expanded="${open}" aria-controls="kpis">${tt("today.ctx.all", "All figures")}${nxIcon("chevd")}</button>`;
 }
 
 /* Where each kind of finding is spelt out on the board: a Supply tab (the
@@ -17333,7 +19379,7 @@ const ALERT_LINKS = {
    opens that page first, then scrolls; the reader never lands on a hidden
    section. */
 const SEC_PAGE = {
-  alertSection:["today"],
+  alertSection:["today"], secMoves:["today"],
   /* secRhythm was Weekly rhythm, folded into Daily result's By weekday: an
      old link to it still opens Results, and reveal() lands it on the chart. */
   secDaily:["company","results"], secRhythm:["company","results"],
@@ -17343,7 +19389,13 @@ const SEC_PAGE = {
      old link still opens Supply, on the tab that took its place. */
   secLogistics:["supply","warehouses"], secStock:["supply","shops"], secFlow:["supply","warehouses"],
   secMarket:["growth","market"], secPlan:["growth","plan"], secIngredients:["growth","plan"],  // changed for growth: no secExpand
-  secProducts:["company","products"], secPayroll:["company","payroll"], secGoals:["company","milestones"],
+  secProducts:["company","products"], secPrices:["company","products"], secStandards:["company","standards"],
+  secGoals:["company","milestones"],
+  /* Staffing: the schedules, the staff needs (main's Staff page, issue #89,
+     is their hiring half) and Payroll, which moved from Company. The old
+     #secPayroll link opens Payroll; #secStaff opens Staff needs. */
+  secSchedules:["staffing","schedules"], secNeeds:["staffing","needs"], secStaff:["staffing","needs"],
+  secPayroll:["staffing","payroll"],
 };
 /* Sections that have gone, and the section that took their place. */
 const SEC_MOVED = {secRhythm: "secDaily", secLogistics: "secWarehouses", secStock: "secShops", secFlow: "secWarehouses"};
@@ -17371,12 +19423,21 @@ function settleScroll(el, frames = 12){
 }
 /* `into` is a block within the section to land on instead of its top. */
 function reveal(secId, historyMode = "push", into = null){
-  const [p, sv] = SEC_PAGE[secId] || ["today"];
+  let [p, sv] = SEC_PAGE[secId] || ["today"];
+  /* A section on more than one view (data-sub="results standards") opens on
+     the view the route being opened asks for, where it is one of them: a
+     promotion finding reveals the portfolio on Standards, not Results. */
+  const want = typeof routeNext !== "undefined" && routeNext && typeof ROUTES !== "undefined" ? ROUTES[routeNext] : null;
+  if(want && want.host[0] === p && want.host[1] && sv && want.host[1] !== sv){
+    const el = $(SEC_MOVED[secId] || secId);
+    if(el && el.dataset && String(el.dataset.sub || "").split(" ").includes(want.host[1])) sv = want.host[1];
+  }
   /* The open site's own section keeps its page up; every other one is
-     somewhere else. */
+     somewhere else. The view is set before the page, so the address the page
+     writes is the route that view stands for. */
   if(secId !== "secDetail") siteShut();
-  showPage(p, false, historyMode);
   if(sv) showSub(p, sv);
+  showPage(p, false, historyMode);
   const sec = $(SEC_MOVED[secId] || secId);
   if(!sec || sec.hidden) return;
   const target = into ? q(into) : null;
@@ -17401,7 +19462,8 @@ const ALERT_SITE_PICK = {
      company-wide, so the Crew with the most people lacking one of them is the
      place that shows the demand. A tie keeps the first site in the save's
      order. */
-  companydemand: {otherwise: "secPayroll", site: () => {
+  /* With no site lacking it, Staffing › Staff needs lists it as company-wide. */
+  companydemand: {otherwise: "secNeeds", site: () => {
     let best = null, most = 0;
     D.businesses.forEach(b => {
       if(b.status === "vacant") return;
@@ -17412,9 +19474,22 @@ const ALERT_SITE_PICK = {
     return best;
   }},
 };
+/* A finding's landing, under the route its action names (FINDING_ROUTES):
+   whichever page the landing below opens, the shell shows that route, and a
+   site's page keeps it in its history entry. */
 function goToAlert(a){
   const link = ALERT_LINKS[a.group];
   if(!link) return;
+  routeNext = findingRoute(a).route;
+  try{ alertLanding(a, link); } finally { routeNext = null; arrivalNext = null; }
+}
+function alertLanding(a, link){
+  /* Nobody staffed at a shop or an office: its own schedule, on its page;
+     only a factory machine's hours are on the Factories tab. */
+  if(a.group === "staff" && !ovAtFactory(a)){
+    const b = alertSite(a);
+    if(b){ ssOpenSite(b.key, nxStaffInto(b), {finding: a.id}); return; }
+  }
   /* A supply kind lands on its tab, on the row it is about, lit, with a
      crumb back: the tab named, or the tab of the site's own kind. */
   if(link.tab){
@@ -17423,10 +19498,13 @@ function goToAlert(a){
     const tab = link.tab === "site" ? (s >= 0 ? sbTabOf(s) : "warehouses") : link.tab;
     const g = ALERT_GROUPS.find(x => x.id === a.group);
     sbLand(tab, s >= 0 ? s : null, (a.ev || {}).slug || null,
-      g ? tt("today.crumb", "from Today · {kind}", {kind: g.label}) : tt("today.crumb.any", "from Today · a finding"));
+      g ? tt("today.crumb", "from Needs attention · {kind}", {kind: g.label}) : tt("today.crumb.any", "from Needs attention · a finding"));
     return;
   }
   if(link.port){
+    /* The Operations comparison is Standards' (routeStdWas keeps what
+       Results showed, for when the reader goes back to it). */
+    if(link.port === "ops" && view !== "ops" && typeof routeStdWas !== "undefined") routeStdWas = view;
     view = link.port; sortKey = null;
     drawPortfolio();
   }
@@ -17706,15 +19784,23 @@ function findingAmount(a){
       if((m = t.match(/covers (\d+) hours/))) return amtHtml(amtNum(m[1]), "hours covered");
       if((m = t.match(/eat ([\d,]+) a week/))) return amtHtml(amtNum(m[1]), "/week eaten");
       break;
-    case "satisfaction":
-      if((m = t.match(/(\d+)%/))) return amtHtml(`${amtNum(m[1])}%`, "satisfied");
+    /* A share is read from the finding's own number where it carries one,
+       else from its sentence with its decimals: "64.0%" is 64, never "0". */
+    case "satisfaction": {
+      const n = ((a.i18n && a.i18n.text && a.i18n.text[1]) || {}).n;
+      if(typeof n === "number" && isFinite(n)) return amtHtml(`${amtNum(String(n))}%`, "satisfied");
+      if((m = t.match(/(\d+(?:\.\d+)?)%/))) return amtHtml(`${amtNum(String(+m[1]))}%`, "satisfied");
       break;
+    }
     case "jobdemand": case "companydemand":
       if((m = t.match(/^(\d+) staff/))) return amtHtml(amtNum(m[1]), "staff");
       break;
-    case "promotion":
-      if((m = t.match(/(\d+)%/))) return amtHtml(`${amtNum(m[1])}%`, "promotion");
+    case "promotion": {
+      const n = ((a.i18n && a.i18n.text && a.i18n.text[1]) || {}).promotion;
+      if(typeof n === "number" && isFinite(n)) return amtHtml(`${amtNum(String(n))}%`, "promotion");
+      if((m = t.match(/(\d+(?:\.\d+)?)%/))) return amtHtml(`${amtNum(String(+m[1]))}%`, "promotion");
       break;
+    }
   }
   if((m = t.match(/\$([\d,]+)(\/day)?/))) return amtHtml(`$${amtNum(m[1])}`, m[2] || "");
   if((m = t.match(/([\d,]+)\/day/))) return amtHtml(amtNum(m[1]), "/day");
@@ -17727,9 +19813,358 @@ function findingAmount(a){
    its kind's name so it is clear why it is down there. */
 const kindLabel = id => ((typeof ALERT_GROUPS !== "undefined" && ALERT_GROUPS.find(g => g.id === id)) || {}).label || id;
 const kindOff = a => alertGroupPrefs[a.group] === false;
+/* --- where each kind of finding is fixed ------------------------------------
+   The route a finding's action names, and the words on its button. The route
+   is the finding's final home in the redesign (docs/ui-structure-proposal.md,
+   section 7); where that home is still an existing view, ALERT_LINKS above is
+   the landing inside it, and docs/ui-route-migration.md names each one. `pick`
+   decides between two homes by the finding's own site or sentence. */
+const FINDING_ROUTES = {
+  notrading: {route: "businesses/results", act: "readiness"},
+  vacant: {route: "businesses/results", act: "costs"},
+  loss: {route: "businesses/results", act: "results"},
+  trend: {route: "businesses/results", act: "results"},
+  atcap: {route: "businesses/results", act: "hours"},
+  /* Nobody on a factory's machine is a Production plan; nobody at a shop or
+     an office is its schedule. */
+  staff: {route: "staffing/schedules", act: "schedule", pick: a => ovAtFactory(a) ? {route: "supply/production", act: "factoryHours"} : null},
+  idlestaff: {route: "staffing/schedules", act: "schedule"},
+  satisfaction: {route: "businesses/standards", act: "satisfaction"},
+  promotion: {route: "businesses/standards", act: "promotion"},
+  uniform: {route: "businesses/standards", act: "uniforms"},
+  bathroom: {route: "businesses/standards", act: "amenities"},
+  toiletprivacy: {route: "businesses/standards", act: "amenities"},
+  sink: {route: "businesses/standards", act: "amenities"},
+  music: {route: "businesses/standards", act: "amenities"},
+  interior: {route: "businesses/standards", act: "amenities"},
+  jobdemand: {route: "staffing/needs", act: "demand"},
+  companydemand: {route: "staffing/needs", act: "demand"},
+  hype: {route: "expansion/demand", act: "wave"},
+  unplanned: {route: "supply/deliveries", act: "delivery"},
+  outruns: {route: "supply/deliveries", act: "delivery"},
+  topup: {route: "supply/deliveries", act: "delivery"},
+  wholesale: {route: "supply/deliveries", act: "delivery"},
+  target: {route: "supply/deliveries", act: "target"},
+  dead: {route: "supply/deliveries", act: "idle"},
+  notrouted: {route: "supply/deliveries", act: "routes"},
+  /* A depot a route feeds runs dry before the route's round: its fix is the
+     route, not an import (f.shortfall.route*). */
+  shortfall: {route: "supply/imports", act: "import", pick: a => /^f\.shortfall\.route(\.|$)/.test(ovKey(a)) ? {route: "supply/deliveries", act: "delivery"} : null},
+  order: {route: "supply/imports", act: "import"},
+  paused: {route: "supply/imports", act: "import"},
+  feed: {route: "supply/production", act: "input"},
+  unnamed: {route: "supply/production", act: "recipe"},
+  unset: {route: "supply/production", act: "recipe"},
+};
+const ovKey = a => (a && a.i18n && a.i18n.text && a.i18n.text[0]) || "";
+const ovParams = a => (a && a.i18n && a.i18n.text && a.i18n.text[1]) || {};
+function ovAtFactory(a){
+  const b = alertSite(a);
+  const s = b ? D.businesses.indexOf(b) : -1;
+  if(s >= 0 && D.supply && typeof sbTabOf === "function" && sbTabOf(s) === "factories") return true;
+  /* Without the supply facts a factory is still known: a finding about one
+     of its machines names the machine, and the site names its type. */
+  return !!(a.ev && a.ev.slot !== undefined) || !!(b && b.typeSlug === "ba:businesstype_factory");
+}
+/* Where a site's staffing is on its page: a shop's Staffing always, an
+   office's where the office default plans it (spOfficeRoster()), else its
+   Crew, which every staffed site draws. */
+function nxStaffInto(b){
+  if(!b || b.status !== "office") return "#sp-roster";
+  const row = typeof gwOfficeRow === "function" ? gwOfficeRow(b.key) : null;
+  return row && (row.shifts || []).length ? "#sp-roster" : "#sp-crew";
+}
+function ovActLabel(act){
+  switch(act){
+    case "readiness": return tt("today.act.readiness", "Open readiness");
+    case "costs": return tt("today.act.costs", "Review costs");
+    case "results": return tt("today.act.results", "Review results");
+    case "hours": return tt("today.act.hours", "Review customer hours");
+    case "schedule": return tt("today.act.schedule", "Review schedule");
+    case "factoryHours": return tt("today.act.factoryHours", "Plan factory hours");
+    case "satisfaction": return tt("today.act.satisfaction", "Review satisfaction");
+    case "promotion": return tt("today.act.promotion", "Review promotion");
+    case "uniforms": return tt("today.act.uniforms", "Review uniforms");
+    case "amenities": return tt("today.act.amenities", "Review amenities");
+    case "demand": return tt("today.act.demand", "Resolve staff demand");
+    case "wave": return tt("today.act.wave", "Review demand wave");
+    case "delivery": return tt("today.act.delivery", "Review delivery");
+    case "target": return tt("today.act.target", "Review target");
+    case "idle": return tt("today.act.idle", "Review idle stock");
+    case "routes": return tt("today.act.routes", "Review routes");
+    case "import": return tt("today.act.import", "Review import");
+    case "input": return tt("today.act.input", "Review factory input");
+    case "recipe": return tt("today.act.recipe", "Identify recipe");
+    default: return tt("today.act.open", "Open");
+  }
+}
+/* {route, act, label} for a finding; a kind the table does not know opens the
+   route its landing stands for. */
+function findingRoute(a){
+  const f = FINDING_ROUTES[a.group];
+  if(!f) return {route: "overview", act: "", label: ovActLabel("")};
+  const picked = (f.pick && hasData() && f.pick(a)) || f;
+  return {route: picked.route, act: picked.act, label: ovActLabel(picked.act)};
+}
+
+/* --- the Overview's list: its order, its pictures, and the way back ---------
+   The list keeps the order the reader saw while they are working in it: rows
+   already on screen keep their places when a refresh arrives, new ones go to
+   the end of their group, marked new, with a line that says so. A fresh visit
+   to the Overview (the nav, a task) ranks them again. */
+let ovShowAll = false;            // "Show N more" is open
+const ovOpen = new Set();         // the findings whose Details are open
+let ovOrder = null;               // {company, D, ids: Map(id -> place)}
+let ovFresh = new Set();          // the ids that arrived with the last refresh
+const OV_FIRST = 5;               // warnings and opportunities before "Show N more"
+const ovCompany = () => hasData() && D.meta ? `${D.meta.character || ""}|${D.meta.save || ""}` : "";
+function ovForget(){ ovOrder = null; ovFresh = new Set(); }
+/* The three groups, each in Python's ranking, the rows already shown first in
+   their places. */
+function ovArrange(list){
+  const known = ovOrder && ovOrder.company === ovCompany() ? ovOrder : null;
+  const bands = {crit: [], watch: [], opp: []};
+  list.forEach(a => bands[SEV_KIND[a.level] || "opp"].push(a));
+  const fresh = new Set();
+  if(known) Object.keys(bands).forEach(k => {
+    const at = new Map(bands[k].map((a, i) => [a, i]));
+    const place = a => known.ids.has(a.id) ? known.ids.get(a.id) : 1e6 + at.get(a);
+    bands[k].sort((x, y) => place(x) - place(y));
+    /* Only numbers that moved on make a row new; a switch or a filter the
+       reader flipped only shows what was there. */
+    if(known.D !== D) bands[k].forEach(a => { if(!known.ids.has(a.id)) fresh.add(a.id); });
+  });
+  const rows = [...bands.crit, ...bands.watch, ...bands.opp];
+  const ids = known ? new Map(known.ids) : new Map();
+  rows.forEach((a, i) => { if(!ids.has(a.id)) ids.set(a.id, known ? 1e5 + i : i); });
+  if(!known) ovFresh = new Set();
+  else if(known.D !== D) ovFresh = fresh;
+  ovOrder = {company: ovCompany(), D, ids};
+  return {bands, rows, fresh: ovFresh};
+}
+/* The row the reader is looking at and where it stands, so a redraw that
+   adds or drops rows above it leaves it where it was. */
+function ovHold(){
+  if(page !== "today" || !(window.scrollY > 0)) return null;
+  const top = ($("mast") ? $("mast").getBoundingClientRect().bottom : 0);
+  const row = $$("#alerts .find[data-id]").find(f => f.getClientRects().length && f.getBoundingClientRect().bottom > top);
+  return row ? {id: row.dataset.id, top: row.getBoundingClientRect().top} : null;
+}
+function ovKeepHold(hold){
+  if(!hold) return;
+  const row = $$("#alerts .find[data-id]").find(f => f.dataset.id === hold.id);
+  if(!row || !row.getClientRects().length) return;
+  const moved = row.getBoundingClientRect().top - hold.top;
+  if(Math.abs(moved) > 1) window.scrollBy(0, moved);
+}
+/* "1 of 4 critical": a finding's place in its group, as the list shows it. */
+function ovPos(a){
+  const band = SEV_KIND[a.level] || "opp";
+  const rows = $$(`#alerts .find.${band}[data-id]`).map(f => f.dataset.id);
+  const i = rows.indexOf(a.id);
+  if(i < 0) return "";
+  const n = rows.length, at = i + 1;
+  return band === "crit" ? tt("today.pos.crit", "{i} of {n} critical", {i: at, n})
+    : band === "watch" ? tt("today.pos.watch", {one: "{i} of {n} warning", other: "{i} of {n} warnings"}, {i: at, n})
+    : tt("today.pos.opp", {one: "{i} of {n} opportunity", other: "{i} of {n} opportunities"}, {i: at, n});
+}
+/* The finding in a few words for the arrival strip: its item and place, and
+   its kind. */
+function ovWhere(a){
+  const b = alertSite(a);
+  const site = b ? shortName(b) : String(a.site || "");
+  const slug = (a.ev || {}).slug;
+  const item = slug ? gameName(slug) : "";
+  const kind = kindLabel(a.group);
+  return item ? tt("today.arrive.item", "{item} · {site}, {kind}", {item, site, kind})
+    : site ? tt("today.arrive.site", "{site}, {kind}", {site, kind}) : kind;
+}
+/* The Overview as the reader leaves it, kept on its own history entry (nxOv),
+   so Back, Forward, a reload and the arrival strip's way back all find it. */
+/* Every finding row on the Overview: the list and the rows under it (below
+   the line, switched off). */
+const ovRows = () => $$("#alerts .find[data-id], #alertMinor .find[data-id]");
+function ovSnapshot(focus = null){
+  const row = focus ? ovRows().find(f => f.dataset.id === focus) : null;
+  const tools = focus === "tools" ? $("tools") : null;
+  const at = row || tools;
+  return {y: Math.round(window.scrollY || 0), sev: typeof sevOff !== "undefined" ? [...sevOff] : [], all: ovShowAll,
+    open: [...ovOpen], focus, top: at ? Math.round(at.getBoundingClientRect().top) : null,
+    below: typeof showMinor !== "undefined" && showMinor, off: typeof showSwitchedOff !== "undefined" && showSwitchedOff};
+}
+/* Set by ovRemember() for the departure it was called for. */
+let ovLeft = false;
+function ovRemember(focus){
+  const snap = ovSnapshot(focus);
+  ovLeft = true;
+  try{ if(page === "today") history.replaceState({...(history.state || {}), nxOv: snap}, "", location.hash); }catch(e){}
+  return snap;
+}
+/* The Overview back as it was left: its filters, the list opened or not,
+   the Details open, and the row the reader left from, outlined a moment where
+   it stood. A row gone with the latest numbers is said, not faked. */
+function ovArrive(snap){
+  if(!snap || typeof snap !== "object" || !hasData()) return;
+  if(Array.isArray(snap.sev) && typeof sevOff !== "undefined"){ sevOff.clear(); snap.sev.forEach(k => sevOff.add(k)); }
+  ovShowAll = !!snap.all;
+  ovOpen.clear(); (Array.isArray(snap.open) ? snap.open : []).forEach(id => ovOpen.add(id));
+  if(typeof snap.below === "boolean") showMinor = snap.below;
+  if(typeof snap.off === "boolean") showSwitchedOff = snap.off;
+  drawAlerts();
+  const land = () => {
+    const row = snap.focus && snap.focus !== "tools" ? ovRows().find(f => f.dataset.id === snap.focus) : null;
+    const tools = snap.focus === "tools" ? $("tools") : null;
+    const at = row && row.getClientRects().length ? row : tools;
+    if(at && typeof snap.top === "number") window.scrollBy(0, at.getBoundingClientRect().top - snap.top);
+    else if(at) at.scrollIntoView({block: "center"});
+    else window.scrollTo(0, snap.y || 0);
+    /* The keyboard comes back to where it left: the finding's action, the
+       tool directory, or -- the finding gone -- the line that says so. */
+    if(row){
+      row.classList.add("ov-lit");
+      setTimeout(() => row.classList.remove("ov-lit"), 2400);
+      const act = row.querySelector(".ov-act") || row.querySelector(".what");
+      if(act) act.focus({preventScroll: true});
+    } else if(snap.focus && snap.focus !== "tools"){
+      const news = $("ovNews");
+      if(news){
+        news.hidden = false; news.tabIndex = -1;
+        news.textContent = tt("today.back.gone", "The finding you left from is no longer on the list with the latest numbers.");
+        news.focus({preventScroll: true});
+      }
+    } else if(snap.focus === "tools"){
+      const title = $("toolsTitle");
+      if(title) title.focus({preventScroll: true});
+    }
+  };
+  requestAnimationFrame(() => requestAnimationFrame(land));
+}
+/* A finding's action: the route it names, with the way back to this row. */
+function ovFollow(a){
+  const snap = ovRemember(a.id);
+  arrivalNext = {what: ovWhere(a), pos: ovPos(a), back: "overview", backLabel: tt("nav.from.overview", "Needs attention"),
+    finding: a.id, depth: 1, ov: snap};
+  goToAlert(a);
+  arrivalNext = null;
+}
+/* A task in All tools: its route, with the way back to the directory. */
+function ovTool(id, label, o = {}){
+  const snap = page === "today" ? ovRemember("tools") : null;
+  openRoute(id, {...o, arrival: snap ? {what: label, pos: "", back: "overview", backLabel: tt("today.tools.back", "All tools"), depth: 1, ov: snap} : null});
+}
+/* The counts the shell shows on every page: the critical findings on the
+   Overview's link, and a view's count in the area's row. Drawn on every
+   refresh, where the Overview's own list waits for its visit. */
+function drawShellCounts(){
+  if(!hasData()) return;
+  const {list} = partitionFindings(alertLines(), alertMinor().rows || [], alertGroupPrefs);
+  ovCritBadge(list.filter(a => (SEV_KIND[a.level] || "opp") === "crit").length);
+  paintLocal();
+}
+/* The critical count on the Overview's link in the masthead and the phone's bar. */
+let ovCrit = 0;
+function ovCritBadge(n = ovCrit){
+  ovCrit = n;
+  document.querySelectorAll("[data-nav-crit]").forEach(el => {
+    el.textContent = n ? String(n) : "";
+    el.hidden = !n;
+    const a = el.closest("a");
+    if(a) a.setAttribute("aria-label", n ? tt("nav.area.overview.crit", {one: "Overview, {n} critical", other: "Overview, {n} critical"}, {n}) : tt("nav.area.overview", "Overview"));
+  });
+}
+
+/* The small pictures a finding carries on the Overview: only what its own
+   sentence says, drawn -- two amounts on one scale, a share of the hours, a
+   week of stock, the missing amenities as lamps. A finding with nothing to
+   draw shows its figure. */
+function ovBars(rows, fmtN = num){
+  const max = Math.max(1, ...rows.map(r => r[1]));
+  return `<div class="ov-cmp" role="img" aria-label="${attr(rows.map(([l, v]) => `${l}: ${fmtN(v)}`).join(", "))}">${rows.map(([l, v, c]) =>
+    `<span>${spEsc(l)}</span><span class="bar"><i class="${c || ""}" style="width:${Math.max(0, Math.min(100, v / max * 100)).toFixed(1)}%"></i></span><span class="n">${spEsc(fmtN(v))}</span>`).join("")}</div>`;
+}
+const ovPct = v => `${num(v, {maximumFractionDigits: 1})}%`;
+/* A week of stock from today: whole days full, the day it runs out half, the
+   rest dry. */
+function ovCover(days){
+  const d0 = hasData() && D.meta ? ((D.meta.day - 1) % 7 + 7) % 7 : 0;
+  const cells = Array.from({length: 7}, (_, i) => days >= i + 1 ? "" : days > i ? "half" : "dry");
+  const left = Math.max(0, Math.round(days * 10) / 10);
+  return `<div class="ov-cov" role="img" aria-label="${attr(tt("today.pic.cover", "Stock for about {n} days", {n: left}))}"><div class="days">${
+    cells.map(c => `<i class="d ${c}"></i>`).join("")}</div><div class="ax">${cells.map((_, i) => `<span>${spEsc(navShortDay((d0 + i) % 7))}</span>`).join("")}</div></div>`;
+}
+const OV_AMENITY = {bathroom: ["toilet", () => tt("today.lamp.bathroom", "Bathroom")], toiletprivacy: ["door", () => tt("today.lamp.privacy", "Privacy")],
+  sink: ["sink", () => tt("today.lamp.sink", "Sink")], music: ["music", () => tt("today.lamp.music", "Music")],
+  interior: ["interior", () => tt("today.lamp.interior", "Interior")], uniform: ["shirt", () => tt("today.lamp.uniform", "Uniforms")]};
+/* Every amenity the site is missing, from all its findings, not only this one. */
+function ovLamps(b){
+  const kinds = [...new Set([...alertLines(), ...(alertMinor().rows || [])].filter(x => OV_AMENITY[x.group] && alertSite(x) === b).map(x => x.group))];
+  if(!kinds.length) return "";
+  return `<div class="ov-lamps">${Object.keys(OV_AMENITY).filter(k => kinds.includes(k)).map(k =>
+    `<span class="ov-lamp">${spIcon(OV_AMENITY[k][0])}${spEsc(OV_AMENITY[k][1]())}</span>`).join("")}</div>`;
+}
+function ovPicture(a, b){
+  const p = ovParams(a), ok = v => typeof v === "number" && isFinite(v);
+  const t = String((typeof enOf === "function" ? enOf(a, "text") : a.text) || "");
+  let m;
+  switch(a.group){
+    case "order":
+      if(ok(p.brought) && ok(p.use)) return ovBars([[tt("today.pic.ordered", "Ordered a week"), p.brought, ""], [tt("today.pic.used", "Used a week"), p.use, "w"]]);
+      if(ok(p.order) && ok(p.use)) return ovBars([[tt("today.pic.ordered", "Ordered a week"), p.order, ""], [tt("today.pic.used", "Used a week"), p.use, "w"]]);
+      break;
+    case "wholesale":
+      if(ok(p.have) && ok(p.use)) return ovBars([[tt("today.pic.delivered", "Delivered a week"), p.have, ""], [tt("today.pic.sold", "Sold a week"), p.use, "w"]]);
+      break;
+    case "outruns": case "topup":
+      if(ok(p.have) && ok(p.use)) return ovBars([[tt("today.pic.topup", "Daily top-up"), p.have, ""], [tt("today.pic.busiest", "Busiest day"), p.use, "w"]]);
+      break;
+    case "staff":
+      if((m = t.match(/staffed (\d+) of (\d+) hours/))) return ovBars([[tt("today.pic.staffed", "Hours staffed"), +m[1], +m[1] ? "w" : "n"], [tt("today.pic.hoursWeek", "Hours in the week"), +m[2], "a"]]);
+      break;
+    case "feed":
+      /* An import that feeds the line, the depot's daily top-up, or what
+         arrives: each against what the machines need. */
+      if(ok(p.order) && ok(p.use)) return ovBars([[tt("today.pic.ordered", "Ordered a week"), p.order, ""], [tt("today.pic.used", "Used a week"), p.use, "w"]]);
+      if(ok(p.target) && ok(p.per)) return ovBars([[tt("today.pic.topup", "Daily top-up"), p.target, ""], [tt("today.pic.needed", "Needed a day"), p.per, "w"]]);
+      if(ok(p.arrives) && ok(p.per)) return ovBars([[tt("today.pic.arrives", "Arrives a day"), p.arrives, ""], [tt("today.pic.needed", "Needed a day"), p.per, "w"]]);
+      if((m = t.match(/covers (\d+) hours/))) return ovBars([[tt("today.pic.covered", "Hours covered"), +m[1], "w"], [tt("today.pic.hoursDay", "Hours it runs"), 24, "a"]]);
+      break;
+    case "satisfaction":
+      if(ok(p.n)) return ovBars([[tt("today.pic.satisfied", "Satisfied"), p.n, "w"], [tt("today.pic.full", "Everyone"), 100, "a"]], ovPct);
+      break;
+    case "promotion":
+      if((m = t.match(/at ([\d.]+)% of the ([\d.]+)% cap/))) return ovBars([[tt("today.pic.promotion", "Promotion"), +m[1], "w"], [tt("today.pic.cap", "Cap"), +m[2], "a"]], ovPct);
+      break;
+    case "unplanned":
+      if(ok(p.units) && ok(p.rate) && p.rate > 0) return ovCover(p.units / p.rate);
+      break;
+  }
+  if(OV_AMENITY[a.group] && b) return ovLamps(b);
+  return "";
+}
+/* A finding's Details: what the board read, where, and where it is fixed. */
+function ovDetails(a, b, fr){
+  const g = typeof ALERT_GROUPS !== "undefined" ? ALERT_GROUPS.find(x => x.id === a.group) : null;
+  const href = b ? siteHref(b.key) : "";
+  const links = [];
+  if(href) links.push(`<a href="${attr(href)}">${icon("go")}${spEsc(tt("today.det.site", "{site}'s page", {site: shortName(b)}))}</a>`);
+  if(routeArea(fr.route) === "supply" && fr.route !== "supply/production")
+    links.push(`<a href="#supply/flow" data-ov-route="supply/flow">${icon("go")}${spEsc(tt("today.det.flow", "Follow the supply route"))}</a>`);
+  if(a.group === "staff" && fr.route === "supply/production")
+    links.push(`<a href="#supply/production" data-ov-route="supply/production" data-ov-into="#sbStaff">${icon("go")}${spEsc(tt("today.det.factoryStaff", "Staffing for factory lines"))}</a>`);
+  if(gwDressable(a)) links.push(`<span class="quiet">${spEsc(tt("today.det.write", "The game link can set these uniforms after a preview."))}</span>`);
+  return `<div><span class="lab">${tt("today.det.read", "What the board read")}</span><p>${spEsc(a.text)}${a.detail ? ` ${spEsc(a.detail)}` : ""}</p></div>`
+    + `<div><span class="lab">${tt("today.det.kind", "Kind of finding")}</span><p><b>${spEsc(kindLabel(a.group))}</b>${g && g.note ? `. ${spEsc(g.note)}` : ""}</p></div>`
+    + `<div><span class="lab">${tt("today.det.where", "Where it is fixed")}</span><p>${spEsc(tt("today.det.opens", "{action} opens {path}", {action: fr.label, path: routePath(fr.route)}))}</p>${links.join("")}</div>`;
+}
 /* Numbers the ids that name a finding's button after its site. */
 let ssFindSeq = 0;
-function findingRow(a){
+/* A finding on the Overview: the place and the problem, with its kind; for a
+   critical one what matters now and a small picture, for the others the
+   figure; a labelled Details that opens in place; and the action, which opens
+   the finding's route. `o.rich` draws the two-line critical row, `o.later` a
+   row folded behind "Show N more", `o.isNew` one that arrived with the last
+   refresh. */
+function findingRow(a, o = {}){
   const b = alertSite(a);
   const {what, more} = splitFinding(a);
   /* In linked mode a shop's missing uniforms can be set from here; one row,
@@ -17746,31 +20181,45 @@ function findingRow(a){
      map button, whose own label would ride along). */
   const site = !b ? spEsc(a.site) : `${hoodHtml(b)}${siteLink(b, b.code ? baseName(b) : shortName(b))}${mapButton(b.key,b.name)}`;
   const n = ++ssFindSeq;
-  return `<div class="find ${SEV_KIND[a.level] || "opp"}" data-id="${attr(a.id)}">
+  const band = SEV_KIND[a.level] || "opp";
+  const fr = findingRoute(a);
+  const pic = o.rich ? ovPicture(a, b) : "";
+  const amt = findingAmount(a);
+  const open = ovOpen.has(a.id);
+  const det = `ov-x${n}`;
+  return `<div class="find ${band} ov-f${o.rich ? "" : " ov-one"}${o.later ? " ov-later" : ""}${o.isNew ? " ov-new" : ""}" data-id="${attr(a.id)}" data-kind="${attr(a.group)}">
     <span class="mark" data-tip="${attr(tt("today.find.silence", "Silence this finding"))}"></span>
-    <span class="site">${site}</span>
+    <div class="ov-t"><span class="ov-l1"><span class="site">${site}</span>
     <span hidden id="ss-fn${n}">${spEsc(b ? shortName(b) : a.site)}:</span>
-    <button type="button" class="what" id="ss-fw${n}" aria-labelledby="ss-fn${n} ss-fw${n}">${spEsc(what)}${kindOff(a) ? ` ${chipHtml("dim", kindLabel(a.group), tt("today.find.off", "This kind is switched off in the list; it is counted here instead"))}` : ""}</button>${
+    <button type="button" class="what" id="ss-fw${n}" aria-labelledby="ss-fn${n} ss-fw${n}">${spEsc(what)}${kindOff(a) ? ` ${chipHtml("dim", kindLabel(a.group), tt("today.find.off", "This kind is switched off in the list; it is counted here instead"))}` : ""}</button>
+    <span class="ov-k"${o.isNew ? ` data-new="${attr(tt("today.find.new", "new"))}"` : ""}>${spEsc(kindLabel(a.group))}</span></span>${
+      o.rich && more ? `<span class="ov-now">${spEsc(more)}</span>` : ""}</div>${
       /* The game link's buttons sit under the sentence, beside the row's own
          button rather than inside it. */
       writes ? `
     <span class="gw-acts gw-find">${writes}</span>` : ""}
-    <span class="amt">${findingAmount(a)}</span>
+    <div class="ov-vz">${pic || (amt ? `<span class="amt">${amt}</span>` : "")}</div>
+    <button type="button" class="nx-btn sm ghost ov-det" aria-expanded="${open}" aria-controls="${det}"><span>${open ? tt("today.det.hide", "Hide") : tt("today.det.show", "Details")}</span>${nxIcon("chevd")}</button>
+    <span class="ov-ac"><a class="nx-btn${o.rich ? " pri" : ""} ov-act" href="#${fr.route}">${spEsc(fr.label)}${icon("go")}</a></span>
     <span class="go">${icon("go")}</span>${more ? `
-    <span class="more">${spEsc(more)}</span>` : ""}</div>`;
+    <span class="more">${spEsc(more)}</span>` : ""}
+    <div class="ov-x" id="${det}" role="region" aria-labelledby="ss-fw${n}"${open ? "" : " hidden"}>${ovDetails(a, b, fr)}</div></div>`;
 }
-/* Row click opens the finding's page; a click on the mark is stopped in the
-   capture phase by wireFinds() and never reaches this. */
+/* The action, the sentence and the row's own ground open the finding's route;
+   Details, its pane, the game link's buttons and a site's name do their own
+   thing. A click on the mark is stopped in the capture phase by wireFinds()
+   and never reaches this. A modified click on the action is the browser's. */
 function bindFindingRows(host, list){
   $$(".find", host).forEach((node, i) => {
     node.onclick = e => {
       /* A site's name inside the row is its own link, to the site's page. */
       if(inSiteLink(e)) return;
-      e.preventDefault(); goToAlert(list[i]);
+      if(e.target.closest(".ov-det, .ov-x, .gw-acts")) return;
+      if(e.target.closest("a.ov-act") && (e.button > 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey)) return;
+      e.preventDefault(); ovFollow(list[i]);
     };
   });
 }
-
 /* Where a finding shows is decided twice over, by the materiality gate and by
    its kind's switch, and neither drops it. `list` is every above-gate finding
    whose kind is still on. `below` is what the gate set aside of the kinds that
@@ -17815,32 +20264,95 @@ function todayList(items){
 }
 
 let showSwitchedOff = false;
+/* A severity's word beside its count, and its group's heading. */
+function sevWord(k, n){
+  return k === "crit" ? tt("today.sev.word.crit", {one: "critical", other: "critical"}, {n})
+    : k === "watch" ? tt("today.sev.word.watch", {one: "warning", other: "warnings"}, {n})
+    : tt("today.sev.word.opp", {one: "opportunity", other: "opportunities"}, {n});
+}
+function bandLabel(k, n){
+  return k === "crit" ? tt("today.band.crit", "Critical · {n}", {n})
+    : k === "watch" ? tt("today.band.watch", "Warnings · {n}", {n}) : tt("today.band.opp", "Opportunities · {n}", {n});
+}
+/* The line under the heading: what the board checked, and the reader's own
+   marks on the change checklist, which open Supply › Changes. */
+function ovMetaHtml(){
+  const m = D.meta || {}, k = D.kpi || {};
+  const when = `${String(m.hour ?? 0).padStart(2, "0")}:${String(m.minute ?? 0).padStart(2, "0")}`;
+  let html = `<span>${icon("tick")}${tt("today.meta.checked", {one: "Checked {b} business at day {day}, {time}", other: "Checked {b} businesses at day {day}, {time}"},
+    {n: k.businesses || 0, b: `<b>${num(k.businesses || 0)}</b>`, day: m.day, time: when})}</span>`;
+  if(D.supply && typeof sbData === "function"){
+    try{
+      const d = sbData(), total = d.rows.length, mine = d.rows.filter(r => d.marks.has(r.key)).length;
+      if(total) html += `<a href="#supply/changes" data-ov-route="supply/changes">${spIcon("list")}${
+        tt("today.meta.changes", {one: "Your changes: {mine} of {n} marked by you", other: "Your changes: {mine} of {n} marked by you"}, {n: total, mine})}</a>`;
+    }catch(e){}
+  }
+  return `<div class="ov-meta">${html}</div>`;
+}
 function drawAlerts(){
   const {list, below, switchedOff, smaller} = partitionFindings(
     alertLines(), alertMinor().rows || [], alertGroupPrefs);
   const counts = {crit: 0, watch: 0, opp: 0};
   list.forEach(a => counts[SEV_KIND[a.level] || "opp"]++);
   const gate = alertMinor().gate || 0;
+  const hold = ovHold();
+  const {bands, rows, fresh} = ovArrange(list);
 
-  /* The head: title, the threshold behind the ?, the three severity counters
-     that filter the list, and the tune button. That button is bound once at
-     boot, so it is carried over into the fresh head rather than rebuilt. */
+  /* The head: the title, the threshold behind the ?, the three severity
+     filters, Customize checks and the jump to All tools. The Customize checks
+     button is bound once at boot, so it is carried over into the fresh head
+     rather than rebuilt. */
   const tune = $("alertKindsToggle");
-  $("alertHead").innerHTML = sechead(tt("today.alerts.title", "Needs attention"), {
-    why: tt("today.alerts.why", "A site that is not trading always makes the list. Everything else needs to be worth {gate:$}/day; smaller findings are counted below, and so are the kinds switched off.",
-      {gate}),
-    aside: ["crit", "watch", "opp"].map(k =>
-      `<span class="sev ${k}" data-kind="${k}" data-tip="${attr(sevTip(k, counts[k]))}"><i></i>${counts[k]}</span>`
-    ).join("") + `<span id="alertTuneSlot"></span>`,
-  });
+  $("alertHead").innerHTML = `<div class="ov-head"><h2 id="ovTitle">${tt("today.alerts.title", "Needs attention")}</h2>${
+    why(tt("today.alerts.why", "A site that is not trading always makes the list. Everything else needs to be worth {gate:$}/day; smaller findings are counted below, and so are the kinds switched off.",
+      {gate}))}${["crit", "watch", "opp"].map(k =>
+      `<button type="button" class="sev ${k}" data-kind="${k}" aria-pressed="${!sevOff.has(k)}" data-tip="${attr(sevTip(k, counts[k]))}"><i></i>${counts[k]}<span>${sevWord(k, counts[k])}</span></button>`
+    ).join("")}<div class="aside"><span id="alertTuneSlot"></span><button type="button" class="nx-btn sm pill" data-ov-tools aria-controls="tools">${nxIcon("chevd")}<span>${
+      tt("today.tools.jump", "All tools")}</span></button></div></div>${ovMetaHtml()}`;
   $("alertTuneSlot").replaceWith(tune);
 
   /* "Set for all" rides on the first row that can set uniforms and is not
      silenced, the smaller findings included, so it is on the page once. */
   gwUniformAllId = ([...list, ...smaller].find(x => gwDressable(x) && !silencedIds.has(x.id)) || {}).id ?? null;
-  $("alerts").innerHTML = list.length ? list.map(a => findingRow(a)).join("")
-    : `<span class="quiet" style="display:block;padding:12px 0">${tt("today.alerts.none", "Nothing to flag here.")}</span>`;
-  bindFindingRows($("alerts"), list);
+  /* Every critical finding shows; the warnings and opportunities after them
+     show five and fold the rest behind "Show N more", counted. */
+  let html = "", k = 0;
+  const folded = {watch: 0, opp: 0};
+  ["crit", "watch", "opp"].forEach(band => {
+    if(!bands[band].length) return;
+    html += `<div class="ov-band ${band}" data-kind="${band}">${bandLabel(band, bands[band].length)}</div>`;
+    bands[band].forEach(a => {
+      const later = band !== "crit" && k++ >= OV_FIRST;
+      if(later) folded[band]++;
+      html += findingRow(a, {rich: band === "crit", later, isNew: fresh.has(a.id)});
+    });
+  });
+  /* An empty list is only healthy when nothing was filtered away: it says what
+     it checked, and the lines under it say what it set aside. */
+  $("alerts").innerHTML = list.length ? html + `<p class="quiet ov-filtered" id="ovFiltered" hidden>${tt("today.alerts.filtered", "Every finding is hidden by the severity filters above.")}</p>`
+    : `<div class="ov-empty"><b>${tt("today.alerts.none", "No urgent issues found in this snapshot")}</b><p>${
+      tt("today.alerts.none.sub", "Nothing above the threshold in the kinds switched on. The lines below count what was set aside.")}</p></div>`;
+  $("alerts").classList.toggle("ov-all", ovShowAll);
+  bindFindingRows($("alerts"), rows);
+  if($("ovMetaFoot")) $("ovMetaFoot").innerHTML = ovMetaHtml();
+  const more = folded.watch + folded.opp;
+  const moreBox = $("ovMore");
+  moreBox.hidden = !more;
+  moreBox.innerHTML = more ? `<button type="button" class="nx-btn sm" data-ov-more aria-expanded="${ovShowAll}" aria-controls="alerts">${nxIcon("chevd")}<span>${ovShowAll
+    ? tt("today.more.fewer", "Show fewer")
+    : !folded.opp ? tt("today.more.watchOnly", {one: "Show {n} more warning", other: "Show {n} more warnings"}, {n: more})
+    : !folded.watch ? tt("today.more.oppOnly", {one: "Show {n} more opportunity", other: "Show {n} more opportunities"}, {n: more})
+    : tt("today.more.show", "Show {n} more: {w}, {o}", {n: more,
+      w: tt("today.more.watch", {one: "{n} warning", other: "{n} warnings"}, {n: folded.watch}),
+      o: tt("today.more.opp", {one: "{n} opportunity", other: "{n} opportunities"}, {n: folded.opp})})}</span></button>` : "";
+  const news = $("ovNews");
+  if(news){
+    news.hidden = !fresh.size;
+    news.innerHTML = fresh.size ? `<span>${tt("today.news", {one: "{n} finding arrived with the latest numbers; it is listed at the end of its group.",
+      other: "{n} findings arrived with the latest numbers; they are listed at the end of their groups."}, {n: fresh.size})}</span><button type="button" class="nx-btn sm" data-ov-rank>${
+      tt("today.news.rank", "Rank the list again")}</button>` : "";
+  }
 
   /* Nothing leaves the screen: under the list, one line counts what the
      materiality gate set aside and one names the kinds switched off, each with
@@ -17857,7 +20369,8 @@ function drawAlerts(){
       : tt("today.minor.below", "{n} below the {gate:$}/day line", {n: below.length, gate}))
     + block(switchedOff, showSwitchedOff, "off",
       tt("today.minor.off", "{n} in kinds switched off: {kinds}", {n: switchedOff.length,
-        kinds: switchedOffKinds(switchedOff, kindLabel, compact, ALERT_GROUPS.map(g => g.id))}));
+        kinds: switchedOffKinds(switchedOff, kindLabel, compact, ALERT_GROUPS.map(g => g.id))}))
+    + ovWaiting();
   $$("[data-td-toggle]", host).forEach(a => a.onclick = e => {
     e.preventDefault();
     if(a.dataset.tdToggle === "below") showMinor = !showMinor; else showSwitchedOff = !showSwitchedOff;
@@ -17865,10 +20378,39 @@ function drawAlerts(){
   });
   const rowsOf = {below, off: switchedOff};
   $$("[data-td-rows]", host).forEach(box => bindFindingRows(box, rowsOf[box.dataset.tdRows]));
+  ovCritBadge(counts.crit);
+  ovStickyPaint(list.length);
+  ovKeepHold(hold);
   /* The kinds switches and the "show" link redraw this view outside
      renderAll(), so the sticky state (filtered severities, silenced ids) is
      re-applied here; both calls are idempotent. */
   wireSev(); wireFinds();
+}
+/* The checks that could not run on this save, said under the list rather
+   than passed over: without the game's text the factory and capacity checks
+   have no recipes or station capacities to read. */
+function ovWaiting(){
+  if(!hasData() || !D.meta || D.meta.locale !== false) return "";
+  return `<p class="quiet td-count">${tt("today.minor.waiting", "Factory and capacity checks wait for the game's text (the masthead says NAMES ONLY).")}</p>`;
+}
+/* The long queue's slim bar: once the heading has scrolled away and before All
+   tools is in sight, it keeps the jump there and the way back to the top. */
+function ovStickyPaint(n){
+  const bar = $("ovSticky");
+  if(!bar) return;
+  bar.innerHTML = `<b>${tt("today.alerts.title", "Needs attention")}</b><span class="quiet">${tt("today.sticky.n", {one: "{n} finding", other: "{n} findings"}, {n})}</span>`
+    + `<span class="aside"><button type="button" class="nx-btn sm ghost" data-ov-top>${tt("today.sticky.top", "Back to top")}</button><button type="button" class="nx-btn sm pill" data-ov-tools aria-controls="tools">${
+      nxIcon("chevd")}<span>${tt("today.tools.jump", "All tools")}</span></button></span>`;
+  ovStickyCheck();
+}
+function ovStickyCheck(){
+  const bar = $("ovSticky"), head = $("alertHead"), tools = $("tools");
+  if(!bar || !head || !tools) return;
+  const topLine = $("mast") ? $("mast").getBoundingClientRect().bottom : 0;
+  const on = page === "today" && head.getBoundingClientRect().bottom < topLine && tools.getBoundingClientRect().top > (window.innerHeight || 800);
+  bar.classList.toggle("on", on);
+  bar.setAttribute("aria-hidden", String(!on));
+  bar.inert = !on;
 }
 
 /* A round step for the y axis: 1, 2, 2.5 or 5 times a power of ten, so about
@@ -18698,6 +21240,9 @@ const spPlanRead = key => {
 const spPlanWrite = (key, which) => {
   const at = spPlanKey(key);
   spPlanMem[at] = which === "full" ? "full" : "demand";
+  hrStale();
+  /* Staffing › Schedules summarises the plan shown (spShownRow()). */
+  if(typeof nxSchedStale === "function") nxSchedStale();
   if(!spCharacter()) return;
   try {
     if(which === "full") localStorage.setItem(SP_PLAN_STORE + at, "full");
@@ -18725,6 +21270,10 @@ const spFullNeed = row => {
 };
 const spFullRow = row => Object.assign({}, row, spFullNeed(row), row.fullCover,
   {fullCover: null, full: true});
+/* The plan a shop shows: full cover where the reader picked it and the shop
+   offers it, else the demand plan. Its Staffing block, its write and Staffing ›
+   Schedules all read this one, so the three never describe different weeks. */
+const spShownRow = base => spOffersFull(base) && spPlanRead(base.key) === "full" ? spFullRow(base) : base;
 /* The ticks of each plan are kept apart: an entry ticked on one is not an
    entry typed for the other. The full-cover ticks are kept per company as
    well, and not at all on a board with no character id; the demand plan's
@@ -19762,11 +22311,33 @@ function spPlanPick(base, full){
     full ? ` class="sp-on" aria-current="true"` : ""}>${tt("sp.pick.full", "Full cover 24/7")}</a></span>${done}</div>`;
 }
 
+/* An office's Staffing: Peter's office default (officeStaffing) against the
+   week in the game, and its write -- the same review, confirm and undo as a
+   shop's, which never changes the office's opening hours. The hour grid of
+   the week is the Staff page's and the game's; here it is the numbers. */
+function spOfficeRoster(b){
+  const row = gwOfficeRow(b.key);
+  if(!row || !(row.shifts || []).length) return "";
+  const comp = gwOfficeComputers(row);
+  /* Now, and after the write adds what it can: it never takes an entry away. */
+  const now = ((row.current || {}).list || []).filter(s => comp.has(s.s)), after = now.concat(gwRosterWeek(row).added);
+  const hours = list => list.reduce((n, s) => n + s.t - s.f, 0);
+  const people = list => new Set(list.map(s => s.p).filter(p => p !== null && p !== undefined)).size;
+  const open = (row.shifts || []).filter(s => spNobody(s.p));
+  const facts = [[tt("sp.off.hours", "Hours / week"), hours(now), hours(after)], [tt("sp.off.people", "People"), people(now), people(after)]];
+  return `<section class="sec rv" data-block="roster" id="sp-roster" data-site="${attr(b.key)}">
+    ${sechead(tt("sp.roster.title", "Staffing"), {icon: "roster", quiet: tt("sp.off.quiet", "the office default: {n} always on, every computer on weekdays 8 to 22", {n: row.alwaysOn || 0})})}
+    <p class="quiet">${tt("sp.off.after", "Computers now → after adding the office default where they are free")}</p>
+    <div class="sp-offroster">${facts.map(([k, a, z]) => `<div><span>${k}</span><b>${a === z ? z : `<s>${a}</s> → ${z}`}</b></div>`).join("")}${
+      open.length ? `<div><span>${tt("sp.off.open", "Waiting on a hire")}</span><b>${tt("sp.off.openh", "{n} h", {n: hours(open)})}</b></div>` : ""}</div>
+    ${gwLink() ? gwRosterButtons(b.key) : `<p class="quiet">${tt("sp.off.link", "Link the game to write this week from here.")}</p>`}
+  </section>`;
+}
 function spRosterBlock(b){
   const base = spRosterRow(b.key);
   const offer = spOffersFull(base);
-  const full = offer && spPlanRead(base.key) === "full";
-  const row = full ? spFullRow(base) : base;
+  const row = spShownRow(base);
+  const full = offer && row !== base;
   const pick = offer ? spPlanPick(base, full) : "";
   /* A week with nothing in it is the only empty state. A shop too new to have
      been measured still has cleaning and security cover to type -- and that is
@@ -21114,7 +23685,7 @@ function drawSite(){
     </section>` : ""}
     ${/* Only a shop is planned: an office bills hours rather than serving a
           queue, and a depot, a factory and a home have no row at all. */""}
-    ${kind === "retail" ? spRosterBlock(b) : ""}
+    ${kind === "retail" ? spRosterBlock(b) : office ? spOfficeRoster(b) : ""}
     <div class="duo sec" style="grid-template-columns:1fr 2fr">
       <section class="rv" data-block="crew" id="sp-crew">
         ${sechead(tt("sp.crew.title", "Crew"), {icon: spAny ? "crew" : null, why: roleTip || null, quiet: crewQuiet})}
@@ -22078,7 +24649,9 @@ function sbPaintTools(){
     () => sbWhich, v => { sbWhich = v; }, again);
   if($("sbView")) seg($("sbView"), [["list", `<span aria-label="${attr(tt("sb.view.list", "List"))}" data-tip="${attr(tt("sb.view.list", "List"))}">${spIcon("list")}</span>`],
     ["diagram", `<span aria-label="${attr(tt("sb.view.diagram", "Diagram"))}" data-tip="${attr(tt("sb.view.diagram.tip", "How the goods move"))}">${spIcon("route")}</span>`]],
-    sbViewMode, v => { sbViewOn = v; remember(SB_VIEW_KEY, v); }, again);
+    sbViewMode, v => { sbViewOn = v; remember(SB_VIEW_KEY, v); },
+    /* The diagram is Supply › Goods flow; the list the view of the tab. */
+    () => { again(); if(typeof routeSync === "function" && page === "supply" && !siteOpen) routeSync(); });
 }
 /* The one svg#flow sits in the tab on screen while the diagram is on, and
    waits outside the tabs otherwise. */
@@ -23572,7 +26145,1689 @@ function drawProducts(){
   if(toggle) toggle.onclick = () => { showAllProducts = !showAllProducts; drawProducts(); };
 }
 
-/* Payroll is the headcount by role against the biggest role, and whatever needs
+/* --- Company > Staff: hiring for every site (docs/staff-hire-plan.md) -----
+   What every planned site still needs, per role, filled first by the people
+   the plans already count on (the unassigned bench), then by moving spare
+   people between sites, then from the headhunters' candidates; one review and
+   one confirm hires, moves and writes the week through the game link
+   (gwConfirm, kind "hire"). Everything from here to hrModel() is pure: it
+   takes the payload (hiring, candidates, the sites' plans), the filters and
+   the player's ticks, and gives back who goes where. Quick hire (hqModel())
+   hires the best matches for one role at any site on the same call. Payroll
+   stays at the bottom of the page, as hrPayroll(). The design and its wording
+   are mockup/staff-hire-v2 (NOTES.md). */
+const HR_P = {
+  move: '<path d="M4 8h13M13 4l4 4-4 4"></path><path d="M20 16H7M11 12l-4 4 4 4"></path>',
+  filter: '<path d="M4 5h16l-6 7.5V19l-4 2v-8.5z"></path>',
+  search: '<circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4.5 4.5"></path>',
+  hq: '<path d="M4 21V9l8-5 8 5v12"></path><path d="M9 21v-6h6v6M9 11h.01M15 11h.01"></path>',
+  plus2: '<path d="M12 6v12M6 12h12"></path>',
+  x2: '<path d="M7 7l10 10M17 7 7 17"></path>',
+  check2: '<path d="M5 12.5l4.5 4.5L19 7"></path>',
+  chev: '<path d="M9 6l6 6-6 6"></path>',
+  coin: '<circle cx="12" cy="12" r="8.5"></circle><path d="M14.5 9.5c-.4-.9-1.4-1.5-2.5-1.5-1.5 0-2.5.8-2.5 2s1 1.7 2.5 2 2.5.8 2.5 2-1 2-2.5 2c-1.1 0-2.1-.6-2.5-1.5M12 6.5V8M12 16v1.5"></path>',
+  phone: '<rect x="7" y="2.5" width="10" height="19" rx="2"></rect><path d="M11 18.5h2"></path>',
+};
+const hrSvg = (name, cls) => `<svg${cls ? ` class="${cls}"` : ""} viewBox="0 0 24 24" aria-hidden="true">${HR_P[name] || GW_P[name] || ""}</svg>`;
+const hrName = slug => spEsc(gameName(slug) || String(slug || "").replace(/^ba:[a-z]+_/, ""));
+const hrRole = skill => gameName(skill) ? spEsc(gameName(skill)) : gwSkillName(skill);
+const hrNum = n => num(Number(n || 0));
+const hrWage = n => `$${num(Number(n || 0), {maximumFractionDigits: 2})}`;
+const HR_DAYS = HOUR_ROWS;  // Monday first, as the game's week reads
+
+/* The filters: the company's, and a role's own where Change picks set one.
+   Kept per character in this browser; storage may refuse, and the page then
+   keeps them for as long as it is open. Part-time is left out by default, and
+   the company's Part-time counts for the roles hired into a shop only
+   (hrFilterFor); a set kept before that default (no `v`) gets it once. */
+const HR_STORE = "ba_dash_hire:";
+const HR_PT = "ba:jobdemand_parttime";
+let hrFilterMem = null;
+const hrCleanFilter = f => ({
+  ex: Array.isArray(f && f.ex) ? [...new Set(f.ex.filter(x => typeof x === "string"))] : [],
+  min: Number.isFinite(f && f.min) ? f.min : 0,
+  max: Number.isFinite(f && f.max) ? f.max : null,
+});
+function hrFilters(){
+  const who = spCharacter() || "";
+  if(hrFilterMem && hrFilterMem.who === who) return hrFilterMem;
+  let kept = null;
+  if(who) try{ kept = JSON.parse(localStorage.getItem(HR_STORE + who) || "null"); }catch(e){ kept = null; }
+  const roles = {};
+  Object.entries((kept && typeof kept.roles === "object" && kept.roles) || {}).forEach(([k, f]) => { roles[k] = hrCleanFilter(f); });
+  const company = hrCleanFilter(kept && kept.company);
+  if(!(kept && kept.v >= 2) && !company.ex.includes(HR_PT)) company.ex.push(HR_PT);
+  hrFilterMem = {who, company, roles};
+  return hrFilterMem;
+}
+function hrFiltersSave(){
+  const f = hrFilters();
+  if(!f.who) return;
+  try{ localStorage.setItem(HR_STORE + f.who, JSON.stringify({v: 2, company: f.company, roles: f.roles})); }catch(e){}
+}
+/* The filter a role is picked by: its own, applied as it is, else the
+   company's without Part-time, with `pt` saying whether the company's
+   Part-time bars its askers from the role's shop weeks (never its other
+   sites': the default is per destination). */
+function hrFilterFor(skill){
+  const f = hrFilters();
+  if(f.roles[skill]) return {f: f.roles[skill], pt: false};
+  return {f: Object.assign({}, f.company, {ex: f.company.ex.filter(d => d !== HR_PT)}), pt: f.company.ex.includes(HR_PT)};
+}
+const hrAsksPt = c => (c.demands || []).includes(HR_PT);
+
+/* The player's own ticks on this page: a candidate left out (skip) or added
+   over the plan (force), a reassign group unticked; the role open in Change
+   picks, and the Quick hire form. Kept while the page is open, for one
+   company. */
+const hrQuickNew = () => ({skill: "", site: "", n: 1, min: 0, ex: null});
+/* Candidates the game hired from this board: {board, ids}, for as long as
+   the board is the one they were hired on. */
+function hrHiredAdd(ids){
+  if(!hrUi.hired || hrUi.hired.board !== D) hrUi.hired = {board: D, ids: new Set()};
+  ids.filter(Boolean).forEach(id => hrUi.hired.ids.add(id));
+}
+const hrUi = {who: null, skip: new Set(), force: new Set(), moveOff: new Set(),
+              sheet: null, all: false, out: false, quick: hrQuickNew()};
+function hrTicks(){
+  const who = `${spCharacter() || ""}|${(D.meta || {}).save || ""}`;
+  if(hrUi.who !== who){
+    hrUi.who = who;
+    [hrUi.skip, hrUi.force, hrUi.moveOff].forEach(s => s.clear());
+    hrUi.sheet = null; hrUi.all = false; hrUi.out = false; hrUi.quick = hrQuickNew();
+  }
+  return hrUi;
+}
+
+/* A candidate's level in a skill, or null when they have none of it. */
+const hrLevel = (c, skill) => {
+  const s = (c.skills || []).find(x => x && x.skill === skill);
+  return s ? Number(s.level) || 0 : c.skill === skill ? Number(c.level) || 0 : null;
+};
+const hrPasses = (c, skill, f) => {
+  const lv = hrLevel(c, skill);
+  return lv !== null && lv >= f.min && (f.max === null || Number(c.wage) <= f.max)
+    && !(c.demands || []).some(d => f.ex.includes(d));
+};
+/* Most skilled in the role first, a tie to the lower wage, then the id. */
+const hrRank = skill => (a, b) => (hrLevel(b, skill) - hrLevel(a, skill)) || (Number(a.wage) - Number(b.wage))
+  || (String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0);
+
+/* The schedule demands, judged against the hire week a person would get:
+   the game's own rules (JOB_DEMANDS in Python). A demand this table does not
+   know is not judged. */
+const HR_WINDOWS = {"ba:jobdemand_nomornings": [[6, 10]], "ba:jobdemand_noafternoons": [[14, 16]],
+  "ba:jobdemand_noevenings": [[18, 22]], "ba:jobdemand_nonights": [[22, 24], [0, 4]]};
+function hrBreaks(slug, w, row){
+  const slots = w.slots || [];
+  const hours = Number.isFinite(Number(w.hours)) && w.hours !== undefined ? Number(w.hours) : slots.reduce((n, s) => n + s.t - s.f, 0);
+  const days = Number.isFinite(Number(w.days)) && w.days !== undefined ? Number(w.days) : new Set(slots.map(s => s.d)).size;
+  switch(slug){
+    case "ba:jobdemand_fulltime": return hours < 30 || hours > 50;
+    case "ba:jobdemand_parttime": return hours < 10 || hours > 30;
+    case "ba:jobdemand_fourdaysweek": return days !== 4;
+    case "ba:jobdemand_fivedaysweek": return days !== 5;
+    case "ba:jobdemand_freeweekends": return slots.some(s => s.d === 6 || s.d === 0);
+    case "ba:jobdemand_nocleaning": return slots.some(s => {
+      const sh = row && (row.shifts || [])[s.shift];
+      return sh ? sh.k === "clean" : w.skill === "ba:skill_cleaning";
+    });
+  }
+  const win = HR_WINDOWS[slug];
+  return !!win && slots.some(s => win.some(([lo, hi]) => lo < s.t && s.f < hi));
+}
+const hrKind = slug => ((D.hiring || {}).demandKinds || {})[slug] || null;
+
+/* A planned site's plan as the Staff page reads it: a new shop full cover,
+   else the roster's own pick; a factory the sizing on Supply; an office its
+   own. `row` is the plan row the hire weeks point into. */
+function hrVariant(site){
+  const plans = site.plans || {};
+  if(site.kind === "shop"){
+    /* Never full cover, whose write opens a shop 0 to 24: the open-hours
+       plan where the data is not complete (it is then the only one), or
+       where the player runs full cover or the shop is new; else demand. */
+    if(plans.open && (!plans.demand || site.new || spPlanRead(site.key) === "full")) return "open";
+    return plans.demand ? "demand" : null;
+  }
+  if(site.kind === "factory") return plans[sizing] ? sizing : Object.keys(plans)[0] || null;
+  return plans.office ? "office" : Object.keys(plans)[0] || null;
+}
+function hrPlanRow(site, variant){
+  if(site.kind === "shop"){
+    const base = spRosterRow(site.key);
+    if(!base || base.failed) return null;
+    if(variant === "open" && base.openCover) return Object.assign({}, base, base.openCover, {openCover: null, fullCover: null, full: false});
+    return variant === "full" && base.fullCover ? spFullRow(base) : base;
+  }
+  if(site.kind === "factory") return (((D.factoryStaffing || {})[variant]) || []).find(r => r.key === site.key && !r.failed) || null;
+  const offices = D.officeStaffing;
+  const list = Array.isArray(offices) ? offices : ((offices || {})[variant] || []);
+  return list.find(r => r.key === site.key && !r.failed) || null;
+}
+/* Who a person is: the hiring payload's own table ({name, skills, wage,
+   site, hours, demands}), else the plan's (a name). Their role is their
+   best skill, and a move keeps to it. */
+const hrPerson = (id, row) => {
+  const had = ((D.hiring || {}).people || {})[id];
+  const p = Object.assign({id}, had || ((row || {}).people || []).find(x => x.id === id) || {});
+  if(!p.skill){
+    const top = (p.skills || []).filter(x => x && x.skill).sort((a, b) => (Number(b.level) || 0) - (Number(a.level) || 0))[0];
+    if(top){ p.skill = top.skill; p.level = Number(top.level) || 0; }
+  }
+  return p;
+};
+
+/* The page's whole answer, deterministic for one payload, one set of
+   filters and one set of ticks:
+     sites  one per hiring site: {site, b, variant, plan, row, weeks, planned}
+            with weeks [{w, j, S, who}] in the payload's order; who is
+            {type: "move", m} or {type: "hire", c, misfit: [slugs]}
+     moves  the bench the plans count on (fixed), then spares and the
+            unassigned moved to a week in their own role (group, off)
+     roles  one per skill with hire weeks: pool, picked, short, pass, out,
+            shop / allShop (some / every week at a shop), f, the filter it
+            is picked by, pt (the company's Part-time bars its shop weeks)
+            and passes(c)
+     quick  Quick hire's plan (hrQuickPlan()), made before the roles: its
+            picks win, and its weeks are not the roles'
+     overs  candidates ticked over the plan: {c, S, skill}
+     used   candidate id -> the site they are picked for */
+function hrModel(){
+  const H = D.hiring || {sites: []};
+  const ui = hrTicks();
+  const byKey = new Map((D.businesses || []).map(b => [b.key, b]));
+  const sites = (H.sites || []).map((site, i) => {
+    const variant = site.planned ? hrVariant(site) : null;
+    const plan = variant ? (site.plans || {})[variant] || {} : {};
+    const S = {site, i, key: site.key, b: byKey.get(site.key) || null, variant, plan,
+               row: variant ? hrPlanRow(site, variant) : null, planned: !!site.planned, weeks: []};
+    S.weeks = (plan.hireWeeks || []).map((w, j) => ({w, j, S, who: null}));
+    return S;
+  });
+  const moves = [];
+  /* Someone in training: the game's move turns them away, so nobody in
+     training is moved or assigned from here. */
+  const training = id => !!(((H.people || {})[id] || {}).training);
+  /* 1. The unassigned people a plan already counts on: assigned there. */
+  sites.forEach(S => (S.plan.bench || []).forEach(id => {
+    if(training(id)) return;
+    const p = hrPerson(id, S.row);
+    moves.push({id, p, from: null, to: S, week: null, skill: p.skill || null, fixed: true, group: `bench|${S.key}`});
+  }));
+  /* 2. Spare people, and the unassigned nobody plans on, into another site's
+     week in the role they are spare in (the unassigned: their best skill);
+     the sites' spares in list order, then the rest. Someone spare in two
+     roles tries the one they are better at first. */
+  const counted = new Set(sites.flatMap(S => S.plan.bench || []));
+  const spares = [];
+  sites.forEach(S => (S.plan.spare || []).forEach(id => spares.push({id, from: S})));
+  (H.bench || []).filter(id => !counted.has(id)).forEach(id => spares.push({id, from: null}));
+  const moved = new Set();
+  spares.forEach(({id, from}) => {
+    if(moved.has(id) || training(id)) return;
+    const p = hrPerson(id, from && from.row);
+    const best = p.skill ? [p.skill] : [];
+    const roles = from ? ((from.plan.spareSkills || {})[id] || best) : best;
+    const level = k => { const x = (p.skills || []).find(y => y && y.skill === k); return x ? Number(x.level) || 0 : k === p.skill ? Number(p.level) || 0 : -1; };
+    const ordered = roles.slice().sort((a, b) => level(b) - level(a));
+    for(const skill of ordered){
+      const S = sites.find(x => x !== from && (x.site.accepts || []).includes(skill) && x.weeks.some(y => !y.taken && y.w.skill === skill));
+      if(!S) continue;
+      const open = S.weeks.filter(y => !y.taken && y.w.skill === skill);
+      const wk = open.find(y => !hrDeskMiss(p.demands, S, y.w).length) || open[0];
+      wk.taken = true;
+      moved.add(id);
+      const lv = level(skill);
+      const m = {id, p: Object.assign({}, p, {skill, level: lv >= 0 ? lv : undefined}), from, to: S, week: wk, skill,
+                 group: `${from ? from.key : "bench"}|${S.key}|${skill}`};
+      m.off = ui.moveOff.has(m.group);
+      if(!m.off) wk.who = {type: "move", m};
+      moves.push(m);
+      break;
+    }
+  });
+  sites.forEach(S => S.weeks.forEach(x => { delete x.taken; }));
+  /* 3. The candidates, less anyone the game has just hired from this board
+     (they are staff now, until the board reads the game again); Quick hire
+     first, then each role most skilled first, nobody picked twice. */
+  const hired = hrUi.hired && hrUi.hired.board === D ? hrUi.hired.ids : null;
+  const cands = (D.candidates || []).filter(c => !(hired && hired.has(c.id)));
+  const byId = new Map(cands.map(c => [c.id, c]));
+  const used = new Map();  // candidate id -> the site they are picked for
+  const quick = hrQuickPlan(sites, cands, used);
+  const mine = S => S.weeks.filter(x => !(x.who && x.who.type === "quick"));
+  const skills = new Map();
+  sites.forEach(S => mine(S).forEach(x => skills.set(x.w.skill, (skills.get(x.w.skill) || 0) + 1)));
+  const order = [...skills.keys()].sort((a, b) => skills.get(b) - skills.get(a) || (gameName(a) || a).localeCompare(gameName(b) || b));
+  const overs = [];
+  const roles = order.map(skill => {
+    const {f, pt} = hrFilterFor(skill);
+    const pool = cands.filter(c => hrLevel(c, skill) !== null).sort(hrRank(skill));
+    const weeks = sites.flatMap(S => mine(S).filter(x => x.w.skill === skill));
+    const atShop = x => x.S.site.kind === "shop";
+    const shop = weeks.some(atShop), allShop = weeks.every(atShop);
+    const open = weeks.filter(x => !x.who);
+    /* A Part-time asker passes a role with a week they may take. */
+    const passes = c => hrPasses(c, skill, f) && !(pt && allShop && hrAsksPt(c));
+    const role = {skill, f, pt, shop, allShop, passes, own: !!hrFilters().roles[skill], pool, weeks, need: open.length,
+                  moved: weeks.length - open.length, picked: [], pass: 0, out: 0, at: new Map()};
+    pool.forEach(c => {
+      const forced = ui.force.has(c.id);
+      const pass = passes(c);
+      if(pass) role.pass++; else role.out++;
+      if(!pass && !forced) return;
+      if(used.has(c.id)){ role.at.set(c.id, {elsewhere: used.get(c.id)}); return; }
+      if(ui.skip.has(c.id)) return;
+      const barred = x => pt && !forced && hrAsksPt(c) && atShop(x);
+      const free = open.filter(x => !x.who && !barred(x));
+      if(free.length){
+        /* The first site in list order with a place left; there, the first
+           week whose schedule demands they meet, else the first, warned. */
+        const S = free[0].S, mine = free.filter(x => x.S === S);
+        const fails = x => (c.demands || []).filter(d => hrKind(d) === "schedule" && hrBreaks(d, x.w, S.row));
+        /* The weeks of a role are interchangeable, so the one at a desk
+           that meets their desk and chair demands goes first. */
+        const fit = mine.find(x => !fails(x).length && !hrDeskMiss(c.demands, S, x.w).length) || mine.find(x => !fails(x).length);
+        const wk = fit || mine[0];
+        wk.who = {type: "hire", c, misfit: fit ? [] : fails(wk)};
+        role.picked.push(c);
+        role.at.set(c.id, {week: wk});
+        used.set(c.id, wk.S);
+      } else if(forced){
+        const S = weeks.length ? weeks[0].S : null;
+        if(!S) return;
+        overs.push({c, S, skill});
+        role.picked.push(c);
+        role.at.set(c.id, {over: S});
+        used.set(c.id, S);
+      }
+    });
+    role.short = open.filter(x => !x.who).length;
+    return role;
+  });
+  return {sites, moves, roles, overs, cands, byId, used, quick};
+}
+
+/* A desk or chair demand against a week: whether one of the stations the week
+   puts them on stands in furniture that meets it (the site's `stations`), the
+   game's own test. No week, no station: the game leaves their list empty. */
+const hrDeskMet = (slug, S, w) => !!(S && w) && (w.slots || []).some(sl =>
+  (((S.site.stations || {})[String(sl.station)]) || []).includes(slug));
+const hrDeskAnywhere = (slug, S) => !!S && Object.values(S.site.stations || {}).some(l => (l || []).includes(slug));
+/* The desk and chair demands a week of this site leaves unmet. */
+const hrDeskMiss = (demands, S, w) => (demands || []).filter(d => hrKind(d) === "station" && !hrDeskMet(d, S, w));
+/* A demand of someone going to a site, as the page judges it: "ok", "warn"
+   (not met here, met at another planned site, or at another desk here), "no"
+   (met nowhere) or null (not judged). Schedule demands are judged against
+   their week, desk and chair demands against the stations it is on. */
+function hrDemandAt(m, slug, S, wk){
+  const kind = hrKind(slug);
+  if(kind === "schedule") return wk ? (hrBreaks(slug, wk.w, S && S.row) ? "warn" : "ok") : null;
+  if(kind === "station"){
+    if(!S) return null;
+    if(hrDeskMet(slug, S, wk && wk.w)) return "ok";
+    /* No week (a site with no plan, the headquarters): the player seats them. */
+    if(!(wk && wk.w)) return hrDeskAnywhere(slug, S) || m.sites.some(x => hrDeskAnywhere(slug, x)) ? "warn" : "no";
+    return m.sites.some(x => x.planned && hrDeskAnywhere(slug, x)) ? "warn" : "no";
+  }
+  if(kind === "company"){
+    const c = ((D.hiring || {}).company || {})[slug];
+    /* "plan": an HR manager's plan offers it, but a hire joins none until
+       the player adds them to it. */
+    return c === undefined ? null : c === "plan" ? "warn" : c ? "ok" : "no";
+  }
+  if(kind === "site"){
+    const here = S ? (S.site.facts || {})[slug] : undefined;
+    if(here === undefined) return null;
+    if(here) return "ok";
+    return m.sites.some(x => x.planned && (x.site.facts || {})[slug]) ? "warn" : "no";
+  }
+  return null;
+}
+/* The warnings a placed candidate carries: the demands their place does not
+   meet. They never stop a pick. */
+function hrWarns(m, c, S, wk){
+  return (c.demands || []).map(d => [d, hrDemandAt(m, d, S, wk)]).filter(([, t]) => t === "warn" || t === "no");
+}
+
+/* Totals the order panel and the review share. */
+function hrTotals(m){
+  const hires = m.sites.flatMap(S => S.weeks.filter(x => x.who && x.who.type === "hire"));
+  const moves = m.moves.filter(x => !x.off);
+  const touched = new Set([...hires.map(x => x.S.key), ...moves.map(x => x.to.key), ...m.overs.map(x => x.S.key)]);
+  const bill = hires.reduce((n, x) => n + Number(x.who.c.wage || 0) * Number(x.w.hours || 0) / 7, 0);
+  const needed = m.roles.reduce((n, r) => n + r.weeks.length, 0);
+  return {hire: hires.length + m.overs.length, weeks: hires, move: moves.length, moves, sites: touched.size,
+          bill, needed, short: m.roles.reduce((n, r) => n + r.short, 0)};
+}
+
+/* --- the write: POST /write/hire (docs/game-link-api.md) ------------------ */
+/* The week a touched site gets: its plan's entries with somebody on them,
+   and each hire week's entries with the person put on it. A week nobody
+   fills stays empty. An unassigned person the plan counts on keeps their
+   entries only when this call assigns them here (`arriving`): a "Pick
+   more" that sends no move leaves them empty. The
+   write replaces all seven days, so the shifts the plan does not own stay
+   as the game has them, except for anyone this call moves away: a
+   cover-only shop plan's serving entries, and at a factory or an office
+   every shift on a station the plan does not staff (the drivers', the
+   cleaners'). The plan's entries win where one of those overlaps them: the
+   kept shift is cut around them, and the hours cut off are added to
+   `lost.hours` for the review. */
+function hrWeek(S, fill, away, arriving, lost){
+  const row = S.row || {};
+  const days = new Map();
+  const put = (d, f, t, employeeId, itemInstanceId) => {
+    if(!(d >= 0 && d < 7) || !spHasId(employeeId) || !spHasId(itemInstanceId)) return;
+    if(!days.has(d)) days.set(d, []);
+    days.get(d).push({f, t, employeeId, itemInstanceId});
+  };
+  const bench = new Set(S.plan.bench || []);
+  (row.shifts || []).forEach(s => {
+    if(spNobody(s.p)) return;
+    const st = (row.stations || [])[s.s], who = (row.people || [])[s.p];
+    if(!st || !who || away.has(who.id)) return;
+    if(bench.has(who.id) && !(arriving && arriving.has(who.id))) return;
+    put(s.d, s.f, s.t, who.id, st.id);
+  });
+  fill.forEach(({id, w}) => (w.slots || []).forEach(sl => {
+    const sh = (row.shifts || [])[sl.shift];
+    const st = sh ? (row.stations || [])[sh.s] : null;
+    put(sl.d, sl.f, sl.t, id, sl.station || (st && st.id));
+  }));
+  const planned = [...days].flatMap(([d, list]) => list.map(x => Object.assign({d}, x)));
+  const keep = s => {
+    const st = (row.stations || [])[s.s], who = (row.people || [])[s.p];
+    if(!st || !who || away.has(who.id)) return;
+    /* The parts of the shift no planned entry for the same person or
+       station covers. */
+    let parts = [[s.f, s.t]];
+    planned.filter(x => x.d === s.d && (x.employeeId === who.id || x.itemInstanceId === st.id)).forEach(x => {
+      parts = parts.flatMap(([f, t]) => x.t <= f || t <= x.f ? [[f, t]] : [[f, Math.min(t, x.f)], [Math.max(f, x.t), t]].filter(([a, b]) => a < b));
+    });
+    const kept = parts.reduce((n, [f, t]) => n + t - f, 0);
+    if(lost && kept < s.t - s.f) lost.hours = (lost.hours || 0) + (s.t - s.f - kept);
+    parts.forEach(([f, t]) => put(s.d, f, t, who.id, st.id));
+  };
+  const now = (row.current || {}).list || [];
+  if(S.site.kind === "shop"){
+    if(!row.full && spCoverOnly(row)) now.filter(s => !s.k).forEach(keep);
+  } else {
+    const owned = new Set((row.shifts || []).map(s => s.s));
+    now.filter(s => !owned.has(s.s) && !((row.stations || [])[s.s] || {}).skill).forEach(keep);
+  }
+  return [...days].sort((a, b) => a[0] - b[0]).map(([d, shifts]) => ({d, shifts: shifts.sort((a, b) => a.f - b.f || a.t - b.t)}));
+}
+/* Whether a person has hours at a site in the game now. */
+const hrWorksAt = (S, id) => {
+  const row = S && S.row;
+  if(!row) return false;
+  const p = (row.people || []).findIndex(x => x.id === id);
+  return p >= 0 && ((row.current || {}).list || []).some(s => s.p === p);
+};
+/* The request, and what the review needs to name every row of it. `only`
+   ({"<site key>|<skill>": n}) keeps the hires to that many weeks a site and
+   role and sends no move: the partial result's "Pick more". */
+function hrRequest(m, only){
+  const t = hrTotals(m);
+  const touched = new Map();  // key -> {S, fill: [{id, w}]}
+  const touch = S => { if(!touched.has(S.key)) touched.set(S.key, {S, fill: []}); return touched.get(S.key); };
+  const names = new Map();    // id -> {name, what}
+  const hires = [], moves = [], away = new Set(), arriving = new Set();
+  const left = Object.assign({}, only || {});
+  if(!only) t.moves.forEach(x => {
+    moves.push({employeeId: x.id, from: x.from ? gwAddress(x.from.key) : null, to: gwAddress(x.to.key)});
+    names.set(x.id, {name: x.p.name, skill: x.skill, move: x});
+    arriving.add(x.id);
+    const at = touch(x.to);
+    if(x.week) at.fill.push({id: x.id, w: x.week.w});
+    if(x.from){ away.add(x.id); if(hrWorksAt(x.from, x.id)) touch(x.from).rewrite = true; }
+  });
+  const hire = (c, S, w, skill) => {
+    hires.push({candidateId: c.id, address: gwAddress(S.key), expect: {wage: c.wage}, seenHoursLeft: c.hoursLeft ?? null});
+    names.set(c.id, {name: c.name, skill, c});
+    const at = touch(S);
+    if(w) at.fill.push({id: c.id, w});
+  };
+  m.sites.forEach(S => S.weeks.forEach(x => {
+    if(!x.who || x.who.type !== "hire") return;
+    const k = `${S.key}|${x.w.skill}`;
+    if(only){ if(!(left[k] > 0)) return; left[k]--; }
+    hire(x.who.c, S, x.w, x.w.skill);
+  }));
+  if(!only) m.overs.forEach(o => hire(o.c, o.S, null, o.skill));
+  const sites = m.sites.filter(S => touched.has(S.key)).map(S => {
+    const at = touched.get(S.key);
+    if(!S.planned || !S.row) return {address: gwAddress(S.key), expect: null, days: null};
+    at.lost = {hours: 0};
+    const out = {address: gwAddress(S.key), expect: S.b && typeof S.b.shiftPrint === "string" ? S.b.shiftPrint : null,
+                 openAllHours: false, days: hrWeek(S, at.fill, away, arriving, at.lost)};
+    return out;
+  });
+  return {body: {sites, hires, moves}, names, touched};
+}
+
+/* --- drawing -------------------------------------------------------------- */
+/* The page is numbers and a few words (mockup/staff-hire-v2, NOTES.md): no
+   paragraph, no "?" and no pill on it. Open places on the left, one row a
+   role; what the button does, the button and Quick hire on the right;
+   Current staff at the foot. Change picks opens one role over the page. */
+const hrSiteName = S => S ? (S.b ? shortName(S.b) : S.site.name || "?") : "";
+/* A role's name for a count of people: "22 Lawyers", "3 Customer Service". */
+function hrRoles(skill, n){
+  const name = gameName(skill) || String(skill || "").replace(/^ba:skill_/, "");
+  const many = n === 1 ? name : /man$/i.test(name) ? name.replace(/man$/i, "men")
+    : /(er|or|ant|ent|ist|ian|ard|ger)$/i.test(name) ? `${name}s` : name;
+  return spEsc(many);
+}
+const HR_KIND_WORDS = {shop: ["shop", "shops"], office: ["office", "offices"], factory: ["factory", "factories"],
+  warehouse: ["warehouse", "warehouses"], hq: ["headquarters", "headquarters"]};
+/* Where a role hires, in a few words: the site, or "4 shops". */
+function hrWhere(sites){
+  if(sites.length === 1) return `${spEsc(hrSiteName(sites[0]))}${sites[0].site.new ? `<span class="hs-tag">new</span>` : ""}`;
+  const kinds = new Set(sites.map(S => S.site.kind));
+  const k = kinds.size === 1 ? HR_KIND_WORDS[[...kinds][0]] : null;
+  return `${sites.length} ${k ? k[1] : "sites"}`;
+}
+const hrChev = () => hrSvg("chev");
+/* How long a candidate's application has left. */
+function hrExpires(c){
+  const h = Number(c.hoursLeft);
+  if(c.hoursLeft === null || c.hoursLeft === undefined || !Number.isFinite(h)) return "–";
+  return h < 24 ? `${Math.max(0, Math.round(h))} h` : h < 48 ? "1 day" : `${Math.floor(h / 24)} days`;
+}
+function hrLinkState(){
+  const l = gwLink();
+  if(!l) return `<span class="hs-link off"><i></i>Save file · game not linked</span>`;
+  if(!(l.writes || []).includes("hire")) return `<span class="hs-link old"><i></i>${l.mod ? `Mod ${spEsc(l.mod)}` : "Mod"} · too old to hire</span>`;
+  return `<span class="hs-link"><i></i>Game linked</span>`;
+}
+
+/* The reassign groups, in the model's order: {group, people, x}. */
+function hrGroups(m){
+  const groups = [];
+  m.moves.forEach(x => { const g = groups.find(y => y.group === x.group); if(g) g.people.push(x); else groups.push({group: x.group, people: [x], x}); });
+  return groups;
+}
+/* One reassign group as the line under its role. */
+function hrReLine(g){
+  const {x, people} = g, n = people.length;
+  const to = spEsc(hrSiteName(x.to));
+  if(x.fixed) return `<div class="hs-re"><span class="hs-i">${hrSvg("check2")}</span><span><b>Assign ${hrNum(n)}</b> · unassigned → ${to}</span></div>`;
+  const from = x.from ? `${spEsc(hrSiteName(x.from))} (no hours)` : "unassigned";
+  return `<div class="hs-re${x.off ? " off" : ""}"><span class="hs-i">${hrSvg("move")}</span><span><b>Reassign ${hrNum(n)}</b> · ${from} → ${to}</span>
+    <label><input type="checkbox" class="hs-cb" data-hr-move="${attr(g.group)}"${x.off ? "" : " checked"} aria-label="${attr(`Reassign ${n} ${gameName(x.skill) || ""}`)}">Reassign</label></div>`;
+}
+/* A role's row: Open · Own staff · New hires · Stays open · Wages/day. */
+function hrRoleRow(m, r, lines){
+  const sites = [];
+  r.weeks.forEach(x => { if(!sites.includes(x.S)) sites.push(x.S); });
+  const hires = r.weeks.filter(x => x.who && x.who.type === "hire");
+  const overs = m.overs.filter(o => o.skill === r.skill);
+  const people = [...hires.map(x => x.who.c), ...overs.map(o => o.c)];
+  const bill = hires.reduce((n, x) => n + Number(x.who.c.wage || 0) * Number(x.w.hours || 0) / 7, 0);
+  const avg = f => people.reduce((n, c) => n + f(c), 0) / people.length;
+  const none = !r.pool.length;
+  const act = none && r.short ? `<td class="act l txt warn">No candidates</td>`
+    : `<td class="act"><button type="button" class="hs-btn" data-hr-open="${attr(r.skill)}" aria-label="${attr(`Change picks: ${gameName(r.skill) || r.skill}`)}"><span class="t">Change picks</span>${hrChev()}</button></td>`;
+  const row = `<tr class="${lines ? "has-sub" : ""}" data-hr-role="${attr(r.skill)}">
+    <td class="l hs-rn"><b>${hrRole(r.skill)}</b><small>${hrWhere(sites)}</small></td>
+    <td class="num opt">${hrNum(r.weeks.length)}</td>
+    <td class="${r.moved ? "num" : "dim"} opt">${r.moved ? hrNum(r.moved) : "–"}</td>
+    <td class="${people.length ? "num" : r.short ? "warn" : "dim"}" data-l="New hires">${hrNum(people.length)}${people.length ? `<small>${Math.round(avg(c => hrLevel(c, r.skill)))}% · ${hrWage(Math.round(avg(c => Number(c.wage) || 0)))}/h</small>` : ""}</td>
+    <td class="${r.short ? "warn" : "dim"}" data-l="Stays open">${r.short ? hrNum(r.short) : "–"}</td>
+    <td class="${bill ? "num" : "dim"} opt">${bill ? `+${fmt(bill)}` : "–"}</td>${act}</tr>`;
+  return row + (lines ? `<tr class="hs-subrow"><td class="l" colspan="7">${lines}</td></tr>` : "");
+}
+/* The filter bar: the demands to leave out, the lowest skill and the highest
+   wage. `target` is "" for the company's, or a role's skill in Change picks. */
+const HR_SKILLS = [0, 50, 60, 70, 80, 90, 100];
+const HR_WAGES = [10, 15, 20, 25, 30, 40, 50, 60, 80, 100];
+function hrDemLabel(ex){
+  if(!ex.length) return `<b>nobody</b>`;
+  return `<b class="set">${ex.length <= 2 ? ex.map(hrName).join(", ") : `${ex.length} demands`}</b>`;
+}
+function hrFbar(target, f, count){
+  const skills = [...new Set([...HR_SKILLS, f.min])].sort((a, b) => a - b);
+  const wages = f.max === null || HR_WAGES.includes(f.max) ? HR_WAGES : [...HR_WAGES, f.max].sort((a, b) => a - b);
+  const open = !!hrPop && hrPop.target === target;
+  return `<div class="hs-fbar" data-hr-filters="${attr(target)}">
+    <button type="button" class="hs-sel" data-hs-dem-open="${attr(target)}" aria-haspopup="true" aria-expanded="${open}">Leave out who asks for: ${hrDemLabel(f.ex)}${hrChev()}</button>
+    <label class="hs-sel">Skill at least: <select data-hr-min aria-label="Skill at least" class="${f.min ? "set" : ""}">${skills.map(v =>
+      `<option value="${v}"${v === f.min ? " selected" : ""}>${v ? `${v}%` : "any"}</option>`).join("")}</select>${hrChev()}</label>
+    <label class="hs-sel">Wage at most: <select data-hr-max aria-label="Wage at most" class="${f.max === null ? "" : "set"}"><option value=""${f.max === null ? " selected" : ""}>any</option>${
+      wages.map(v => `<option value="${v}"${v === f.max ? " selected" : ""}>${hrWage(v)}</option>`).join("")}</select>${hrChev()}</label>
+    ${count ? `<span class="hs-fsum">${count}</span>` : ""}</div>`;
+}
+/* Open places: the filter bar, one row a role with its reassign lines under
+   it, the total, and one line of candidate facts. */
+function hrOpenHtml(m){
+  const f = hrFilters().company;
+  const match = new Set(m.roles.flatMap(r => r.pool.filter(r.passes).map(c => c.id))).size;
+  const groups = hrGroups(m);
+  const lines = skill => groups.filter(g => g.x.skill === skill).map(hrReLine).join("");
+  const skills = new Set(m.roles.map(r => r.skill));
+  const stray = groups.filter(g => !skills.has(g.x.skill)).map(hrReLine).join("");
+  const t = hrTotals(m);
+  const soon = m.cands.filter(c => Number(c.hoursLeft) < 24).length;
+  const facts = `<p class="hs-facts2"><b>${hrNum(m.cands.length)}</b> candidates${soon ? ` · <b class="warn">${hrNum(soon)}</b> expire within 24 h${gwLink() ? "" : " (as of the save)"}` : ""}</p>`;
+  const head = `<div class="hs-shead"><h3>Open places</h3></div>${hrNoHoursHtml()}`;
+  if(!m.roles.length){
+    /* Nothing to hire, but maybe people to give hours: then not "has its people". */
+    const idle = hrIdleHtml(m);
+    return `${head}${idle ? "" : `<p class="hs-note">Every planned site has its people.</p>`}${stray ? `<div class="hs-scroll">${stray}</div>` : ""}${idle}${facts}`;
+  }
+  const shopPt = f.ex.includes(HR_PT) && m.roles.some(r => r.shop);
+  const own = m.roles.reduce((n, r) => n + r.moved, 0);
+  return `${head}${hrFbar("", f, `<b>${hrNum(match)}</b> match`)}${shopPt ? `<p class="hs-note hs-shops">Part-time is left out for shop roles only.</p>` : ""}
+    <div class="hs-scroll"><table class="hs-t hs-roles"><thead><tr><th class="l">Role</th><th class="opt">Open</th><th class="opt">Own staff</th><th>New hires</th><th>Stays open</th><th class="opt">Wages/day</th><th><span class="gw-sr">Change picks</span></th></tr></thead>
+    <tbody>${m.roles.map(r => hrRoleRow(m, r, lines(r.skill))).join("")}${stray ? `<tr class="hs-subrow"><td class="l" colspan="7">${stray}</td></tr>` : ""}</tbody>
+    <tfoot><tr><td class="l">Total</td><td class="opt">${hrNum(t.needed)}</td><td class="opt">${hrNum(own)}</td><td data-l="New hires">${hrNum(t.hire)}</td><td class="${t.short ? "warn" : ""}" data-l="Stays open">${hrNum(t.short)}</td><td class="opt">+${fmt(t.bill)}</td><td></td></tr></tfoot></table></div>
+    ${hrFindHtml(m)}${hrIdleHtml(m)}${facts}`;
+}
+/* Shops the game opens no hour: no plan, and nothing is hired for them,
+   until the player sets their opening hours. */
+function hrNoHoursHtml(){
+  const shut = ((D.hiring || {}).sites || []).filter(s => s.noHours);
+  const byKey = new Map((D.businesses || []).map(b => [b.key, b]));
+  return shut.length ? `<p class="hs-note hs-nohours">${shut.map(s => spEsc(byKey.get(s.key) ? shortName(byKey.get(s.key)) : s.name || "A shop")).join(", ")} ${
+    shut.length === 1 ? "opens" : "open"} no hour in the game: set ${shut.length === 1 ? "its" : "their"} opening hours first.</p>` : "";
+}
+/* Staff with no hours: planned sites whose week in the game leaves the plan's
+   hours with nobody on, where the site's own people would work them (the
+   plan's `unstaffed`); nothing is hired for those, so the order would say
+   nothing. The link opens the site's Staffing, whose write puts the week in. */
+function hrIdleHtml(m){
+  /* The plan the site's Staffing block shows and writes, as it picks it. */
+  const of = S => { const u = S.site.unstaffed || {};
+    const base = spRosterRow(S.key);
+    return S.site.kind === "office" ? u.office : spOffersFull(base) && spPlanRead(S.key) === "full" && u.full ? u.full : u.demand; };
+  const rows = m.sites.filter(S => (S.site.kind === "shop" || S.site.kind === "office") && of(S)).map(S => {
+    const u = of(S), name = spEsc(S.b ? shortName(S.b) : S.site.name || "A site");
+    const who = (u.roles || []).filter(r => r.idle).map(r => `your ${hrNum(r.idle)} ${hrRole(r.skill)} staff ${r.idle === 1 ? "has" : "have"} no hours`);
+    const href = siteHref(S.key);
+    return `<li><b>${name}</b><span>${hrNum(u.hours)} h with nobody on${who.length ? ` · ${who.join(" · ")}` : ""}</span>${
+      href ? `<a class="to" href="${attr(href)}" data-hr-roster="${attr(S.key)}">${hrSvg("chev")}Write their week</a>` : ""}</li>`;
+  }).join("");
+  return rows ? `<div class="hs-find hs-idle"><h4>Staff with no hours</h4><ul>${rows}</ul></div>` : "";
+}
+/* Where to find them: for each role places stay open in, how many and where
+   the people come from, for an early company whose headhunters recruit few
+   roles or none. A headhunter already recruiting the role is said; otherwise
+   a Headhunter at the headquarters, or the game's Recruitment Agency. */
+function hrFindHtml(m){
+  const short = m.roles.filter(r => r.short > 0);
+  if(!short.length) return "";
+  const recruiting = (D.hiring || {}).recruiting || {};
+  const agency = gameName("ba:businesstype_recruitmentagency") || "Recruitment Agency";
+  const rows = short.map(r => {
+    const out = r.pool.length - r.pass;
+    const have = !r.pool.length ? "no candidates"
+      : !r.pass ? `${plural(r.pool.length, "candidate")}, all left out by your filters`
+      : `only ${plural(r.pass, "candidate")}${out ? ` (${hrNum(out)} more left out by your filters)` : ""}`;
+    const n = recruiting[r.skill] || 0, hh = hrRole("ba:skill_headhunter");
+    const where = n ? `${n === 1 ? `your ${hh} is` : `${hrNum(n)} of your ${hh}s are`} recruiting ${hrRole(r.skill)}: wait for more candidates, or a ${spEsc(agency)}`
+      : `a ${hh} at your headquarters recruiting ${hrRole(r.skill)}, or a ${spEsc(agency)}`;
+    return `<li><b>${hrRole(r.skill)}</b><span>${hrNum(r.short)} more needed · ${have}</span><span class="to">${hrSvg("chev")}${where}</span></li>`;
+  }).join("");
+  return `<div class="hs-find"><h4>Where to find them</h4><ul>${rows}</ul></div>`;
+}
+/* "When you hire": what the button does, in numbers, then the button, then
+   what keeps it off. */
+function hrOrderHtml(m, t){
+  const l = gwLink(), old = !!l && !(l.writes || []).includes("hire");
+  const groups = hrGroups(m).filter(g => !g.x.off);
+  const routes = groups.map(g => `${g.x.from ? spEsc(hrSiteName(g.x.from)) : "unassigned"} → ${spEsc(hrSiteName(g.x.to))}`);
+  const byRole = m.roles.map(r => [r, r.picked.length]).filter(([, n]) => n);
+  const short = m.roles.filter(r => r.short);
+  const items = [
+    t.move ? `<li><span>Reassign</span><b>${hrNum(t.move)}</b><small>${routes.slice(0, 2).join(" · ")}${routes.length > 2 ? ` · ${routes.length - 2} more` : ""}</small></li>` : "",
+    `<li><span>Hire</span><b>${hrNum(t.hire)}</b>${byRole.length ? `<small>${byRole.map(([r, n]) => `${hrNum(n)} ${hrRoles(r.skill, n)}`).join(" · ")}</small>` : ""}</li>`,
+    short.length ? `<li class="short"><span>Stays open</span><b>${hrNum(t.short)}</b><small>${short.map(r =>
+      `${hrRole(r.skill)}: ${r.pool.length ? `${hrNum(r.short)} open` : "no candidates"}`).join(" · ")}</small></li>` : "",
+  ].join("");
+  const n = t.hire + t.move;
+  const label = t.hire ? `Review and hire ${hrNum(t.hire)}` : t.move ? `Review and reassign ${hrNum(t.move)}` : "Nothing to hire";
+  const off = !l || old || !n;
+  const why = !l ? "needs the game linked" : old ? "needs Big Copilot Link 0.3.0" : !n ? "nothing to hire or reassign" : "";
+  /* Not linked, no data-gw: nothing on the board is a write while it reads a save. */
+  const btn = `<button type="button" class="hs-cta wide" data-hs-review${l ? ` data-gw="hire"` : ""}${off ? ` aria-disabled="true"` : ""} aria-label="${attr(why ? `${label}: ${why}` : label)}">${
+    off && n ? gwSvg("plug") : ""}<span>${label}</span>${off ? "" : gwSvg("right")}</button>`;
+  const under = !l ? `<div class="hs-gate"><b>Link the game to hire</b><ol><li>Subscribe to Big Copilot Link (Steam Workshop)</li><li>Load this company in the game</li><li>Link from the start screen</li></ol></div>`
+    : old ? `<div class="hs-gate warn"><b>Update Big Copilot Link to 0.3.0</b><span>${l.mod ? `You have ${spEsc(l.mod)}. ` : ""}Restart the game, then link again.</span></div>`
+    : n ? `<p class="hs-note">Picked for you. You confirm next.</p>` : "";
+  const Q = m.quick;
+  const held = Q && Q.hold && Q.held ? `<p class="hs-note hs-held">${hrNum(Q.held)} ${Q.held === 1 ? "week" : "weeks"} held for Quick hire (${hrRole(Q.q.skill)} at ${spEsc(hrSiteName(Q.S))})</p>` : "";
+  return `<h3>When you hire</h3><ul class="hs-ol">${items}</ul>${held}
+    <div class="hs-sum"><span>Added wages</span><b>+${fmt(t.bill)}/day</b></div>${btn}${under}`;
+}
+
+/* Current staff: Payroll, as two plain columns. */
+function hrPayroll(){
+  const st = D.staff;
+  const max = Math.max(...st.roles.map(r => r.count), 1);
+  const facts = [["People", hrNum(st.total)], ["Wages a day", fmt(st.dailyCost || 0)],
+    ...(D.kpi && (D.daily || []).length ? [["Booked yesterday", fmt(D.kpi.wageBill || 0)]] : []),
+    ...(st.total ? [["Satisfaction", `${st.avgSatisfaction}%`, st.avgSatisfaction < 70], ["Unhappy", hrNum(st.unhappy), st.unhappy > 0],
+      ["Absent today", hrNum(st.absent), st.absent > 0], ...(st.complaining ? [["Complaining", hrNum(st.complaining), true]] : [])] : [])];
+  return `<span class="hs-kick">Current staff</span><div class="hs-pay"><div><h3>Payroll</h3>${st.total ? `<div class="roles">${st.roles.map(r =>
+      `<div class="role rv"><span>${r.role}</span><span class="tr"><i style="width:${(r.count / max * 100).toFixed(0)}%"></i></span><span class="c">${r.count}</span></div>`).join("")}</div>`
+    : `<p class="hs-note">No staff hired yet.</p>`}</div>
+    <div class="facts">${facts.map(([k, v, warn]) => `<div><span>${k}</span><b${warn ? ` class="warn"` : ""}>${v}</b></div>`).join("")}</div></div>`;
+}
+
+/* The page, whole, or only the blocks named in `parts` (ids), which keeps a
+   control outside them where it is. Change picks and the demand list, when
+   open, are drawn again with it. */
+function drawStaff(parts){
+  drawStaffPage(parts);
+  hrSelRepoint();
+}
+function drawStaffPage(parts){
+  const sec = $("secStaff");
+  if(!sec) return;
+  const H = D.hiring;
+  if(!H){
+    /* A board built before the hiring payload: Payroll alone. */
+    sec.innerHTML = `<div class="hs-head"><h2>Staff</h2></div><p class="hs-note">Hiring needs a newer read of your save: update Big Copilot and open the save again.</p><section class="hs-apart" id="hrPayroll">${hrPayroll()}</section>`;
+    return;
+  }
+  const m = hrModel(), t = hrTotals(m);
+  const html = {hsOpen: () => hrOpenHtml(m), hsOrder: () => hrOrderHtml(m, t), hsQuick: () => hrQuickHtml(m)};
+  /* A redraw (a live refresh among them) puts the keyboard back where it was. */
+  const had = document.activeElement, sheet = $("hsSheet");
+  const keep = had && ((sec.contains(had) && sec) || (sheet && sheet.contains(had) && sheet)) ? hrKey(had) : null;
+  if(parts && sec.querySelector("#hsOpen")) parts.forEach(id => { const el = sec.querySelector(`#${id}`); if(el) el.innerHTML = html[id](); });
+  else sec.innerHTML = `<div class="hs-head"><h2>Staff</h2><div class="aside">${hrLinkState()}</div></div>
+    <div class="hs-split"><div class="hs-left" id="hsOpen">${html.hsOpen()}</div>
+      <div class="hs-right"><aside class="hs-order" id="hsOrder" aria-label="When you hire">${html.hsOrder()}</aside>
+        <section class="hs-quick" id="hsQuick" aria-label="Quick hire">${html.hsQuick()}</section></div></div>
+    <section class="hs-apart" id="hrPayroll">${hrPayroll()}</section>`;
+  hrSheetPaint(m);
+  if(hrPop) hrPopDraw(m);
+  if(parts) wireTips();
+  if(keep && !(document.activeElement && document.activeElement !== document.body && document.activeElement.isConnected)){
+    const box = $("hsSheet") || sec, el = box.querySelector(keep) || sec.querySelector(keep);
+    if(el) el.focus({preventScroll: true});
+  }
+  const stuck = document.activeElement;
+  if(stuck && stuck.disabled && (stuck.hasAttribute("data-hq-less") || stuck.hasAttribute("data-hq-more"))){
+    const b = sec.querySelector("[data-hq-n]");
+    if(b) b.focus({preventScroll: true});
+  }
+}
+/* Repaint after a control changed, and put the keyboard back where it was:
+   `focus` is a selector, looked for in Change picks first. */
+function hrRepaint(focus, parts){
+  drawStaff(parts);
+  if(!parts) wireTips();
+  if(focus){
+    const sheet = $("hsSheet");
+    const el = (sheet && sheet.querySelector(focus)) || $("secStaff").querySelector(focus);
+    /* The stepper's button at 1 or 99 is off: the keyboard goes to the number. */
+    const at = el && el.disabled ? $("secStaff").querySelector("[data-hq-n]") : el;
+    if(at) at.focus({preventScroll: true});
+  }
+}
+const hrKey = el => {
+  for(const a of ["data-hr-open", "data-hr-pick", "data-hr-move", "data-hr-scope", "data-hs-dem-open", "data-hr-min", "data-hr-max",
+                  "data-hq-role", "data-hq-site", "data-hq-min", "data-hq-less", "data-hq-more", "data-hq-n", "data-hq-go"])
+    if(el.hasAttribute(a)){
+      const v = el.getAttribute(a);
+      const box = el.closest("[data-hr-filters]");
+      const scope = box && (a === "data-hr-min" || a === "data-hr-max") ? `[data-hr-filters="${CSS.escape(box.dataset.hrFilters)}"] ` : "";
+      return v ? `${scope}[${a}="${CSS.escape(v)}"]` : `${scope}[${a}]`;
+    }
+  return null;
+};
+
+/* --- Change picks: one role over the page --------------------------------- */
+/* Why a demand is not met where someone goes, in a few words. */
+function hrWhy(m, slug, S, wk){
+  const kind = hrKind(slug);
+  if(kind === "schedule") return "the plan's hours break it";
+  if(kind === "company") return hrDemandAt(m, slug, S, wk) === "warn" ? "add them to an HR plan that offers it" : "not offered";
+  if(kind === "station"){
+    if(hrDemandAt(m, slug, S, wk) === "no") return "none at any site";
+    if(hrDeskAnywhere(slug, S)) return wk && wk.w ? "not at this desk" : "met at a desk here: seat them there";
+    return `none at ${spEsc(hrSiteName(S))}`;
+  }
+  const tone = hrDemandAt(m, slug, S, wk);
+  return tone === "warn" ? `none at ${spEsc(hrSiteName(S))}` : "none at any site";
+}
+/* One candidate as a row of Change picks. */
+function hrCandRow(m, r, c){
+  const at = r.at.get(c.id);
+  const picked = !!(at && (at.week || at.over));
+  const elsewhere = at && at.elsewhere;
+  const S = at && at.week ? at.week.S : at && at.over ? at.over : null;
+  const wk = at && at.week;
+  const warned = new Map(picked ? hrWarns(m, c, S, wk) : []);
+  const lv = hrLevel(c, r.skill);
+  const dem = (c.demands || []).map(d => warned.has(d) ? `<span class="warn">${hrName(d)} (${hrWhy(m, d, S, wk)})</span>` : hrName(d)).join(", ");
+  /* On a phone Asks for is hidden: the unmet ones go under the name. */
+  const why = [...warned.keys()].map(d => `${hrName(d)} (${hrWhy(m, d, S, wk)})`).join(", ");
+  const noShop = !picked && !elsewhere && r.pt && r.shop && !r.allShop && hrAsksPt(c);
+  const to = elsewhere ? `<span class="dim">picked for ${spEsc(hrSiteName(elsewhere))}</span>`
+    : noShop ? `<span class="dim">not for shop weeks (Part-time)</span>`
+    : S ? `${spEsc(hrSiteName(S))}${at.over ? ` <span class="warn">over the plan</span>` : ""}` : `<span class="dim">–</span>`;
+  const soon = Number(c.hoursLeft) < 24;
+  return `<tr class="${picked ? "on" : ""}" data-hr-cand="${attr(c.id)}">
+    <td class="l"><input type="checkbox" class="hs-cb" data-hr-pick="${attr(c.id)}" data-hr-skill="${attr(r.skill)}"${picked ? " checked" : ""}${elsewhere ? " disabled" : ""} aria-label="${attr(`Pick ${c.name || "this candidate"}`)}"></td>
+    <td class="nm"><b>${spEsc(c.name || "?")}</b>${why ? `<small class="hs-why warn">${why}</small>` : ""}</td>
+    <td class="l"><span class="hs-sk" style="--w:${Math.max(0, Math.min(100, lv || 0))}%"><i></i></span>${Math.round(lv || 0)}%</td>
+    <td>${hrWage(c.wage)}</td><td class="to">${to}</td>
+    <td class="dem opt">${dem || `<span class="dim">–</span>`}</td>
+    <td class="exp${soon ? " warn" : ""}">${hrExpires(c)}</td></tr>`;
+}
+const HR_CAND_HEAD = `<thead><tr><th class="l" style="width:34px"><span class="gw-sr">Pick</span></th><th class="l">Candidate</th><th class="l">Skill</th><th>Wage/h</th><th class="l">Goes to</th><th class="l opt">Asks for</th><th>Expires in</th></tr></thead>`;
+function hrSheetHtml(m, r){
+  const need = r.weeks.length - r.moved;
+  const sites = [];
+  r.weeks.forEach(x => { if(x.who && x.who.type === "move") return; const s = sites.find(y => y.S === x.S); if(s) s.n++; else sites.push({S: x.S, n: 1}); });
+  const own = !!hrFilters().roles[r.skill];
+  /* The filter as it applies here: the company's Part-time shows only where
+     it bars a week of this role (a shop's). */
+  const f = own ? r.f : Object.assign({}, r.f, {ex: r.pt && r.shop ? [...r.f.ex, HR_PT] : r.f.ex});
+  const placed = c => { const at = r.at.get(c.id); return !!(at && (at.week || at.over)); };
+  const picked = r.pool.filter(placed);
+  const next = r.pool.filter(c => !placed(c) && r.passes(c));
+  const out = r.pool.filter(c => !placed(c) && !r.passes(c));
+  const cap = 200, shown = hrUi.all ? next.slice(0, cap) : next.slice(0, 10);
+  const over = picked.length - need;
+  const count = `${hrNum(picked.length)} of ${hrNum(need)}${over > 0 ? ` · ${hrNum(over)} over the plan` : over < 0 ? ` · ${hrNum(-over)} open` : ""}`;
+  const bill = r.weeks.reduce((n, x) => n + (x.who && x.who.type === "hire" ? Number(x.who.c.wage || 0) * Number(x.w.hours || 0) / 7 : 0), 0);
+  const lacks = picked.some(c => { const at = r.at.get(c.id); return hrWarns(m, c, at.week ? at.week.S : at.over, at.week).length; });
+  const table = rows => `<div class="hs-scroll"><table class="hs-t hs-c">${HR_CAND_HEAD}<tbody>${rows.map(c => hrCandRow(m, r, c)).join("")}</tbody></table></div>`;
+  return `<div class="hs-sh"><div><h2 id="hsSheetT">${hrRole(r.skill)}</h2><p>${plural(need, "new hire")} · ${sites.map(({S, n}) => `${spEsc(hrSiteName(S))} (${hrNum(n)})`).join(", ")}</p></div>
+      <button type="button" class="gw-x" data-hs-close aria-label="Close">${gwSvg("close")}</button></div>
+    <div class="hs-sb">
+      ${hrFbar(r.skill, f, `<b>${hrNum(r.pass)}</b> match · <b>${hrNum(r.out)}</b> left out`)}
+      <div class="hs-scope"><span>Filters for</span><label class="hs-radio"><input type="radio" name="hsScope" data-hr-scope="all"${own ? "" : " checked"}>every role</label><label class="hs-radio"><input type="radio" name="hsScope" data-hr-scope="own"${own ? " checked" : ""}>${hrRole(r.skill)} only</label></div>
+      <div class="hs-grp"><b>Picked</b><span>${count}</span>${lacks ? `<span class="hs-legend"><i></i>site lacks it</span>` : ""}</div>
+      ${picked.length ? table(picked) : `<p class="hs-note">Nobody matches.</p>`}
+      <div class="hs-grp"><b>Next best</b><span>${hrNum(next.length)} more</span></div>
+      ${shown.length ? table(shown) : `<p class="hs-note">Nobody else matches.</p>`}
+      ${hrUi.out && out.length ? `<div class="hs-grp"><b>Left out</b><span>${hrNum(out.length)}</span></div>${table(out.slice(0, cap))}` : ""}
+      <div class="hs-more">${next.length > shown.length ? `<a class="link" href="#" data-hs-all>${hrUi.all ? `Show the first ${cap}` : "Show all"}</a>` : ""}${hrUi.all && next.length > cap ? `<span>The first ${cap} of ${hrNum(next.length)}</span>` : ""}${
+        out.length ? `<a class="link" href="#" data-hs-out>${hrUi.out ? "Hide the left out" : `Show the ${hrNum(out.length)} left out`}</a>` : ""}</div>
+    </div>
+    <div class="hs-sf"><div class="tot"><div><span>Picked</span><b>${count}</b></div><div><span>Added wages</span><b>+${fmt(bill)}/day</b></div></div>
+      <div class="end"><a class="link" href="#" data-hs-reset>Reset to automatic</a><button type="button" class="hs-cta" data-hs-done>Done</button></div></div>`;
+}
+/* Change picks is a dialog on <body>: open for hrUi.sheet, drawn again with
+   the page, closed when that role is gone. */
+function hrSheetPaint(m){
+  let dlg = $("hsSheet");
+  const r = hrUi.sheet && m.roles.find(x => x.skill === hrUi.sheet);
+  if(!r){
+    hrUi.sheet = null;
+    if(dlg && dlg.open) dlg.close();
+    return;
+  }
+  if(!dlg){
+    dlg = document.createElement("dialog");
+    dlg.id = "hsSheet"; dlg.className = "hs-sheet";
+    dlg.setAttribute("aria-labelledby", "hsSheetT");
+    dlg.addEventListener("close", () => {
+      const skill = dlg.dataset.hrDrawer;
+      dlg.remove();
+      hrUi.sheet = null; hrUi.all = false; hrUi.out = false;
+      if(hrPop && hrPop.target !== "" && hrPop.target !== "quick") hrPopClose();
+      const back = skill && $("secStaff") && $("secStaff").querySelector(`[data-hr-open="${CSS.escape(skill)}"]`);
+      if(back) back.focus({preventScroll: true});
+    });
+    document.body.appendChild(dlg);
+  }
+  const body = dlg.querySelector(".hs-sb"), top = body ? body.scrollTop : 0;
+  dlg.dataset.hrDrawer = r.skill;
+  dlg.innerHTML = hrSheetHtml(m, r);
+  const again = dlg.querySelector(".hs-sb");
+  if(again) again.scrollTop = top;
+  if(!dlg.open){ dlg.showModal(); (dlg.querySelector("[data-hs-dem-open]") || dlg).focus({preventScroll: true}); }
+}
+
+/* --- the demand list ------------------------------------------------------- */
+/* One list for every "Leave out who asks for": the page's (target ""), a
+   role's in Change picks (its skill) or Quick hire's ("quick"). It hangs off
+   <body>, or the open dialog, placed against its button: a section clips
+   what is absolutely placed inside it. */
+let hrPop = null;  // {target, all}
+function hrPopFilter(m, target){
+  if(target === "quick") return {ex: hrQuickModel(m).ex};
+  const f = hrFilters();
+  return target && f.roles[target] ? f.roles[target] : f.company;
+}
+function hrPopPool(m, target){
+  if(target === "quick"){ const q = hrUi.quick; return q.skill ? m.cands.filter(c => hrLevel(c, q.skill) !== null) : m.cands; }
+  if(target){ const r = m.roles.find(x => x.skill === target); return r ? r.pool : []; }
+  return m.cands.filter(c => m.roles.some(r => hrLevel(c, r.skill) !== null));
+}
+function hrPopDraw(m){
+  const anchor = document.querySelector(`[data-hs-dem-open="${CSS.escape(hrPop.target)}"]`);
+  if(!anchor){ hrPopClose(); return; }
+  m = m || hrModel();
+  const f = hrPopFilter(m, hrPop.target);
+  const count = new Map();
+  hrPopPool(m, hrPop.target).forEach(c => (c.demands || []).forEach(d => count.set(d, (count.get(d) || 0) + 1)));
+  f.ex.forEach(d => { if(!count.has(d)) count.set(d, 0); });
+  const all = [...count].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+  const few = hrPop.all || all.length <= 12 ? all : all.filter(([d], i) => i < 10 || f.ex.includes(d));
+  let pop = $("hsDemPop");
+  if(!pop){
+    pop = document.createElement("div");
+    pop.id = "hsDemPop"; pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", "Leave out anyone asking for");
+  }
+  const host = anchor.closest("dialog") || document.body;
+  if(pop.parentElement !== host) host.appendChild(pop);
+  const had = document.activeElement && pop.contains(document.activeElement) ? document.activeElement.getAttribute("data-hr-dem") : null;
+  /* The company's Part-time counts at shops only: said so, and a role with no
+     shop week cannot change it from its own list. */
+  const company = f === hrFilters().company;
+  const r = hrPop.target && hrPop.target !== "quick" ? m.roles.find(x => x.skill === hrPop.target) : null;
+  const fixed = d => company && d === HR_PT && !!r && !r.shop;
+  pop.innerHTML = `<div class="ph">Leave out anyone asking for:</div>${few.map(([d, n]) =>
+      `<label class="hs-opt"><input type="checkbox" class="hs-cb" data-hr-dem="${attr(d)}"${f.ex.includes(d) ? " checked" : ""}${fixed(d) ? " disabled" : ""}><span>${hrName(d)}${
+        company && d === HR_PT ? ` <small>· shop roles only</small>` : ""}</span><small>${hrNum(n)}</small></label>`).join("")
+    || `<p class="ph">Nobody asks for anything.</p>`}
+    <div class="pf">${few.length < all.length ? `<button type="button" data-hs-dem-all>All ${all.length} demands</button>` : "<span></span>"}<button type="button" data-hs-dem-clear>Clear</button></div>`;
+  pop.hidden = false;
+  document.querySelectorAll("[data-hs-dem-open]").forEach(b => b.setAttribute("aria-expanded", String(b === anchor)));
+  hrPopPlace(anchor, pop);
+  if(had){ const el = pop.querySelector(`[data-hr-dem="${CSS.escape(had)}"]`); if(el) el.focus({preventScroll: true}); }
+}
+function hrPopPlace(anchor, pop){
+  const a = anchor.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+  const vw = window.innerWidth || document.documentElement.clientWidth, vh = window.innerHeight || document.documentElement.clientHeight;
+  const left = Math.max(12, Math.min(a.left, vw - w - 12));
+  const below = a.bottom + 6, above = a.top - 6 - h;
+  pop.style.left = `${left}px`;
+  pop.style.top = `${below + h > vh - 12 && above >= 12 ? above : below}px`;
+}
+/* The option list of a Staff select, drawn by the page instead of the
+   system's white list (Peter's in-game test, 25 September 2026). The select
+   stays the control: the list sets its value and fires its change, so every
+   handler and the keyboard's own arrows keep working. Only where the pointer
+   is a mouse: a phone's own picker is the better one there. */
+let hrSel = null;  // {select, at, key, root}: the select whose list is open, the option lit
+const hrSelFine = () => !window.matchMedia || window.matchMedia("(pointer: fine)").matches;
+function hrSelOpen(select){
+  if(!select || select.disabled) return;
+  hrPopClose();
+  let pop = $("hsSelPop");
+  if(!pop){
+    pop = document.createElement("div");
+    pop.id = "hsSelPop"; pop.setAttribute("role", "listbox"); pop.tabIndex = -1;
+  }
+  const host = select.closest("dialog") || document.body;
+  if(pop.parentElement !== host) host.appendChild(pop);
+  const opts = [...select.options];
+  pop.setAttribute("aria-label", select.getAttribute("aria-label") || "");
+  pop.innerHTML = opts.map((o, i) => `<div class="hs-selopt${o.value === "" && !o.selected ? " ph" : ""}" role="option" id="hsSelOpt${i}" data-hs-opt="${i}" aria-selected="${o.selected}"${
+    o.disabled ? ` aria-disabled="true"` : ""}><span>${spEsc(o.textContent)}</span>${hrSvg("check2")}</div>`).join("");
+  /* Where to find the select again once the page is drawn anew under it. */
+  const root = select.closest("#hsSheet") ? "hsSheet" : "secStaff";
+  hrSel = {select, at: Math.max(0, select.selectedIndex), key: hrKey(select), root, typed: "", typedAt: 0};
+  pop.hidden = false;
+  const anchor = select.closest(".hs-sel") || select;
+  pop.style.minWidth = `${Math.round(anchor.getBoundingClientRect().width)}px`;
+  anchor.setAttribute("aria-expanded", "true");
+  select.setAttribute("aria-expanded", "true");
+  select.setAttribute("aria-controls", "hsSelPop");
+  hrPopPlace(anchor, pop);
+  hrSelLight();
+  pop.focus({preventScroll: true});
+}
+function hrSelLight(){
+  const pop = $("hsSelPop");
+  if(!pop || !hrSel) return;
+  pop.querySelectorAll(".hs-selopt").forEach((el, i) => el.classList.toggle("on", i === hrSel.at));
+  const on = pop.querySelector(".hs-selopt.on");
+  if(on){ on.scrollIntoView({block: "nearest"}); pop.setAttribute("aria-activedescendant", on.id); }
+}
+/* A live refresh draws the page anew under an open list: the list follows
+   its select to the new page, or closes where the select is gone. */
+function hrSelRepoint(){
+  if(!hrSel || hrSel.select.isConnected) return;
+  const root = $(hrSel.root), found = root && hrSel.key ? root.querySelector(hrSel.key) : null;
+  if(!found || found.tagName !== "SELECT" || found.disabled){ hrSelClose(); return; }
+  const at = hrSel.at;
+  hrSelOpen(found);
+  if(hrSel){ hrSel.at = Math.min(at, found.options.length - 1); hrSelLight(); }
+}
+function hrSelClose(back){
+  const pop = $("hsSelPop"), sel = hrSel && hrSel.select;
+  hrSel = null;
+  if(pop){ pop.hidden = true; pop.remove(); }
+  const anchor = sel && (sel.closest(".hs-sel") || sel);
+  if(anchor && anchor.isConnected) anchor.setAttribute("aria-expanded", "false");
+  if(sel && sel.isConnected) sel.setAttribute("aria-expanded", "false");
+  if(back && sel && sel.isConnected) sel.focus({preventScroll: true});
+}
+function hrSelPick(i){
+  if(!hrSel) return;
+  hrSelRepoint();
+  if(!hrSel) return;
+  const sel = hrSel.select, o = sel.options[i];
+  if(!o || o.disabled){ return; }
+  hrSelClose(true);
+  if(sel.selectedIndex === i) return;
+  sel.selectedIndex = i;
+  sel.dispatchEvent(new Event("input", {bubbles: true}));
+  sel.dispatchEvent(new Event("change", {bubbles: true}));
+}
+function hrSelBind(){
+  const inStaff = t => t && t.closest && t.closest("#secStaff, #hsSheet, dialog.hr-wide");
+  /* A press on the field opens the list rather than the system's. */
+  document.addEventListener("mousedown", e => {
+    const t = e.target;
+    if(e.button !== 0 || !inStaff(t) || !hrSelFine()) return;
+    const field = t.closest(".hs-sel");
+    const select = field ? field.querySelector("select") : t.closest("select");
+    if(!select || !select.closest(".hs-sel")) return;
+    e.preventDefault();
+    if(hrSel && hrSel.select === select){ hrSelClose(true); return; }
+    select.focus({preventScroll: true});
+    hrSelOpen(select);
+  }, true);
+  document.addEventListener("click", e => {
+    if(!hrSel) return;
+    const opt = e.target.closest && e.target.closest("#hsSelPop [data-hs-opt]");
+    if(opt){ hrSelPick(Number(opt.dataset.hsOpt)); return; }
+    if(e.target.closest && (e.target.closest("#hsSelPop") || (hrSel.select.closest(".hs-sel") || hrSel.select).contains(e.target))) return;
+    hrSelClose();
+  });
+  document.addEventListener("keydown", e => {
+    const t = e.target;
+    /* On the select: Enter, Space, Alt+Down or F4 open the list; the arrows
+       alone change the value as a select always has. */
+    if(!hrSel){
+      if(t && t.tagName === "SELECT" && t.closest(".hs-sel") && inStaff(t) && hrSelFine()
+         && (e.key === "Enter" || e.key === " " || e.key === "F4" || (e.altKey && e.key === "ArrowDown"))){
+        e.preventDefault();
+        hrSelOpen(t);
+      }
+      return;
+    }
+    const n = hrSel.select.options.length;
+    const step = d => { let i = hrSel.at; for(let k = 0; k < n; k++){ i = (i + d + n) % n; if(!hrSel.select.options[i].disabled) break; } hrSel.at = i; hrSelLight(); };
+    if(e.key === "ArrowDown"){ e.preventDefault(); step(1); }
+    else if(e.key === "ArrowUp"){ e.preventDefault(); step(-1); }
+    else if(e.key === "Home"){ e.preventDefault(); hrSel.at = 0; hrSelLight(); }
+    else if(e.key === "End"){ e.preventDefault(); hrSel.at = n - 1; hrSelLight(); }
+    else if(e.key === "Enter" || e.key === " "){ e.preventDefault(); hrSelPick(hrSel.at); }
+    else if(e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); hrSelClose(true); }
+    else if(e.key === "Tab"){ hrSelClose(true); }
+    else if(e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey){
+      /* Type-ahead: the next option whose name starts with what was typed. */
+      e.preventDefault();
+      const now = Date.now();
+      hrSel.typed = (now - hrSel.typedAt < 700 ? hrSel.typed : "") + e.key.toLowerCase();
+      hrSel.typedAt = now;
+      const opts = [...hrSel.select.options], from = hrSel.typed.length > 1 ? hrSel.at : hrSel.at + 1;
+      for(let k = 0; k < n; k++){
+        const i = (from + k) % n, o = opts[i];
+        if(!o.disabled && o.textContent.trim().toLowerCase().startsWith(hrSel.typed)){ hrSel.at = i; hrSelLight(); break; }
+      }
+    }
+  }, true);
+  const replace = () => {
+    const pop = $("hsSelPop"), sel = hrSel && hrSel.select;
+    if(!pop || !sel) return;
+    if(!sel.isConnected){ hrSelClose(); return; }
+    hrPopPlace(sel.closest(".hs-sel") || sel, pop);
+  };
+  window.addEventListener("resize", replace);
+  window.addEventListener("scroll", replace, {passive: true, capture: true});
+}
+function hrPopClose(back){
+  const pop = $("hsDemPop");
+  const target = hrPop && hrPop.target;
+  hrPop = null;
+  if(pop){ pop.hidden = true; pop.remove(); }
+  document.querySelectorAll("[data-hs-dem-open]").forEach(b => b.setAttribute("aria-expanded", "false"));
+  if(back && target !== null && target !== undefined){
+    const b = document.querySelector(`[data-hs-dem-open="${CSS.escape(target)}"]`);
+    if(b) b.focus({preventScroll: true});
+  }
+}
+/* --- Quick hire: the best matches for one role, at any site --------------- */
+/* Role, site (headquarters, warehouse, office, factory or shop), how many,
+   the lowest skill and the demands to leave out; the best matches are picked
+   as the planned hires are (most skilled first, a tie to the lower wage). Its
+   picks win over Open places: hrModel() plans them first (hrQuickPlan()), and
+   at a site with a staffing plan each takes one of the plan's weeks in that
+   role there, which Open places then leaves to it. Past those, and at a site
+   with no plan, they join with no hours. The write keeps the site's week as
+   the game has it and adds only the new people's shifts (hrQuickRequest()),
+   on the same /write/hire call as the order, which never changes a shop's
+   opening hours. Part-time is left out by default at a shop. */
+function hrQuickPlan(sites, cands, used){
+  const q = hrUi.quick, H = D.hiring || {};
+  const skills = [...new Set((H.sites || []).flatMap(s => s.accepts || []))]
+    .sort((a, b) => (gameName(a) || a).localeCompare(gameName(b) || b));
+  if(q.skill && !skills.includes(q.skill)) q.skill = "";
+  const at = sites.filter(S => !q.skill || (S.site.accepts || []).includes(q.skill));
+  if(q.site && !at.some(S => S.key === q.site)) q.site = "";
+  const S = q.site ? at.find(x => x.key === q.site) : null;
+  const shop = !!S && S.site.kind === "shop";
+  const ex = q.ex || (shop ? [HR_PT] : []);
+  /* Its plan weeks are held, and its picks kept from Open places, only while
+     its confirm is open or its write is under way (hrUi.quickHold); a form
+     merely filled in holds nothing. */
+  const hold = !!hrUi.quickHold;
+  const out = {q, skills, sites: at, S, shop, ex, ready: !!(q.skill && S), hold, plan: false, matches: [], picks: [], short: 0, held: 0};
+  if(!out.ready) return out;
+  out.matches = cands.filter(c => hrLevel(c, q.skill) !== null && hrLevel(c, q.skill) >= q.min
+    && !(c.demands || []).some(d => ex.includes(d))).sort(hrRank(q.skill));
+  /* The plan's weeks in this role here that nobody reassigned takes. */
+  out.plan = !!(S.planned && S.row);
+  const open = out.plan ? S.weeks.filter(x => x.w.skill === q.skill && !x.who) : [];
+  out.picks = out.matches.slice(0, q.n).map(c => {
+    const fails = x => (c.demands || []).filter(d => hrKind(d) === "schedule" && hrBreaks(d, x.w, S.row));
+    const wk = open.find(x => !fails(x).length && !hrDeskMiss(c.demands, S, x.w).length)
+      || open.find(x => !fails(x).length) || open[0] || null;
+    if(wk){ open.splice(open.indexOf(wk), 1); if(hold){ wk.who = {type: "quick", c}; out.held++; } }
+    if(hold) used.set(c.id, S);
+    return {c, w: wk ? wk.w : null, misfit: wk ? fails(wk) : []};
+  });
+  out.short = Math.max(0, q.n - out.matches.length);
+  return out;
+}
+const hrQuickModel = m => m.quick;
+/* The request: the hires, and, when any of them gets hours, the site's week
+   as the game has it now plus their shifts. A shift that meets one already
+   there on the same station or for the same person is left out; nobody
+   else's hours change. `hours` is each hire's kept hours by id. */
+function hrQuickRequest(Q){
+  const S = Q.S, hires = [], names = new Map(), hours = new Map();
+  if(!S) return {body: {sites: [], hires: [], moves: []}, names, hours, given: 0};
+  const row = S.row || {};
+  const now = Q.plan && row.current && Array.isArray(row.current.list) ? row.current.list : null;
+  const week = [];
+  if(now) now.forEach(s => {
+    const st = (row.stations || [])[s.s], who = (row.people || [])[s.p];
+    if(st && who && spHasId(st.id) && spHasId(who.id) && s.d >= 0 && s.d < 7) week.push({d: s.d, f: s.f, t: s.t, employeeId: who.id, itemInstanceId: st.id});
+  });
+  const clash = new Set();  // picks left with no hours because a slot met a shift already there
+  const meets = (a, b) => a.d === b.d && a.f < b.t && b.f < a.t && (a.itemInstanceId === b.itemInstanceId || a.employeeId === b.employeeId);
+  Q.picks.forEach(({c, w}) => {
+    hires.push({candidateId: c.id, address: gwAddress(S.key), expect: {wage: c.wage}, seenHoursLeft: c.hoursLeft ?? null});
+    names.set(c.id, {name: c.name, skill: Q.q.skill, c});
+    let kept = 0, met = false;
+    if(now && w) (w.slots || []).forEach(sl => {
+      const sh = (row.shifts || [])[sl.shift];
+      const st = sh ? (row.stations || [])[sh.s] : null;
+      const x = {d: sl.d, f: sl.f, t: sl.t, employeeId: c.id, itemInstanceId: sl.station || (st && st.id)};
+      if(!(x.d >= 0 && x.d < 7) || !spHasId(x.itemInstanceId)) return;
+      if(week.some(y => meets(x, y))){ met = true; return; }
+      week.push(x);
+      kept += x.t - x.f;
+    });
+    hours.set(c.id, kept);
+    if(met && !kept) clash.add(c.id);
+  });
+  const given = [...hours.values()].filter(h => h > 0).length;
+  const clashed = clash.size;
+  const days = [];
+  week.forEach(({d, ...x}) => { let day = days.find(y => y.d === d); if(!day) days.push(day = {d, shifts: []}); day.shifts.push(x); });
+  days.sort((a, b) => a.d - b.d).forEach(day => day.shifts.sort((a, b) => a.f - b.f || a.t - b.t));
+  const site = given
+    ? {address: gwAddress(S.key), expect: S.b && typeof S.b.shiftPrint === "string" ? S.b.shiftPrint : null,
+       openAllHours: false, days}
+    : {address: gwAddress(S.key), expect: null, days: null};
+  return {body: {sites: hires.length ? [site] : [], hires, moves: []}, names, hours, given, clashed, now: !!now};
+}
+/* A pick whose plan week breaks one of their schedule demands, in orange. */
+const hrQuickMisfit = misfit => misfit.length ? `<small class="warn">hours break ${misfit.map(hrName).join(", ")}</small>` : "";
+function hrQuickHtml(m){
+  const Q = hrQuickModel(m), q = Q.q;
+  const l = gwLink(), off = !l || !(l.writes || []).includes("hire");
+  const kind = S => { const k = HR_KIND_WORDS[S.site.kind]; return S.b && S.b.type ? S.b.type : k ? k[0] : S.site.kind; };
+  const skills = [...new Set([...HR_SKILLS, q.min])].sort((a, b) => a - b);
+  const k = Q.picks.length, n = Q.matches.length;
+  const match = !Q.ready ? `<p class="hs-match none">Pick a role and a site to see who matches.</p>`
+    : !n ? `<p class="hs-match none">Nobody matches.</p>`
+    : `<details class="hs-match" data-hq-list${q.open ? " open" : ""}><summary><b>${hrNum(n)}</b> match · ${
+        Q.short ? `<span class="warn">only ${hrNum(n)} ${n === 1 ? "matches" : "match"}</span>` : k === n ? (k === 1 ? "picked" : `all ${hrNum(k)} are picked`) : k === 1 ? "the best is picked" : `the best ${hrNum(k)} are picked`}${hrChev()}</summary>
+      <ul>${Q.picks.map(({c, misfit}) => `<li><span>${spEsc(c.name || "?")}${hrQuickMisfit(misfit)}</span><span class="m">${Math.round(hrLevel(c, q.skill))}%</span><span class="m">${hrWage(c.wage)}/h</span></li>`).join("")}</ul></details>`;
+  const busy = !!hrUi.quickPending;
+  const dis = !Q.ready || !k || off || busy;
+  return `<div class="qh"><span class="hs-i">${hrSvg("hire")}</span><h3>Quick hire</h3><span class="sub">any site</span></div>
+    <div class="qf">
+      <label class="fld wide"><span>Role</span><span class="hs-sel"><select data-hq-role aria-label="Role" class="${q.skill ? "" : "empty"}"><option value="">Choose a role</option>${
+        Q.skills.map(s => `<option value="${attr(s)}"${s === q.skill ? " selected" : ""}>${hrRole(s)}</option>`).join("")}</select>${hrChev()}</span></label>
+      <label class="fld wide"><span>At</span><span class="hs-sel"><select data-hq-site aria-label="At" class="${q.site ? "" : "empty"}"><option value="">Choose a site</option>${
+        Q.sites.map(S => `<option value="${attr(S.key)}"${S.key === q.site ? " selected" : ""}>${spEsc(hrSiteName(S))} · ${spEsc(kind(S))}</option>`).join("")}</select>${hrChev()}</span></label>
+      <div class="fld"><span>How many</span><span class="hs-num"><button type="button" data-hq-less aria-label="Fewer"${q.n <= 1 ? " disabled" : ""}>−</button><b data-hq-n tabindex="-1" aria-live="polite">${hrNum(q.n)}</b><button type="button" data-hq-more aria-label="More"${q.n >= 99 ? " disabled" : ""}>+</button></span></div>
+      <label class="fld"><span>Skill at least</span><span class="hs-sel"><select data-hq-min aria-label="Skill at least" class="${q.min ? "set" : ""}">${skills.map(v =>
+        `<option value="${v}"${v === q.min ? " selected" : ""}>${v ? `${v}%` : "any"}</option>`).join("")}</select>${hrChev()}</span></label>
+      <div class="fld wide"><span>Leave out who asks for</span><button type="button" class="hs-sel" data-hs-dem-open="quick" aria-haspopup="true" aria-expanded="${!!hrPop && hrPop.target === "quick"}">${hrDemLabel(Q.ex)}${hrChev()}</button></div>
+    </div>
+    ${Q.shop && Q.ex.includes(HR_PT) ? `<p class="hs-note hs-shops">Part-time is left out for shop roles only.</p>` : ""}
+    ${match}
+    <button type="button" class="hs-cta wide" data-hq-go${dis ? ` aria-disabled="true"` : ""}>${busy ? "Hiring…" : k ? `Hire ${hrNum(k)}` : "Hire"}${dis ? "" : gwSvg("right")}</button>`;
+}
+
+/* The confirm: the game is asked first, then one Hire. No undo. */
+let hrQuickLast = null;  // {Q, req}
+let hrQuickSeq = 0;
+function hrQuickReview(){
+  /* Each confirm owns its hold (a token): a late release from an earlier
+     one never clears a newer confirm's. hrUi.quickPending is the token of a
+     confirm closed while its write is still under way; Quick hire's button
+     says "Hiring…" and is off until that write ends. */
+  if(hrUi.quickPending) return;
+  const token = ++hrQuickSeq;
+  hrUi.quickHold = token;
+  let dlg = null;
+  const release = () => {
+    if(hrUi.quickHold === token) hrUi.quickHold = false;
+    if(hrUi.quickPending === token) hrUi.quickPending = false;
+    if(!$("secStaff")) return;
+    drawStaff(["hsOpen", "hsOrder", "hsQuick"]);
+    const at = document.activeElement;
+    if(!at || at === document.body || !at.isConnected){
+      const b = document.querySelector("#hsQuick [data-hq-go]");
+      if(b) b.focus({preventScroll: true});
+    }
+  };
+  const build = () => { const Q = hrQuickModel(hrModel()); hrQuickLast = {Q, req: hrQuickRequest(Q)}; return hrQuickLast; };
+  build();
+  const n = () => hrQuickLast.req.body.hires.length;
+  const who = k => `${hrNum(k)} ${hrRoles(hrQuickLast.Q.q.skill, k)}`;
+  const at = () => spEsc(hrSiteName(hrQuickLast.Q.S));
+  const goneOf = answer => new Set(((answer || {}).skipped || []).filter(s => s && s.reason === "gone").map(s => s.candidateId));
+  const nameOf = id => ((hrQuickLast.req.names.get(id) || {}).name) || "someone";
+  const list = gone => {
+    const {Q, req} = hrQuickLast;
+    return `<ul class="hs-qlist">${Q.picks.map(({c, misfit}) => { const h = req.hours.get(c.id) || 0; return `<li class="${req.given ? "h" : ""}"><span>${gone.has(c.id) ? `<span class="hr-struck">${spEsc(c.name || "?")}</span>` : spEsc(c.name || "?")}${h ? hrQuickMisfit(misfit) : ""}</span><span class="m">${
+      Math.round(hrLevel(c, Q.q.skill))}%</span><span class="m">${hrWage(c.wage)}/h</span>${req.given ? `<span class="m${h && misfit.length ? " warn" : ""}">${h ? `${hrNum(h)} h` : "–"}</span>` : ""}</li>`; }).join("")}</ul>`;
+  };
+  /* What the hires' hours are, and that nobody else's change. */
+  const hours = () => {
+    const {Q, req} = hrQuickLast, k = n();
+    if(!Q.plan || !req.now) return gwCall("", "clock", "No hours yet: set them in the game.");
+    if(!req.given) return gwCall("", "clock", req.clashed ? "Their plan hours meet shifts already there: they join with no hours."
+      : `No open hours in ${at()}'s plan: they join with no hours.`);
+    const hs = [...req.hours.values()].filter(h => h > 0), lo = Math.min(...hs), hi = Math.max(...hs);
+    const each = `${lo === hi ? hrNum(lo) : `${hrNum(lo)}–${hrNum(hi)}`} h a week${req.given > 1 ? " each" : ""}`;
+    const none = k - req.given;
+    return gwCall("", "roster", `Hours from ${at()}'s plan: ${each}; nobody else's hours change.${none ? ` ${hrNum(none)} ${none === 1 ? "joins" : "join"} with no hours.` : ""}`);
+  };
+  const goneCall = gone => gone.size ? gwCall("warn", "alert", `${plural(gone.size, "application")} expired before the game reached ${gone.size === 1 ? "it" : "them"}: ${
+    [...gone].map(id => `<span class="hr-struck">${spEsc(nameOf(id))}</span>`).join(", ")}.`) : "";
+  gwConfirm({
+    kind: "hire", icon: "hire",
+    title: () => `Hire ${who(n())}`,
+    where: () => `<span>${at()}</span>`,
+    nothing: () => {
+      if(!n()) return "Nobody matches: change the role, the site or the filters.";
+      if(hrQuickLast.req.body.sites.some(s => s.days && typeof s.expect !== "string"))
+        return "Read the game again first: this board does not know the site's schedule well enough to add to it.";
+      if(hrBodyBytes(hrQuickLast.req.body) > HR_MAX_BODY) return "This is more than the game link takes in one go. Hire fewer at a time.";
+      return "";
+    },
+    body: () => build().req.body,
+    verdict: answer => answer.ok ? (goneOf(answer).size ? `<b>The game can take ${hrNum(n() - goneOf(answer).size)} of ${hrNum(n())}</b>` : `<b>The game can take ${n() === 1 ? "them" : `all ${hrNum(n())}`}</b>`)
+      : answer.blocked === "myemployees" ? "<b>Close MyEmployees in the game</b>" : "<b>The game refuses this</b>",
+    object: row => row.scope === "hire" ? spEsc(nameOf(row.id)) : at(),
+    draw: (answer, phase) => {
+      if(phase === "refused") return "";
+      const gone = goneOf(answer), {Q} = hrQuickLast;
+      if(phase === "applying") return `<div class="hr-prog"><i></i></div>${list(gone)}`;
+      const wages = Q.picks.map(({c}) => Number(c.wage) || 0);
+      const lo = Math.min(...wages), hi = Math.max(...wages);
+      const left = (answer.sites || []).flatMap(s => (s && s.leftWithout || []).map(p => `<span class="person"><i>${spEsc(gwInitials(p.name))}</i>${spEsc(p.name || "someone")}</span>`));
+      const blocked = answer.blocked === "myemployees" ? `<div class="gw-no"><span class="ic">${hrSvg("phone")}</span><div class="rule">MyEmployees is open in the game.</div><div class="fix">${gwSvg("right")}<span>Close the MyEmployees app on your in-game phone, then try again.</span></div></div>` : "";
+      return `${blocked}${gwTiles([["Hire", null, hrNum(n())], ["Role", null, `<span class="hr-u">${hrRole(Q.q.skill)}</span>`],
+          ["Wages", null, `${lo === hi ? hrWage(lo) : `${hrWage(lo)}–${hrWage(hi)}`}<small class="hr-u">/h</small>`]])}
+        ${list(gone)}${hours()}${goneCall(gone)}${left.length ? `<div class="gw-box">${gwCall("", "exit", "<b>No hours after this</b> for these people here, the game says. It takes them off their work and adds a to-do.")}<div class="gw-pills">${left.join("")}</div></div>` : ""}
+        <p class="hr-lock">${gwSvg("lock")}<span>No undo.</span></p>`;
+    },
+    hint: "Nothing changes until you click Hire.",
+    refusedHint: answer => answer.blocked === "myemployees" ? "The game cannot hire while you are in that app." : "Nothing was changed.",
+    applyLabel: () => `Hire ${hrNum(n())}`,
+    applying: "Hiring…",
+    changed: () => false,
+    done: answer => `${plural((answer.hired || []).length, "person", "people")} hired in the game.`,
+    doneBody: answer => {
+      const k = (answer.hired || []).length, gone = goneOf(answer), {req} = hrQuickLast;
+      const hrs = req.given ? (req.given < n() ? "some with hours from its plan" : "with hours from its plan") : "with no hours";
+      return `<p class="gw-said ok">${hrNum(k)} hired</p><p class="gw-lead"><b>${who(k)}</b> now ${k === 1 ? "works" : "work"} at ${at()}, ${hrs}.</p>${goneCall(gone)}
+        <p class="hr-lock">${gwSvg("lock")}<span>No undo. To let someone go, use MyEmployees in the game.</span></p>`;
+    },
+    /* Who the game hired is staff now: left out of both pickers until the
+       board reads the game again, so Hire more never offers them. */
+    /* Done: the form starts again (its weeks go back to Open places when the
+       confirm closes). */
+    onDone: answer => {
+      hrHiredAdd((answer.hired || []).map(h => h && h.candidateId));
+      hrUi.quick = hrQuickNew();
+      /* Closed while it applied: the hold ends here, with the hires. */
+      if(dlg && !dlg.open) release();
+    },
+    /* Failed after the confirm was closed mid-apply: the hold ends too. */
+    onFailed: () => { if(dlg && !dlg.open) release(); },
+    more: {label: "Hire more", go: () => {
+      if(gwOpen) gwOpen.close();
+      const el = document.querySelector("#hsQuick [data-hq-role]");
+      if(el) el.focus({preventScroll: true});
+    }},
+  });
+  dlg = gwOpen;
+  if(dlg){
+    dlg.classList.add("hr-wide");
+    /* Closed, however: the held weeks go back to Open places, unless the
+       write is still under way (onDone or onFailed ends the hold then). */
+    dlg.addEventListener("close", () => {
+      if(dlg.dataset.phase !== "applying") return release();
+      /* The close event comes after close(): an answer may have released
+         this confirm already, and then nothing is pending. */
+      if(hrUi.quickHold !== token) return;
+      hrUi.quickPending = token;
+      if($("secStaff")) drawStaff(["hsQuick"]);
+    });
+  }
+  /* Quick hire's own markup does not change with the hold: its Hire button
+     stays, for the keyboard to come back to. */
+  drawStaff(["hsOpen", "hsOrder"]);
+}
+/* The filters a control changes: Change picks' role (its own set, when it has
+   one), or the company's. */
+function hrFilterTarget(el){
+  const box = el.closest("[data-hr-filters]");
+  const skill = box && box.dataset.hrFilters;
+  const f = hrFilters();
+  if(skill && f.roles[skill]) return f.roles[skill];
+  return f.company;
+}
+/* Bound once, on the first draw: once() and on() are declared further down. */
+let hrBound = false;
+function bindStaff(){
+  if(hrBound) return;
+  hrBound = true;
+  hrSelBind();
+  const page = "#secStaff", sheet = "#hsSheet";
+  on("change", `${page} [data-hr-move]`, el => {
+    if(el.checked) hrUi.moveOff.delete(el.dataset.hrMove); else hrUi.moveOff.add(el.dataset.hrMove);
+    hrRepaint(hrKey(el));
+  });
+  on("click", `${page} [data-hr-open]`, el => {
+    hrUi.sheet = el.dataset.hrOpen; hrUi.all = false; hrUi.out = false;
+    hrPopClose();
+    hrSheetPaint(hrModel());
+    wireTips();
+  });
+  /* The filter bar's two dropdowns, on the page and in Change picks. */
+  const pick = el => {
+    const f = hrFilterTarget(el), v = el.value;
+    if(el.hasAttribute("data-hr-min")) f.min = Number(v) || 0;
+    else f.max = v === "" ? null : Number(v);
+    hrFiltersSave();
+    hrRepaint(hrKey(el));
+  };
+  on("change", `${page} [data-hr-min], ${page} [data-hr-max], ${sheet} [data-hr-min], ${sheet} [data-hr-max]`, pick);
+  on("change", `${sheet} [data-hr-scope]`, el => {
+    const skill = hrUi.sheet, f = hrFilters();
+    if(!skill) return;
+    /* A role's own filter starts as the one it is picked by now: Part-time
+       only when every week of the role is at a shop. */
+    const r = hrModel().roles.find(x => x.skill === skill);
+    if(el.dataset.hrScope === "own"){ if(!f.roles[skill] && r) f.roles[skill] = hrCleanFilter(Object.assign({}, r.f, {ex: r.pt && r.allShop ? [...r.f.ex, HR_PT] : r.f.ex})); }
+    else delete f.roles[skill];
+    hrFiltersSave();
+    hrRepaint(hrKey(el));
+  });
+  on("change", `${sheet} [data-hr-pick]`, el => {
+    const id = el.dataset.hrPick;
+    /* Ticked: back in if it was left out, else over the plan. */
+    if(el.checked){ if(hrUi.skip.has(id)) hrUi.skip.delete(id); else hrUi.force.add(id); }
+    else { if(hrUi.force.has(id)) hrUi.force.delete(id); else hrUi.skip.add(id); }
+    hrRepaint(hrKey(el));
+  });
+  on("click", `${sheet} [data-hs-all]`, () => { hrUi.all = !hrUi.all; hrRepaint("[data-hs-all]"); });
+  on("click", `${sheet} [data-hs-out]`, () => { hrUi.out = !hrUi.out; hrRepaint("[data-hs-out]"); });
+  on("click", `${sheet} [data-hs-reset]`, () => {
+    const m = hrModel(), r = m.roles.find(x => x.skill === hrUi.sheet);
+    if(r) r.pool.forEach(c => { hrUi.skip.delete(c.id); hrUi.force.delete(c.id); });
+    hrRepaint("[data-hs-reset]");
+  });
+  on("click", `${sheet} [data-hs-done], ${sheet} [data-hs-close]`, () => { const d = $("hsSheet"); if(d) d.close(); });
+  /* The demand list. */
+  on("click", `${page} [data-hr-roster]`, (el, e) => {
+    e.preventDefault();
+    /* The site's page stands under Staffing › Schedules (routeNext). */
+    routeNext = "staffing/schedules";
+    try{
+      openSite(el.dataset.hrRoster, false);
+      reveal("secDetail", "push", "#sp-roster");
+    } finally { routeNext = null; }
+    const block = q("#sp-roster");
+    if(block){ block.classList.remove("sp-arrived"); void block.offsetWidth; block.classList.add("sp-arrived"); }
+  });
+  on("click", "[data-hs-dem-open]", el => {
+    const target = el.dataset.hsDemOpen;
+    if(hrPop && hrPop.target === target){ hrPopClose(true); return; }
+    hrPop = {target, all: false};
+    hrPopDraw();
+    const first = $("hsDemPop") && $("hsDemPop").querySelector("input, button");
+    if(first) first.focus({preventScroll: true});
+  });
+  on("change", "#hsDemPop [data-hr-dem]", el => {
+    if(!hrPop) return;
+    const d = el.dataset.hrDem;
+    const flip = ex => ex.includes(d) ? ex.filter(x => x !== d) : [...ex, d];
+    if(hrPop.target === "quick"){
+      const q = hrUi.quick;
+      q.ex = flip(hrQuickModel(hrModel()).ex);
+      hrRepaint(null, ["hsOpen", "hsOrder", "hsQuick"]);
+    } else {
+      const f = hrFilterTarget(document.querySelector(`[data-hs-dem-open="${CSS.escape(hrPop.target)}"]`) || el);
+      f.ex = flip(f.ex);
+      hrFiltersSave();
+      hrRepaint(null);
+    }
+  });
+  on("click", "#hsDemPop [data-hs-dem-all]", () => { if(!hrPop) return; hrPop.all = true; hrPopDraw(); });
+  on("click", "#hsDemPop [data-hs-dem-clear]", () => {
+    if(!hrPop) return;
+    if(hrPop.target === "quick"){ hrUi.quick.ex = []; hrRepaint(null, ["hsOpen", "hsOrder", "hsQuick"]); }
+    else {
+      /* A role with no shop week clears its own list, not the shops' Part-time. */
+      const f = hrFilterTarget(document.querySelector(`[data-hs-dem-open="${CSS.escape(hrPop.target)}"]`) || document.body);
+      const r = hrPop.target ? hrModel().roles.find(x => x.skill === hrPop.target) : null;
+      f.ex = f === hrFilters().company && r && !r.shop ? f.ex.filter(d => d === HR_PT) : [];
+      hrFiltersSave();
+      hrRepaint(null);
+    }
+  });
+  /* A click anywhere else, or Escape, closes the list; a scroll or a resize
+     places it again. */
+  document.addEventListener("click", e => {
+    if(!hrPop) return;
+    const t = e.target;
+    if(!t.isConnected) return;
+    if(t.closest && (t.closest("#hsDemPop") || t.closest("[data-hs-dem-open]"))) return;
+    hrPopClose();
+  });
+  document.addEventListener("keydown", e => {
+    if(e.key !== "Escape" || !hrPop) return;
+    e.preventDefault(); e.stopPropagation();
+    hrPopClose(true);
+  }, true);
+  const replace = () => {
+    const pop = $("hsDemPop"), a = hrPop && document.querySelector(`[data-hs-dem-open="${CSS.escape(hrPop.target)}"]`);
+    if(pop && a) hrPopPlace(a, pop);
+  };
+  window.addEventListener("resize", replace);
+  window.addEventListener("scroll", replace, {passive: true});
+  /* Quick hire. */
+  /* A quick hire's picks take plan weeks from Open places: all of it again. */
+  const quick = (el, set) => { set(hrUi.quick); hrRepaint(hrKey(el), ["hsOpen", "hsOrder", "hsQuick"]); };
+  on("change", `${page} [data-hq-role]`, el => quick(el, q => { q.skill = el.value; }));
+  on("change", `${page} [data-hq-site]`, el => quick(el, q => { q.site = el.value; q.ex = null; }));
+  on("change", `${page} [data-hq-min]`, el => quick(el, q => { q.min = Number(el.value) || 0; }));
+  on("click", `${page} [data-hq-less]`, el => quick(el, q => { q.n = Math.max(1, q.n - 1); }));
+  on("click", `${page} [data-hq-more]`, el => quick(el, q => { q.n = Math.min(99, q.n + 1); }));
+  on("click", `${page} [data-hq-list] summary`, el => { setTimeout(() => { hrUi.quick.open = !!el.parentElement.open; }); });
+  on("click", `${page} [data-hq-go]`, el => { if(el.getAttribute("aria-disabled") !== "true") hrQuickReview(); });
+}
+function wireStaff(){ bindStaff(); bindHireReview(); hrMoreReady(); }
+
+/* --- the review: gwConfirm, kind "hire" ----------------------------------- */
+const hrWeekStrip = (slots, gap) => {
+  const on = new Set((slots || []).map(s => s.d));
+  const tip = HR_DAYS.filter(d => on.has(d)).map(d => {
+    const s = slots.filter(x => x.d === d).map(x => `${String(x.f).padStart(2, "0")}–${String(x.t).padStart(2, "0")}`).join(", ");
+    return `${ttDay(d).slice(0, 3)} ${s}`;
+  }).join(" · ");
+  return `<span class="hr-wk${gap ? " gap" : ""}" data-tip="${attr(tip || "no hours: assigned only")}">${HR_DAYS.map(d => `<i class="${on.has(d) ? "on" : ""}"></i>`).join("")}</span>`;
+};
+/* A moved person's days: their hire week, or, for the bench a plan already
+   counts on, their entries in that plan. */
+const hrBenchSlots = (S, x) => {
+  if(x.week) return x.week.w.slots || [];
+  const row = S.row || {}, p = (row.people || []).findIndex(y => y.id === x.id);
+  return p < 0 ? [] : (row.shifts || []).filter(s => s.p === p);
+};
+const hrSlotHours = slots => slots.reduce((n, s) => n + s.t - s.f, 0);
+/* Who goes where, one site a row, opened for its people. `phase`: ready,
+   applying or done. */
+function hrReviewSites(m, req, phase, gone){
+  const rows = m.sites.map(S => {
+    const at = req.touched.get(S.key);
+    const gaps = S.weeks.filter(x => !x.who || (x.who.type === "move" && x.who.m.off));
+    if(!at && !gaps.length) return "";
+    const hires = S.weeks.filter(x => x.who && x.who.type === "hire" && req.names.has(x.who.c.id));
+    const extra = m.overs.filter(o => o.S === S && req.names.has(o.c.id));
+    const moves = m.moves.filter(x => !x.off && x.to === S && req.names.has(x.id));
+    /* Done: only who the game hired counts; an application that expired is
+       a place still open. Before that, the planned figures. */
+    const took = x => !(phase === "done" && gone.has(x.c.id));
+    const hired = hires.filter(x => took(x.who)), got = extra.filter(took);
+    /* Places still open: week hires only, the ones "Pick N more" re-picks. A
+       gone over-the-plan pick is shown as gone, nothing more. */
+    const missed = phase === "done" ? hires.length - hired.length : 0;
+    const cost = hired.reduce((n, x) => n + Number(x.who.c.wage || 0) * Number(x.w.hours || 0) / 7, 0);
+    let k = 0;
+    const dot = cls => `<i class="${cls}" style="--k:${++k}"></i>`;
+    const dots = phase === "ready" ? hires.map(x => dot(gone.has(x.who.c.id) ? "gap" : "")).join("") + extra.map(() => dot("")).join("")
+        + moves.map(() => dot("mv")).join("") + gaps.map(() => dot("gap")).join("")
+      : phase === "done" ? [...hired, ...got, ...moves].map(() => dot("done")).join("") + Array.from({length: missed}, () => dot("gap")).join("")
+      : [...hires, ...extra, ...moves].map(() => dot("wait")).join("");
+    const plan = !S.planned ? "no hours: assigned only"
+      : S.variant === "open" ? `${S.site.new ? "new: " : ""}${S.row && S.row.complete ? "every station, the hours it opens"
+        : "every station where nothing is measured yet"}`
+      : S.site.new && S.site.kind === "office" ? "new: the office default" : "hours from the board's plan";
+    const open = hrUi.reviewOpen === S.key;
+    const person = (name, sub, role, lv, wage, slots, hours, cls) => `<div class="hr-dp${cls ? ` ${cls}` : ""}"><span class="who"><b>${name}</b><small${sub.mv ? ` class="mv"` : ""}>${sub.t}</small></span><span class="r">${role}</span>
+      <span class="m">${lv}</span><span class="m">${wage}</span>${hrWeekStrip(slots, cls === "gap")}<span class="m">${hours}</span></div>`;
+    const people = open ? `<div class="hr-dpeople"><div class="hr-dp hd"><span>Person</span><span>Role</span><span class="m">Skill</span><span class="m">$/h</span><span class="hr-wkd">${
+        HR_DAYS.map(d => `<span>${ttDay(d)[0]}</span>`).join("")}</span><span class="m">Week</span></div>${
+      hires.map(x => { const c = x.who.c, g = gone.has(c.id); return person(g ? `<span class="hr-struck">${spEsc(c.name)}</span>` : spEsc(c.name), {t: g ? "application expired" : `new hire${x.who.misfit.length ? " · hours break a demand" : ""}`},
+        hrRole(x.w.skill), `${Math.round(hrLevel(c, x.w.skill))}%`, hrWage(c.wage), x.w.slots, `${x.w.hours || 0} h`, g ? "gap" : ""); }).join("")}${
+      extra.map(o => { const g = gone.has(o.c.id); return person(g ? `<span class="hr-struck">${spEsc(o.c.name)}</span>` : spEsc(o.c.name),
+        {t: g ? "application expired" : "new hire · over the plan, no hours"}, hrRole(o.skill), `${Math.round(hrLevel(o.c, o.skill))}%`, hrWage(o.c.wage), [], "–", g ? "gap" : ""); }).join("")}${
+      moves.map(x => person(spEsc(x.p.name || "?"), {t: x.fixed ? "unassigned, in the plan" : `reassigned from ${x.from ? spEsc(x.from.b ? shortName(x.from.b) : "a site") : "unassigned"}`, mv: true},
+        hrRole(x.skill), x.p.level !== undefined ? `${Math.round(x.p.level)}%` : "–", x.p.wage !== undefined ? hrWage(x.p.wage) : "–",
+        hrBenchSlots(S, x), `${hrSlotHours(hrBenchSlots(S, x))} h`)).join("")}${
+      gaps.map(x => person("Nobody", {t: `no ${hrRole(x.w.skill)} matches`}, hrRole(x.w.skill), "–", "–", x.w.slots, `${x.w.hours || 0} h`, "gap")).join("")}</div>` : "";
+    const counts = `${hired.length + got.length} ${phase === "done" ? "hired" : "new"}${moves.length ? `<span class="mvc">+${moves.length} reassigned</span>` : ""}${
+      missed ? `<span class="mvc gap">${missed} still open</span>` : ""}${at && at.rewrite && !(phase === "done" ? hired.length + got.length : hires.length) && !moves.length ? `<span class="mvc">week rewritten</span>` : ""}`;
+    return `<div class="hr-dsite${open ? " open" : ""}"><button type="button" class="hr-dhead" data-hr-site="${attr(S.key)}" aria-expanded="${open}">
+      <span><span class="nm">${hoodHtml(S.b)}<span class="s">${spEsc(S.b ? shortName(S.b) : S.site.name || "?")}</span>${S.site.new ? `<span class="hr-new">new</span>` : ""}</span><span class="plan">${spEsc(S.b && S.b.type ? S.b.type : S.site.kind)} · ${plan}</span></span>
+      <span class="hr-dots">${dots}</span><span class="c">${counts}<span class="cst">+${fmt(cost)}</span></span>${hrSvg("chev")}</button>${people}</div>`;
+  }).join("");
+  return `<div class="hr-dsites">${rows}</div>`;
+}
+let hrLast = null;  // the review on screen: {m, req}
+/* The most a hire body may weigh: the mod's cap for /write/hire, 2 MiB. */
+const HR_MAX_BODY = 2 * 1024 * 1024;
+const hrBodyBytes = body => new TextEncoder().encode(JSON.stringify(body)).length;
+/* The people a move takes off a site whose week this call does not replace:
+   the game clears their shifts there and nobody takes those hours. From the
+   answer's moved[].shiftsCleared. */
+function hrLeftEmpty(req, answer){
+  const rewritten = new Set((req.body.sites || []).filter(s => s.days).map(s => gwKeyOf(s.address)));
+  return ((answer || {}).moved || []).map(mv => {
+    const n = Number(mv && mv.shiftsCleared) || 0;
+    const x = ((req.names.get(mv && mv.employeeId) || {}).move) || null;
+    return n > 0 && x && x.from && !rewritten.has(x.from.key) ? {x, n} : null;
+  }).filter(Boolean);
+}
+function hrReview(o = {}){
+  const only = o.only || null;
+  const build = () => {
+    const m = hrModel();
+    const req = hrRequest(m, only);
+    hrLast = {m, req, only};
+    return hrLast;
+  };
+  build();
+  const counts = () => {
+    const b = hrLast.req.body;
+    return {hire: b.hires.length, move: b.moves.length, sites: b.sites.length};
+  };
+  const label = () => { const c = counts(); return c.hire && c.move ? `Hire ${c.hire} and reassign ${c.move}` : c.move ? `Reassign ${c.move}` : `Hire ${c.hire}`; };
+  const goneOf = answer => new Set(((answer || {}).skipped || []).filter(s => s && s.reason === "gone").map(s => s.candidateId));
+  const nameOf = id => ((hrLast.req.names.get(id) || {}).name) || "someone";
+  gwConfirm({
+    kind: "hire", icon: "hire",
+    title: () => label(),
+    where: () => `<span>${plural(counts().sites, "site")} · everyone gets hours from their site's plan</span>`,
+    nothing: () => {
+      const c = counts();
+      if(!c.hire && !c.move) return "Nothing to hire or reassign: every planned site has its people, or nobody matches your filters.";
+      if(hrLast.req.body.sites.some(s => s.days && typeof s.expect !== "string"))
+        return "Read the game again first: this board does not know a site's schedule well enough to replace it.";
+      const bytes = hrBodyBytes(hrLast.req.body);
+      if(bytes > HR_MAX_BODY)
+        return `This is more than the game link takes in one go: the weeks of ${plural(c.sites, "site")} come to ${(bytes / 1048576).toFixed(1)} MB, and the link takes 2 MB. Hire in two rounds: untick a reassign, or narrow a role's filters so fewer sites are hired into, confirm, then come back for the rest.`;
+      return "";
+    },
+    nothingSay: () => hrLast && hrBodyBytes(hrLast.req.body) > HR_MAX_BODY ? "<b>Too much for one go</b>" : "",
+    body: () => build().req.body,
+    verdict: answer => answer.ok ? (goneOf(answer).size ? `<b>The game can take ${counts().hire - goneOf(answer).size} of ${counts().hire}</b>` : "<b>The game can take all of them</b>")
+      : answer.blocked === "myemployees" ? "<b>Close MyEmployees in the game</b>" : "<b>The game refuses this</b>",
+    object: row => {
+      if(row.scope === "hire" || row.scope === "move") return spEsc(nameOf(row.id));
+      const S = row.address && hrLast.m.sites.find(x => x.key === gwKeyOf(row.address));
+      const site = S && S.b ? spEsc(shortName(S.b)) : row.address ? gwSiteName(row) : "A site";
+      return row.scope === "shift" && row.d !== undefined ? `${site}: ${ttDay(row.d)}` : site;
+    },
+    draw: (answer, phase) => {
+      const {m, req} = hrLast, gone = goneOf(answer), t = hrTotals(m), c = counts();
+      if(phase === "refused") return "";
+      const sites = hrReviewSites(m, req, phase === "applying" ? "wait" : phase === "done" ? "done" : "ready", gone);
+      if(phase === "applying") return `<div class="hr-prog"><i></i></div>${sites}`;
+      const bill = req.body.hires.reduce((n, h) => {
+        const x = m.sites.flatMap(S => S.weeks).find(w => w.who && w.who.type === "hire" && w.who.c.id === h.candidateId);
+        return n + (x && !gone.has(h.candidateId) ? Number(x.who.c.wage || 0) * Number(x.w.hours || 0) / 7 : 0);
+      }, 0);
+      const gaps = m.sites.flatMap(S => S.weeks.filter(x => !x.who || (x.who.type === "move" && x.who.m.off)).map(x => ({S, x})));
+      const gapText = [...new Map(gaps.map(({S, x}) => [`${S.key}|${x.w.skill}`, {S, skill: x.w.skill,
+        n: gaps.filter(g => g.S === S && g.x.w.skill === x.w.skill).length,
+        h: gaps.filter(g => g.S === S && g.x.w.skill === x.w.skill).reduce((n, g) => n + Number(g.x.w.hours || 0), 0)}])).values()]
+        .map(g => `<b>${spEsc(g.S.b ? shortName(g.S.b) : "A site")} keeps ${g.n} ${hrRole(g.skill)} ${g.n === 1 ? "place" : "places"} open</b> (${g.h} hours a week)`).join("; ");
+      const warned = m.sites.flatMap(S => S.weeks.filter(x => x.who && x.who.type === "hire" && hrWarns(m, x.who.c, S, x).length));
+      const rewritten = (answer.sites || []).filter(s => s && s.before && s.after);
+      const said = rewritten.length ? `<div class="gw-call info">${gwI("roster")}<div>The week is replaced at ${rewritten.map(s =>
+        `<b>${gwSiteName(s)}</b> (${Number(s.removed) || 0} entries out, ${Number(s.added) || 0} in${s.openedHours ? ", open 0 to 24" : ""})`).join(", ")}.</div></div>` : "";
+      const left = rewritten.flatMap(s => (s.leftWithout || []).map(p => `<span class="person"><i>${spEsc(gwInitials(p.name))}</i>${spEsc(p.name || "someone")}</span>`));
+      const fewer = hrFewer(m, rewritten);
+      const fewerCall = fewer.length ? `<div class="gw-call">${gwI("roster")}<div><b>Fewer hours than now</b> in the plan's week: ${
+        fewer.map(({S, r}) => `${spEsc(r.name || "someone")} (${spEsc(S.b ? shortName(S.b) : "a site")}, ${hrNum(r.now)} → ${hrNum(r.hours)} h)`).join(", ")}.</div></div>` : "";
+      const emptied = hrLeftEmpty(req, answer);
+      const displaced = [...req.touched.values()].filter(at => at.lost && at.lost.hours > 0);
+      const displacedCall = displaced.length ? `<div class="gw-call">${gwI("roster")}<div><b>Hours the plan takes over</b>: shifts the plan does not own that overlap its own are cut to fit, ${
+        displaced.map(at => `${spEsc(at.S.b ? shortName(at.S.b) : "a site")} ${plural(at.lost.hours, "hour")} a week`).join(", ")}. The people on them keep any hours outside the plan's.</div></div>` : "";
+      const emptyCall = emptied.length ? `<div class="gw-call gw-warn">${gwI("alert")}<div><b>Hours left empty</b> where a reassign takes someone away and the week is not replaced: ${
+        emptied.map(({x, n}) => `${spEsc(x.p.name || "someone")} (${plural(n, "shift")} at ${spEsc(x.from.b ? shortName(x.from.b) : "a site")})`).join(", ")}. The game clears their shifts there and adds a to-do; nobody takes those hours.</div></div>` : "";
+      const goneCall = gone.size ? `<div class="gw-call gw-warn">${gwI("alert")}<div><b>${plural(gone.size, "application")} expired before the game reached ${gone.size === 1 ? "it" : "them"}:</b> ${
+        [...gone].map(id => `<span class="hr-struck">${spEsc(nameOf(id))}</span>`).join(", ")}. Their hours stay empty.</div></div>` : "";
+      if(phase === "done"){
+        const hired = (answer.hired || []).length, moved = (answer.moved || []).length;
+        const siteCount = (answer.sites || []).filter(s => s && s.after).length;
+        /* "Pick N more" re-picks week hires only: a gone over-the-plan pick is not a place. */
+        const open = req.body.hires.filter(h => gone.has(h.candidateId)
+          && m.sites.some(S => S.weeks.some(w => w.who && w.who.type === "hire" && w.who.c.id === h.candidateId))).length;
+        const more = open ? `<div class="gw-call">${gwI("hire")}<div>${plural(open, "place", "places")} still open. <button type="button" class="gw-mini-b" data-hr-more disabled title="Waiting for the board to read the game">Pick ${open} more</button> opens the review for ${open === 1 ? "it" : "those"} only.</div></div>` : "";
+        return `${gwTiles([["Hired", null, hired], ["Reassigned", null, moved], ["Added wages", null, `+${fmt(bill)}<small class="hr-u">/day</small>`]])}
+          <p class="gw-lead">Everyone starts on their hours from the next hour in the game.</p>${sites}${goneCall}${emptyCall}${more}
+          ${gapText ? `<div class="gw-call gw-warn">${gwI("alert")}<div>${gapText}. It stays on the Staff page until someone matches.</div></div>` : ""}
+          <p class="hr-lock">${gwSvg("lock")}<span>No undo. To let someone go, fire them in MyEmployees in the game.</span></p>`;
+      }
+      const blocked = answer.blocked === "myemployees" ? `<div class="gw-no"><span class="ic">${hrSvg("phone")}</span><div class="rule">MyEmployees is open in the game.</div><div class="fix">${gwSvg("right")}<span>Close the MyEmployees app on your in-game phone, then try again.</span></div></div>` : "";
+      return `${blocked}${gwTiles([["Hire", null, c.hire], ["Reassign", null, c.move], ["Added wages", null, `+${fmt(bill)}<small class="hr-u">/day</small>`]])}
+        <p class="gw-lead">Who goes where. Open a site to see each person and the days they work.</p>
+        ${sites}${goneCall}${said}${fewerCall}${emptyCall}${displacedCall}${left.length ? `<div class="gw-box">${gwCall("", "exit", "<b>No hours after this</b> for these people at the sites whose week is replaced. The game takes them off their work there and adds a to-do.")}<div class="gw-pills">${left.join("")}</div></div>` : ""}
+        ${gapText ? `<div class="gw-call gw-warn">${gwI("alert")}<div>${gapText}.</div></div>` : ""}
+        ${warned.length ? `<div class="gw-call">${gwI("info")}<div>${plural(warned.length, "person asks", "people ask")} for something their site does not meet (marked orange in Change picks). They are hired anyway.</div></div>` : ""}`;
+    },
+    hint: "Hiring cannot be undone. To let someone go later, fire them in the MyEmployees app in the game.",
+    refusedHint: answer => answer.blocked === "myemployees" ? "The game cannot hire while you are in that app." : "Nothing was changed.",
+    learn: answer => { hrLast.answer = answer; },
+    applyLabel: () => label(),
+    applying: "Hiring, reassigning and setting hours…",
+    /* Hires have no undo, in the game or here. */
+    changed: () => false,
+    done: answer => {
+      const h = (answer.hired || []).length, mv = (answer.moved || []).length;
+      return `${plural(h, "person", "people")} hired${mv ? `, ${mv} reassigned` : ""} in the game.`;
+    },
+    onDone: answer => {
+      hrLast.answer = answer;
+      const gone = goneOf(answer);
+      const only = {};
+      hrLast.req.body.hires.forEach(h => {
+        if(!gone.has(h.candidateId)) return;
+        const x = hrLast.m.sites.flatMap(S => S.weeks).find(w => w.who && w.who.type === "hire" && w.who.c.id === h.candidateId);
+        if(x){ const k = `${x.S.key}|${x.w.skill}`; only[k] = (only[k] || 0) + 1; }
+      });
+      hrUi.more = Object.keys(only).length ? {only, board: D} : null;
+      /* Placed people leave the page's ticks: they are staff now. */
+      hrLast.req.body.hires.forEach(h => { hrUi.force.delete(h.candidateId); hrUi.skip.delete(h.candidateId); });
+      hrHiredAdd((answer.hired || []).map(h => h && h.candidateId));
+    },
+  });
+  if(gwOpen) gwOpen.classList.add("hr-wide");
+}
+/* The people a replaced week gives fewer hours than the game has them on now,
+   by the site's plan (`fewer`), for the sites the dry run says it rewrites. */
+function hrFewer(m, rewritten){
+  const keys = new Set((rewritten || []).map(s => s && s.address && gwKeyOf(s.address)).filter(Boolean));
+  return m.sites.filter(S => keys.has(S.key)).flatMap(S => (S.plan.fewer || []).map(r => ({S, r})));
+}
+/* A site row in the review opens for its people. */
+let hrReviewBound = false;
+function bindHireReview(){
+  if(hrReviewBound) return;
+  hrReviewBound = true;
+  on("click", "dialog [data-hr-site]", b => {
+    if(!hrLast) return;
+    const key = b.dataset.hrSite, dlg = b.closest("dialog");
+    hrUi.reviewOpen = hrUi.reviewOpen === key ? null : key;
+    const phase = dlg.dataset.phase === "done" ? "done" : dlg.dataset.phase === "applying" ? "wait" : "ready";
+    const gone = new Set(((hrLast.answer || {}).skipped || []).filter(s => s && s.reason === "gone").map(s => s.candidateId));
+    const tmp = document.createElement("div");
+    tmp.innerHTML = hrReviewSites(hrLast.m, hrLast.req, phase, gone);
+    b.closest(".hr-dsites").replaceWith(tmp.firstElementChild);
+    const again = dlg.querySelector(`[data-hr-site="${CSS.escape(key)}"]`);
+    if(again) again.focus();
+    wireTips();
+  });
+  /* "Pick N more" after a partial result: once the board has read the game,
+     the review again for those places only. */
+  on("click", "[data-hr-more]", el => {
+    const more = hrUi.more;
+    if(!more || more.board === D) return;
+    hrUi.more = null;
+    hrReview({only: more.only});
+  });
+}
+/* The button waits for the board read after the apply. */
+function hrMoreReady(){
+  const more = hrUi.more;
+  if(!more || more.board === D || !gwOpen) return;
+  gwOpen.querySelectorAll("[data-hr-more]").forEach(b => { b.disabled = false; b.removeAttribute("title"); });
+}
+/* A roster's pick between its two plans changes what Staff proposes: it is
+   drawn again when it is next shown. */
+function hrStale(){
+  const row = PAGE_DRAWS.find(r => /drawStaff\(/.test(String(r[1])));
+  if(row && hasData()) pageStale.add(row);
+}
+/* ...and what Staffing › Schedules summarises for that shop. */
+function nxSchedStale(){
+  const row = PAGE_DRAWS.find(r => /drawSchedules\(/.test(String(r[1])));
+  if(row && hasData()) pageStale.add(row);
+}
+/* Staffing › Payroll (docs/ui-route-migration.md): the Payroll view main folded
+   into Company › Staff (issue #89) stays a view of its own in the redesign, beside
+   Staff needs, whose hiring page keeps its short copy (hrPayroll()).
+   Payroll is the headcount by role against the biggest role, and whatever needs
    doing as a chip beside the heading: nobody unhappy and nothing absent leaves
    one satisfaction chip. */
 function payrollWhy(){
@@ -23928,6 +28183,148 @@ function drawOptimizeStaffing(){
   card.dataset.site = row.key;
 }
 
+/* --- the redesign's adapters: counts, Standards, prices, Staffing ------------
+   The views the new routes open while the redesign brings their final
+   presentation (docs/ui-route-migration.md): each lists what the board already
+   knows and opens the existing evidence -- a business's page, a Supply tab --
+   with the right business or block in view. Nothing here computes a figure of
+   its own. */
+
+/* All tools: the count beside a task is how many findings on the list it
+   answers; with no factory the factory task says so rather than a count. */
+function drawTools(){
+  if(!$("toolPanels") || !hasData()) return;
+  const lines = alertLines().filter(a => !kindOff(a));
+  const count = kinds => lines.filter(a => kinds.includes(a.group)).length;
+  const set = (id, n, cls = "", words = "") => {
+    const el = q(`[data-ov-count="${id}"]`);
+    if(!el) return;
+    el.hidden = !n && !words;
+    el.className = `c${cls ? " " + cls : ""}`;
+    el.textContent = words || String(n);
+    if(words) el.removeAttribute("aria-label");
+    else el.setAttribute("aria-label", tt("today.task.count", {one: "{n} finding", other: "{n} findings"}, {n}));
+  };
+  set("deliveries", count(["unplanned", "outruns", "topup", "wholesale", "target", "dead", "notrouted"]));
+  const factories = ((D.supply || {}).factories || {}).sites || [];
+  if(!factories.length) set("production", 0, "q", tt("today.task.noFactory", "no factory yet"));
+  else set("production", lines.filter(a => ["feed", "unnamed", "unset"].includes(a.group) || (a.group === "staff" && ovAtFactory(a))).length);
+  set("demands", count(["jobdemand", "companydemand"]), "b");
+  set("standards", count(["satisfaction", "promotion", "uniform", "bathroom", "toiletprivacy", "sink", "music", "interior"]));
+  set("hire", 0);
+}
+/* Every finding of these kinds, above the line or under it, switched on or
+   off: the adapters list them all. */
+const nxFindings = kinds => [...alertLines(), ...(alertMinor().rows || [])].filter(a => kinds.includes(a.group));
+/* The businesses a set of findings is about, each once, in the list's order. */
+const nxSites = rows => [...new Map(rows.map(a => alertSite(a)).filter(Boolean).map(b => [b.key, b])).values()];
+
+/* Businesses › Standards: satisfaction, promotion, amenities and uniforms, the
+   subjects the portfolio's Operations comparison below answers for. */
+const STD_SUBJECTS = [
+  {id: "satisfaction", icon: "standards", kinds: ["satisfaction"], block: "#sp-standards", get label(){ return tt("co.std.satisfaction", "Satisfaction"); }},
+  {id: "promotion", icon: "magnet", kinds: ["promotion"], block: "#sp-pull", get label(){ return tt("co.std.promotion", "Promotion"); }},
+  {id: "amenities", icon: "toilet", kinds: ["bathroom", "toiletprivacy", "sink", "music", "interior"], block: "#sp-standards", get label(){ return tt("co.std.amenities", "Amenities"); }},
+  {id: "uniforms", icon: "shirt", kinds: ["uniform"], block: "#sp-standards", get label(){ return tt("co.std.uniforms", "Uniforms"); }},
+];
+function drawStandards(){
+  const host = $("secStandards");
+  if(!host || !hasData()) return;
+  host.innerHTML = `<div class="sechead"><h2>${tt("co.std.title", "Standards")}</h2><span class="quiet">${
+    tt("co.std.sub", "What customers find at each business. A subject opens the first business that needs it; the comparison below has them all.")}</span></div>`
+    + `<div class="nx-lead">${STD_SUBJECTS.map(sj => {
+      const rows = nxFindings(sj.kinds), sites = nxSites(rows);
+      const names = todayList(sites.slice(0, 3).map(b => spEsc(shortName(b))));
+      const more = sites.length > 3 ? tt("co.std.more", "{names} and {n} more", {names, n: sites.length - 3}) : names;
+      return `<button type="button" class="nx-card" data-std="${sj.id}"${sites.length ? ` data-site="${attr(sites[0].key)}"` : ""}><b>${spIcon(sj.icon)}${spEsc(sj.label)}</b>`
+        + `<span class="n ${rows.length ? "warn" : "ok"}">${num(rows.length)}</span><small>${rows.length
+          ? tt("co.std.at", {one: "{n} finding at {sites}", other: "{n} findings at {sites}"}, {n: rows.length, sites: more})
+          : tt("co.std.none", "Nothing flagged")}</small></button>`;
+    }).join("")}</div>`;
+}
+
+/* Businesses › Products & prices: a shop's own shelves and prices, and the
+   game's price guides beside the company's sales below. */
+function drawPriceShops(){
+  const host = $("secPrices");
+  if(!host || !hasData()) return;
+  const shops = D.businesses.filter(b => b.status === "retail");
+  const types = typeof ssOwnTypes === "function" && typeof wikiTypeHref === "function" ? ssOwnTypes() : [];
+  host.innerHTML = `<div class="sechead"><h2>${tt("co.prices.title", "Prices at a shop")}</h2><span class="quiet">${
+    tt("co.prices.sub", "A shop's shelves and the prices set on them. The guides set your prices beside the game's reference; the board has no pricing model.")}</span></div>`
+    + (shops.length ? `<div class="nx-lead">${shops.map(b => `<button type="button" class="nx-card" data-price-site="${attr(b.key)}"><b>${spIcon("tag")}${hoodHtml(b)}<span>${
+      spEsc(shortName(b))}</span></b><small>${spEsc(b.type || "")}</small></button>`).join("")}</div>`
+      : `<p class="quiet">${tt("co.prices.none", "No shop yet: prices are set on a shop's shelves.")}</p>`)
+    + (types.length ? `<p class="nx-part">${tt("co.prices.guides", "Price guides")}</p><div class="nx-lead">${types.map(t =>
+      `<button type="button" class="nx-card" data-price-guide="${attr(t.slug)}"><b>${spIcon("list")}<span>${spEsc(t.type)}</span></b><small>${
+        tt("co.prices.guide", "Prices in your save against the game's")}</small></button>`).join("")}</div>` : "");
+}
+
+/* Staffing › Schedules: every shop and office with the state of its plan, and
+   the schedule itself on its own page; the factories' staffing is planned with
+   their running hours, on Supply › Production. `schedLit` is the business a
+   task or the search asked for. */
+let schedLit = null;
+function schedPick(key){ schedLit = key || null; if(hasData()) drawSchedules(); }
+function drawSchedules(){
+  const host = $("secSchedules");
+  if(!host || !hasData()) return;
+  const plans = new Map((D.staffing || []).map(r => [r.key, r]));
+  const sites = D.businesses.filter(b => b.status === "retail" || b.status === "office");
+  const lit = schedLit || (typeof ssStaffingSite === "function" ? ssStaffingSite() : "");
+  const status = b => {
+    if(b.status === "office"){
+      /* The office default where it plans the office (spOfficeRoster()). */
+      const o = typeof gwOfficeRow === "function" ? gwOfficeRow(b.key) : null;
+      return o && (o.shifts || []).length && o.computers
+        ? tt("co.sched.office.plan", {one: "Office default: {s} of {n} computer staffed", other: "Office default: {s} of {n} computers staffed"},
+          {n: o.computers, s: o.staffedComputers || 0})
+        : tt("co.sched.office", "Office: its staff and computers are on its page");
+    }
+    const base = plans.get(b.key);
+    if(!base) return tt("co.sched.none", "No plan yet");
+    if(base.failed) return tt("co.sched.failed", "No plan: the planner could not read this shop");
+    /* The plan the shop's own Staffing shows, full cover where it was picked. */
+    const r = spShownRow(base);
+    if(!(r.shifts || []).length) return tt("co.sched.nothing", "Nothing to schedule yet");
+    const c = spRosterCounts(r), people = c.hire ? spPlanPosts(r) : 0;
+    return people ? tt("co.sched.plan.hire", {one: "{now} entries now, {week} in the plan, {n} person to hire", other: "{now} entries now, {week} in the plan, {n} people to hire"},
+        {now: c.now, week: c.staffed, n: people})
+      : tt("co.sched.plan", "{now} entries now, {week} in the plan", {now: c.now, week: c.staffed});
+  };
+  const factories = ((D.supply || {}).factories || {}).sites || [];
+  host.innerHTML = `<div class="sechead"><h2>${tt("co.sched.title.all", "Shop and office schedules")}</h2><span class="quiet">${
+    tt("co.sched.sub.all", "A week of hours for each shop from its own customers, and for each office from the office default. Open one to compare it with its schedule and copy it or write it through the game link.")}</span></div>`
+    + (sites.length ? `<div class="nx-list">${sites.map(b => `<div class="nx-row${b.key === lit ? " lit" : ""}"><span class="nm">${hoodHtml(b)}<span>${spEsc(shortName(b))}</span></span>`
+      + `<span class="st">${spEsc(status(b))}</span><span class="ac"><button type="button" class="nx-btn sm" data-sched-open="${attr(b.key)}">${
+        b.status === "office" ? tt("co.sched.openOffice", "Open staffing") : tt("co.sched.open", "Open schedule")}${icon("go")}</button></span></div>`).join("")}</div>`
+      : `<p class="quiet">${tt("co.sched.noSites", "No shop or office yet.")}</p>`)
+    + (factories.length ? `<p class="nx-part">${tt("co.sched.factories", "Factories")}</p><div class="nx-list"><div class="nx-row"><span class="nm">${spIcon("gear")}<span>${
+      tt("co.sched.factories.n", {one: "{n} factory", other: "{n} factories"}, {n: factories.length})}</span></span><span class="st">${
+      tt("co.sched.factories.st", "Factory staffing is planned with each line's running hours")}</span><span class="ac"><button type="button" class="nx-btn sm" data-prod-staff>${
+      tt("co.sched.factories.open", "Open Production")}${icon("go")}</button></span></div></div>` : "");
+}
+
+/* Staffing › Staff needs, its first part: the staff demands the findings
+   name, company-wide ones included, each opening the crew that shows it.
+   Hiring for every site follows it on the same view: main's Staff page
+   (drawStaff(), docs/staff-hire-plan.md), unchanged. */
+function drawNeeds(){
+  const host = $("secNeeds");
+  if(!host || !hasData()) return;
+  const demands = nxFindings(["jobdemand", "companydemand"]);
+  host.innerHTML = `<div class="sechead"><h2>${tt("co.needs.title", "Staff needs")}</h2><span class="quiet">${
+    tt("co.needs.sub.hire", "What your people ask for, then whom every site still needs and where to find them.")}</span>`
+    + `<div class="aside"><a class="link" href="#secStaff" data-need-hire>${tt("co.needs.toHire", "Hiring")}</a></div></div>`
+    + `<p class="nx-part" id="nxDemands">${tt("co.needs.demands", "Staff demands")}</p>`
+    + (demands.length ? `<div class="nx-list">${demands.map(a => {
+      const b = alertSite(a), {what} = splitFinding(a);
+      return `<div class="nx-row"><span class="nm">${b ? `${hoodHtml(b)}<span>${spEsc(shortName(b))}</span>` : `${spIcon("building")}<span>${
+        tt("co.needs.company", "Company-wide")}</span>`}</span><span class="st">${spEsc(what)}</span><span class="ac"><button type="button" class="nx-btn sm" data-need-open="${attr(a.id)}">${
+        tt("co.needs.crew", "Open crew")}${icon("go")}</button></span></div>`;
+    }).join("")}</div>` : `<p class="quiet">${tt("co.needs.demands.none", "No staff demands in this save.")}</p>`);
+}
+
 function drawFooter(){
   const m = D.meta;
   const f = $("footFile");  // the CLI's page only: the site names the save in its source strip
@@ -24183,21 +28580,25 @@ function renderCalm(lazy = true){
 }
 
 /* --- pages ------------------------------------------------------------ */
-/* One page at a time. Today is the daily check: four tiles and the list.
-   Everything else is a place you go on purpose — the company's own results and
-   reference tables, the supply round, growth planning, the city, and the game's
-   help. Which page and which view are remembered on this device and mirrored in
-   the hash. */
+/* One page at a time. The pages below are the hosts: the markup each place is
+   drawn into. What the reader sees and what the address bar says is a route
+   (ROUTES, further down): five destinations -- Overview, Businesses, Supply,
+   Staffing, Expansion -- each with its own views, and the City map and the
+   Game guide beside them. A route names the host page and view that shows it
+   today; the redesign's later chunks change what a route shows, never its id
+   (docs/ui-route-migration.md). Which page and which view are remembered on
+   this device and mirrored in the hash. */
 const PAGES = [
   /* Each label is read in the UI language every time it is asked for. */
-  {id:"today",   get label(){ return tt("nav.page.today", "Today"); },     host:"pageToday"},
-  {id:"company", get label(){ return tt("nav.page.company", "Company"); }, host:"pageCompany"},
-  {id:"supply",  get label(){ return tt("nav.page.supply", "Supply"); },   host:"pageSupply"},
-  {id:"growth",  get label(){ return tt("nav.page.growth", "Growth"); },   host:"pageGrowth"},
-  {id:"map", get label(){ return tt("nav.page.map", "Map"); }, host:"pageMap", newFeature:"map"},
-  /* A build without the wiki files carries no Wiki tab: an empty page is worse
-     than no page at all. */
-  ...(typeof showWikiRoute === "function" ? [{id:"wiki", get label(){ return tt("nav.page.wiki", "Wiki"); }, host:"pageWiki", newFeature:"wiki"}] : []),
+  {id:"today",   get label(){ return tt("nav.area.overview", "Overview"); },     host:"pageToday"},
+  {id:"company", get label(){ return tt("nav.area.businesses", "Businesses"); }, host:"pageCompany"},
+  {id:"supply",  get label(){ return tt("nav.area.supply", "Supply"); },   host:"pageSupply"},
+  {id:"staffing", get label(){ return tt("nav.area.staffing", "Staffing"); }, host:"pageStaffing"},
+  {id:"growth",  get label(){ return tt("nav.area.expansion", "Expansion"); },   host:"pageGrowth"},
+  {id:"map", get label(){ return tt("nav.ref.map", "City map"); }, host:"pageMap", newFeature:"map"},
+  /* A build without the wiki files carries no Game guide: an empty page is
+     worse than no page at all. */
+  ...(typeof showWikiRoute === "function" ? [{id:"wiki", get label(){ return tt("nav.ref.wiki", "Game guide"); }, host:"pageWiki", newFeature:"wiki"}] : []),
 ];
 /* A view of a page, [id, label, anchor], its label (index 1) read in the UI
    language every time. navSubLabel() is a view's label by its id. */
@@ -24213,18 +28614,19 @@ function navSubLabel(pageId, id){
 /* Hashes that named a page which has since become a view of another. Every link
    already saved, printed or shared keeps working, without a page behind it. */
 const PAGE_ALIASES = {results: ["company", "results"]};
-/* The board opens on the Wiki with no save at all, so everything the pages do
-   with numbers asks first. */
+/* The board opens on the Game guide with no save at all, so everything the
+   pages do with numbers asks first. */
 const hasData = () => typeof D !== "undefined" && !!D;
 const SUBS = {
   company: {host:"pageCompany", nav:"companyNav", key:"ba_dash_company", start:"results",
-            items:[navView("results", () => tt("nav.sub.results", "Results"), "secDaily"),
-                   navView("products", () => tt("nav.sub.products", "Products"), "secProducts"),
-                   navView("payroll", () => tt("nav.sub.payroll", "Payroll"), "secPayroll"),
-                   navView("milestones", () => tt("nav.sub.milestones", "Milestones"), "secGoals")]},
+            items:[navView("results", () => tt("nav.view.results", "Results"), "secDaily"),
+                   navView("products", () => tt("nav.view.prices", "Products & prices"), "secProducts"),
+                   navView("standards", () => tt("nav.view.standards", "Standards"), "secStandards"),
+                   navView("milestones", () => tt("nav.view.milestones", "Milestones"), "secGoals")]},
   /* Supply by object (R13): a tab each for shops, warehouses and factories,
      each with an icon and a badge of what is left to type there (sbBadge()),
-     and the diagram following the tab on screen (sbShown()). */
+     and the diagram following the tab on screen (sbShown()). The tabs are the
+     Supply views' scope now; the views themselves are routes. */
   supply: {host:"pageSupply", nav:"supplyNav", key:"ba_dash_supply", start:"shops",
            items:[navView("shops", () => tt("nav.sub.shops", "Shops"), "secShops"),
                   navView("warehouses", () => tt("nav.sub.warehouses", "Warehouses"), "secWarehouses"),
@@ -24232,10 +28634,13 @@ const SUBS = {
            lead: k => typeof sbTabIcon === "function" ? sbTabIcon(k) : "",
            badge: k => typeof sbBadge === "function" ? sbBadge(k) : "",
            shown: k => { if(typeof sbShown === "function") sbShown(k); }},
-  // changed for growth: Expand is gone; Growth is Demand and Plan a chain.
+  staffing: {host:"pageStaffing", nav:"staffingNav", key:"ba_dash_staffing", start:"schedules",
+             items:[navView("schedules", () => tt("nav.view.schedules", "Schedules"), "secSchedules"),
+                    navView("needs", () => tt("nav.view.needs", "Staff needs"), "secStaff"),
+                    navView("payroll", () => tt("nav.view.payroll", "Payroll"), "secPayroll")]},
   growth: {host:"pageGrowth", nav:"growthNav", key:"ba_dash_growth", start:"market",
-           items:[navView("market", () => tt("nav.sub.market", "Demand"), "secMarket"),
-                  navView("plan", () => tt("nav.sub.plan", "Plan a chain"), "secPlan")]},
+           items:[navView("market", () => tt("nav.view.demand", "Demand"), "secMarket"),
+                  navView("plan", () => tt("nav.view.factory", "Plan a factory"), "secPlan")]},
 };
 const PAGE_KEY = "ba_dash_page";
 const remembered = key => { try{ return localStorage.getItem(key); }catch(e){ return null; } };
@@ -24255,21 +28660,261 @@ Object.entries(SUBS).forEach(([id, sv]) => {
     supplyAuto = !saved || SUPPLY_WAS[saved] === null;
     saved = saved ? SUPPLY_WAS[saved] : null;
   }
+  /* Company's Payroll became Staff (issue #89), and both are Staffing's views
+     now: Payroll its own, Staff its Staff needs. A device that remembered
+     either keeps it, on Staffing (and as the route to open with no hash). */
+  if(id === "company" && (saved === "payroll" || saved === "staff")){
+    const view = saved === "payroll" ? "payroll" : "needs";
+    if(remembered("ba_dash_staffing") === null) remember("ba_dash_staffing", view);
+    if(remembered(PAGE_KEY) === "company" && remembered("ba_dash_route") === null) remember("ba_dash_route", `staffing/${view}`);
+    saved = null;
+  }
   sub[id] = sv.items.some(([k]) => k === saved) ? saved : sv.start;
 });
+
+/* --- the shell's routes ----------------------------------------------------
+   The canonical address of every place the reader can be, one table for the
+   masthead, the area's row of views, a finding's action, All tools, search and
+   the address bar. A route is "area/view" (or "overview", "map", "wiki"); its
+   `host` is the page and view that shows it while the redesign moves its
+   presentation there, and `scopes`, on Supply, are the tabs the route may be
+   read on. docs/ui-route-migration.md is this table in words, with the old
+   hashes that still land on each route. */
+const AREAS = [
+  {id:"overview", icon:"today", get label(){ return tt("nav.area.overview", "Overview"); }},
+  {id:"businesses", icon:"company", get label(){ return tt("nav.area.businesses", "Businesses"); },
+   views:["results", "prices", "standards", "milestones"], start:"results"},
+  {id:"supply", icon:"supply", get label(){ return tt("nav.area.supply", "Supply"); },
+   views:["changes", "imports", "deliveries", "production", "flow"], start:"changes"},
+  {id:"staffing", icon:"people", get label(){ return tt("nav.area.staffing", "Staffing"); },
+   views:["schedules", "needs", "payroll"], start:"schedules"},
+  {id:"expansion", icon:"growth", get label(){ return tt("nav.area.expansion", "Expansion"); },
+   views:["demand", "finder", "factory"], start:"demand"},
+];
+const REFS = [
+  {id:"map", icon:"map", newFeature:"map", get label(){ return tt("nav.ref.map", "City map"); }},
+  ...(typeof showWikiRoute === "function" ? [{id:"wiki", icon:"wiki", newFeature:"wiki", get label(){ return tt("nav.ref.wiki", "Game guide"); }}] : []),
+];
+const ROUTES = {
+  "overview": {host: ["today"]},
+  /* The portfolio is one table on two views: Standards shows its
+     Operations comparison, and Results gets back the view it had before. */
+  "businesses/results": {host: ["company", "results"], enter(){ if(typeof view !== "undefined" && routeStdWas !== null){
+    if(view === "ops") view = routeStdWas;
+    routeStdWas = null; sortKey = null; if(hasData()) drawPortfolio(); } }},
+  "businesses/prices": {host: ["company", "products"]},
+  /* The portfolio's Operations comparison is the Standards view's body. */
+  "businesses/standards": {host: ["company", "standards"], enter(){ if(typeof view !== "undefined" && view !== "ops"){
+    routeStdWas = view; view = "ops"; sortKey = null; if(hasData()) drawPortfolio(); } }},
+  "businesses/milestones": {host: ["company", "milestones"]},
+  /* The change checklist over every tab, on the tab with the most to type. */
+  "supply/changes": {host: ["supply"], scopes: null, enter(){ routeSupplyMode("list"); routeChecklistTab(); }, into: "#sbStrip"},
+  "supply/imports": {host: ["supply", "warehouses"], scopes: ["warehouses", "factories"], enter(){ routeSupplyMode("list"); }},
+  "supply/deliveries": {host: ["supply", "shops"], scopes: ["shops", "warehouses"], enter(){ routeSupplyMode("list"); }},
+  "supply/production": {host: ["supply", "factories"], scopes: ["factories"], enter(){ routeSupplyMode("list"); }},
+  /* The goods-flow diagram of the tab on screen. */
+  "supply/flow": {host: ["supply"], scopes: null, enter(){ routeSupplyMode("diagram"); }},
+  /* A task or the search may name the shop; the list lights it. */
+  "staffing/schedules": {host: ["staffing", "schedules"], after(o){ if(typeof schedPick === "function") schedPick(o.pick || null); }},
+  "staffing/needs": {host: ["staffing", "needs"]},
+  "staffing/payroll": {host: ["staffing", "payroll"]},
+  "expansion/demand": {host: ["growth", "market"]},
+  /* The finder is a mode of the City map's page (web/map.js). */
+  /* A task or a Demand cell asks a question (a preset); Back, Forward, a
+     reload or the area's own row come back to the finder as it was left. */
+  "expansion/finder": {host: ["map"], after(o){
+    if(typeof premises !== "function" || !premises()) return;
+    if(o.preset && typeof openFinder === "function") openFinder(o.preset, !!o.focus);
+    else if(typeof showFinder === "function") showFinder(o.historyMode || "push"); }},
+  "expansion/factory": {host: ["growth", "plan"]},
+  /* The map as the reader left it: with the finder on, that is Find a
+     location, and the address says so (routeFor()). */
+  "map": {host: ["map"], after(){ routeSync(); }},
+  "wiki": {host: ["wiki"]},
+};
+/* The route a host page and view shows when nothing more precise was asked
+   for: a finding, a search or the reader's own click on a scope tab. */
+const HOST_ROUTES = {today: "overview", map: "map", wiki: "wiki",
+  "company/results": "businesses/results", "company/products": "businesses/prices",
+  "company/standards": "businesses/standards", "company/milestones": "businesses/milestones",
+  "supply/shops": "supply/deliveries", "supply/warehouses": "supply/imports", "supply/factories": "supply/production",
+  "staffing/schedules": "staffing/schedules", "staffing/needs": "staffing/needs", "staffing/payroll": "staffing/payroll",
+  "growth/market": "expansion/demand", "growth/plan": "expansion/factory"};
+const ROUTE_KEY = "ba_dash_route";
+/* The portfolio's view before Standards switched it to Operations. */
+let routeStdWas = null;
+let route = "overview";
+/* A route asked for by the navigation about to happen (openRoute(), a finding,
+   a task), and the arrival it carries: why the reader is going there. Both are
+   taken by the next showPage() that writes the address. */
+let routeNext = null, arrivalNext = null;
+/* Why the reader is on the entry on screen ({what, pos, back, backLabel,
+   finding, depth, ov}); kept in the entry's state as nxArr. */
+let routeArrival = null;
+/* Set by the visit that carries an arrival: the strip takes the keyboard. */
+let nxFocusArrival = false;
+/* The view last shown in each area, this session: a click on an area comes
+   back to it; the first click of a visit opens the area's first view (Supply
+   opens Changes). */
+const areaLast = {};
+const routeArea = id => id === "overview" || id === "map" || id === "wiki" ? id : String(id).split("/")[0];
+/* The words of each view, for the area's row, a crumb and the arrival strip. */
+function routeViewLabel(id){
+  switch(id){
+    case "overview": return tt("nav.area.overview", "Overview");
+    case "businesses/results": return tt("nav.view.results", "Results");
+    case "businesses/prices": return tt("nav.view.prices", "Products & prices");
+    case "businesses/standards": return tt("nav.view.standards", "Standards");
+    case "businesses/milestones": return tt("nav.view.milestones", "Milestones");
+    case "supply/changes": return tt("nav.view.changes", "Changes");
+    case "supply/imports": return tt("nav.view.imports", "Imports");
+    case "supply/deliveries": return tt("nav.view.deliveries", "Deliveries");
+    case "supply/production": return tt("nav.view.production", "Production");
+    case "supply/flow": return tt("nav.view.flow", "Goods flow");
+    case "staffing/schedules": return tt("nav.view.schedules", "Schedules");
+    case "staffing/needs": return tt("nav.view.needs", "Staff needs");
+    case "staffing/payroll": return tt("nav.view.payroll", "Payroll");
+    case "expansion/demand": return tt("nav.view.demand", "Demand");
+    case "expansion/finder": return tt("nav.view.finder", "Find a location");
+    case "expansion/factory": return tt("nav.view.factory", "Plan a factory");
+    case "map": return tt("nav.ref.map", "City map");
+    case "wiki": return tt("nav.ref.wiki", "Game guide");
+    default: return id;
+  }
+}
+/* "Supply › Imports": where a route is, in the words on screen. */
+function routePath(id){
+  const a = AREAS.find(x => x.id === routeArea(id));
+  return a && a.views ? tt("nav.path", "{area} › {view}", {area: a.label, view: routeViewLabel(id)}) : routeViewLabel(id);
+}
+/* The route a click on an area opens: the view it was last left on this
+   session, else its first view. */
+function areaEntry(id){
+  if(ROUTES[id]) return id;
+  const a = AREAS.find(x => x.id === id);
+  return a ? `${id}/${areaLast[id] || a.start}` : null;
+}
+/* A route, an area, or one of the words an old link used for one. Anything
+   else (a page's own name, a section, a wiki page) is resolved elsewhere. */
+/* Old page names that are routes now: Payroll and Staff (main's Company
+   views, issue #89) are Staffing's, the Wiki is the Game guide. */
+const ROUTE_ALIASES = {today: "overview", payroll: "staffing/payroll", staff: "staffing/needs", guide: "wiki"};
+/* Where an old word lands inside its route: #staff was main's Staff page, the
+   hiring block on Staff needs (after the staff demands). */
+const ROUTE_ALIAS_INTO = {staff: "#secStaff"};
+function routeResolve(h){
+  if(typeof h !== "string" || !h) return null;
+  if(ROUTES[h]) return h;
+  if(AREAS.some(a => a.id === h)) return areaEntry(h);
+  return ROUTE_ALIASES[h] || null;
+}
+/* Can `id` stand for what host page `p` shows now? On Supply a task view is
+   read on the tabs it names; the diagram is Goods flow's alone. */
+const routeDiagram = () => typeof sbViewMode === "function" && sbViewMode() === "diagram";
+function routeAccepts(id, p){
+  const r = ROUTES[id];
+  if(!r || r.host[0] !== p) return false;
+  if(p === "supply"){
+    if(id === "supply/flow") return routeDiagram();
+    if(routeDiagram()) return false;
+    return !r.scopes || r.scopes.includes(sub.supply);
+  }
+  return !r.host[1] || r.host[1] === sub[p];
+}
+/* The City map's page is two places: the plain map, and Expansion › Find a
+   location when the finder is switched on. The switch decides which is on
+   screen (it lasts the session, and a new load starts with the plain map). */
+const routeFinderOn = () => typeof cityMapPage !== "undefined" && !!cityMapPage && !!cityMapPage.fs
+  && !!cityMapPage.fs.on && typeof premises === "function" && !!premises();
+function routeFor(p){
+  if(p === "map" && typeof cityMapPage !== "undefined" && cityMapPage) return routeFinderOn() ? "expansion/finder" : "map";
+  if(routeAccepts(route, p)) return route;
+  if(p === "supply" && routeDiagram()) return "supply/flow";
+  return HOST_ROUTES[SUBS[p] ? `${p}/${sub[p]}` : p] || HOST_ROUTES[p] || "overview";
+}
+/* What a history entry says about the shell: the route a site's page was
+   opened under, and why the reader arrived. */
+function routeState(){ try{ return history.state || {}; }catch(e){ return {}; } }
+function routeStateArrival(){
+  const a = routeState().nxArr;
+  return a && typeof a === "object" && typeof a.what === "string" ? a : null;
+}
+/* The history entry's state for a write: the site's crumb (siteHistoryState()),
+   the route a site's page stands under when it is not Businesses, and the
+   arrival -- a new entry's own, a replaced entry's as it was. */
+function routeHistoryState(replace, arrival){
+  const state = siteHistoryState(replace) || {};
+  if(siteOpen && page === "company" && route !== "businesses/results") state.nxRoute = route;
+  else delete state.nxRoute;
+  if(!replace){ delete state.nxArr; delete state.nxOv; if(arrival) state.nxArr = arrival; }
+  return Object.keys(state).length ? state : null;
+}
+/* Supply's list or diagram, as a route asks: the tab on screen is drawn again
+   in the other mode. */
+function routeSupplyMode(mode){
+  if(typeof sbViewMode !== "function" || sbViewMode() === mode) return;
+  sbViewOn = mode; remember(SB_VIEW_KEY, mode);
+  if(hasData() && D.supply){ sbPaintTools(); drawSupplyTab(sub.supply); sbPlaceFlow(); if(typeof wireAll === "function") wireAll(); }
+}
+/* Changes opens on the tab with the most still to type, as Plan imports did. */
+function routeChecklistTab(){
+  if(!hasData() || !D.supply || typeof sbData !== "function") return;
+  const d = sbData();
+  const left = t => d.byTab[t].filter(r => !d.marks.has(r.key)).length;
+  const tab = Object.keys(SB_SEC).reduce((a, t) => left(t) > left(a) ? t : a, sub.supply || "shops");
+  if(tab !== sub.supply) showSub("supply", tab);
+}
+/* Open a route: its host view, then its page. `o.historyMode` as showPage();
+   `o.arrival` is why the reader is going (the strip at the top of the page);
+   `o.restore` gives the Overview back as it was left; `o.into` a block to
+   land on. */
+function openRoute(id, o = {}){
+  const target = routeResolve(id);
+  const r = target && ROUTES[target];
+  if(!r) return false;
+  if(!hasData() && target !== "wiki") return false;
+  const mode = o.historyMode || "push";
+  siteShut();
+  /* Asked for first, so a view the route changes on the page on screen does
+     not settle a route of its own (routeSync()). */
+  routeNext = target;
+  if(r.enter) r.enter(o);
+  const [p, sv] = r.host;
+  if(sv) showSub(p, sv);
+  if(p === "today" && mode === "push" && !o.restore && typeof ovForget === "function") ovForget();
+  routeNext = target;
+  arrivalNext = o.arrival || null;
+  showPage(p, o.scroll !== false && !o.into && !r.into, mode);
+  routeNext = null; arrivalNext = null;
+  if(r.after) r.after(o);
+  const into = o.into || (mode === "push" ? r.into : null);
+  if(into && typeof settleScroll === "function" && typeof q === "function") settleScroll(q(into));
+  if(p === "today" && typeof ovArrive === "function") ovArrive(o.restore || (mode !== "push" ? routeState().nxOv : null));
+  /* A fresh visit ranked the list again: the order it shows is kept from now
+     on, so the next refresh appends and announces rather than re-ranks. */
+  if(p === "today" && typeof ovOrder !== "undefined" && !ovOrder && hasData()) drawAlerts();
+  return true;
+}
+/* An area's view with the arrival carried along, when the reader moves on
+   inside the area they arrived in. */
+function routeCarry(id){
+  const a = routeArrival;
+  return a && routeArea(id) === routeArea(route) && routeArea(route) !== "overview" ? {...a, depth: (a.depth || 1) + 1} : null;
+}
 
 /* What each draw function fills, in the order renderAll() draws them: the
    page or view ("page/view") its markup is on, space-separated when it is on
    two, or "" for one a live refresh always draws. Read from what each writes
    into and what other code reads back, not from the names:
-   - drawSupplyStrip() is Today's too: the change checklist paints the Plan
-     imports card there, and it counts every Supply tab's changes, so it is
-     drawn on each of them. The tabs read the same rows (sbData()).
+   - drawSupplyStrip() is the Overview's too: the change checklist paints the
+     Calculate import amounts task there, and it counts every Supply tab's
+     changes, so it is drawn on each of them. The tabs read the same rows
+     (sbData()).
    - drawSite() is drawn every time: it hides the site panel when no site is
      open (cheap), draws the open one where it is (on Company > Results, the
      view on screen whenever a site is open), and resets the factory view the
      site kinds are read from (spViewCache).
-   - drawOptimizeStaffing() names on its card the site the search and Ask
+   - drawOptimizeStaffing() names on its task row the site the search and Ask
      the board open, from any page; drawFindLocation() is a line of text.
    Everything outside the pages -- the masthead, the footer, the difficulty
    chips, the city maps (the location-map dialog opens from any page), the
@@ -24277,15 +28922,19 @@ Object.entries(SUBS).forEach(([id, sv]) => {
    calls its function by name when it runs, so a test that swaps one out is
    heard. */
 const PAGE_DRAWS = [
-  ["today", () => drawKpis()], ["today", () => drawAlerts()],
-  ["company/results", () => drawChart()], ["company/results", () => drawPortfolio()],
+  ["today", () => drawKpis()], ["today", () => drawAlerts()], ["today", () => drawTools()],
+  ["company/results", () => drawChart()], ["company/results company/standards", () => drawPortfolio()],
+  ["company/standards", () => drawStandards()],
   ["company/results", () => drawSitePicker()], ["", () => drawSite()],
   ["today supply/shops supply/warehouses supply/factories", () => drawSupplyStrip()],
   ["supply/shops", () => drawShopsTab()], ["supply/warehouses", () => drawWarehousesTab()], ["supply/factories", () => drawFactoriesTab()],
   ["supply/shops supply/warehouses supply/factories", () => drawFlow()],
   ["growth/market", () => drawMovers()], ["growth/market", () => drawMarket()], ["growth/plan", () => drawPlan()],  // changed for growth: no drawExpansion()
-  ["company/products", () => drawProducts()], ["company/payroll", () => drawPayroll()],
+  ["company/products", () => drawPriceShops()], ["company/products", () => drawProducts()],
+  ["staffing/schedules", () => drawSchedules()], ["staffing/needs", () => drawNeeds()], ["staffing/needs", () => drawStaff()],
+  ["staffing/payroll", () => drawPayroll()],
   ["company/milestones", () => drawGoals()], ["", () => drawFindLocation()], ["", () => drawOptimizeStaffing()],
+  ["", () => drawShellCounts()],
 ];
 /* The rows a live refresh left out: drawn for older numbers than D. */
 const pageStale = new Set();
@@ -24311,7 +28960,7 @@ function paintStale(){
     : drew ? tt("nav.stale.draw", "A page could not be drawn with the latest numbers and shows older ones: {why}", {why: drew}) : "";
   window.BigCopilotCommunity?.paintOnline();
 }
-/* The page, with its view where it has views: "today", "company/payroll". */
+/* The page, with its view where it has views: "today", "staffing/payroll". */
 const viewOf = id => SUBS[id] ? `${id}/${sub[id]}` : id;
 /* Draw what a live refresh left out of date on the page's view about to show,
    before it shows (showPage(), showSub()). It is drawn while still hidden, as
@@ -24340,13 +28989,15 @@ function drawStale(pageId){
 }
 
 /* A page's row of views, the one on screen lit; a view may carry an icon
-   before its label and a badge after it. */
+   before its label and a badge after it. Supply's row is its scope; the other
+   pages' rows are kept for their hash links, under the area's own row. */
 function paintSubNav(pageId){
   const sv = SUBS[pageId];
   if(!sv) return;
   $(sv.nav).innerHTML = sv.items.map(([k, label, anchor=k]) =>
     `<a href="#${anchor}" data-id="${k}" class="${k === sub[pageId] ? "on" : ""}">${sv.lead ? `${sv.lead(k)}<span>${label}</span>` : label}${
       sv.badge ? sv.badge(k) : ""}</a>`).join("");
+  if(pageId === "supply" && page === "supply") paintLocal();
 }
 function showSub(pageId, id){
   const sv = SUBS[pageId];
@@ -24355,7 +29006,7 @@ function showSub(pageId, id){
   if(pageId === "company" && id !== "results") siteShut();
   sub[pageId] = id;
   drawStale(pageId);
-  document.querySelectorAll(`#${sv.host} [data-sub]`).forEach(el => { el.hidden = el.dataset.sub !== id; });
+  document.querySelectorAll(`#${sv.host} [data-sub]`).forEach(el => { el.hidden = !String(el.dataset.sub || "").split(" ").includes(id); });
   /* The site panel is only on screen while a site is open, so it owns its own
      visibility and the sweep above is corrected by the panel itself. */
   if(pageId === "company" && hasData()) drawSite();
@@ -24366,22 +29017,57 @@ function showSub(pageId, id){
      inside Results has to be drawn again once its container is on screen. Same
      rule as in showPage. */
   if(page === pageId && id === "results" && !siteOpen && hasData()) drawChart();
+  /* A scope picked on the page on screen (a Supply tab): the route follows,
+     in place, as the view did before routes. */
+  if(page === pageId && !siteOpen && routeNext === null) routeSync();
   wireReveal();
+}
+/* The route for the page on screen after its view changed in place; the entry
+   is replaced, never added, and keeps its state. */
+function routeSync(){
+  const next = routeFor(page);
+  if(next === route) return;
+  route = next;
+  if(AREAS.some(a => a.id === routeArea(route) && a.views)) areaLast[routeArea(route)] = route.split("/")[1];
+  remember(ROUTE_KEY, route);
+  try{ if(location.hash !== "#" + route && !SITE_HASH.test(location.hash.slice(1))) history.replaceState(routeHistoryState(true), "", "#" + route); }catch(e){}
+  paintShell();
 }
 /* Another page takes an open site's page down. Company itself does not: the
    site's page is on it, and the ways onto Company that mean the portfolio (the
    nav, a hash, a section) take the site down themselves. */
 function showPage(id, scroll = true, historyMode = "push"){
+  /* Leaving the Overview by any way (the nav, a task, a finding, a name):
+     its entry keeps the list as it stands -- filters, "Show N more", open
+     Details, the place -- so Back finds it so. A finding or a task has just
+     done so with the row or the directory as its place (ovRemember()). */
+  if(page === "today" && id !== "today" && historyMode === "push" && hasData() && typeof ovRemember === "function"){
+    if(ovLeft) ovLeft = false; else ovRemember(null);
+  }
   /* An old page hash opens the view that replaced it. */
   if(PAGE_ALIASES[id]){ showSub(...PAGE_ALIASES[id]); id = PAGE_ALIASES[id][0]; }
   if(!PAGES.some(p => p.id === id)) id = "today";
   const from = page;
   if(id !== "company") siteShut();
   page = id;
+  /* The route: the one asked for, where this page can show it; a site's page
+     stands under whichever area opened it (the entry's state on Back, Forward
+     or a reload), Businesses otherwise; anything else is the page's own. */
+  const next = routeNext;
+  routeNext = null;
+  const sameSite = id === "company" && siteOpen && from === "company" && location.hash === siteHref(siteKey);
+  route = id === "company" && siteOpen
+    ? next || (historyMode !== "push" ? routeState().nxRoute || "businesses/results"
+      /* The page on screen shown again (landing on one of its blocks) keeps
+         the route it stands under. */
+      : sameSite && ROUTES[route] ? route : "businesses/results")
+    : next && routeAccepts(next, id) ? next : routeFor(id);
+  if(!ROUTES[route]) route = routeFor(id);
+  if(AREAS.some(a => a.id === routeArea(route) && a.views)) areaLast[routeArea(route)] = route.split("/")[1];
   drawStale(id);
   PAGES.forEach(p => { $(p.host).hidden = p.id !== id; });
-  document.querySelectorAll("#nav a[data-id]").forEach(a => a.classList.toggle("on", a.dataset.id === id));
   remember(PAGE_KEY, id);
+  if(!(id === "company" && siteOpen)) remember(ROUTE_KEY, route);
   /* Clicks add a visit; boot normalises the current entry. History replay
      only renders, so Back/Forward never changes the stack it is traversing. A
      hash that already resolves to this page is left alone while normalising, so
@@ -24389,15 +29075,34 @@ function showPage(id, scroll = true, historyMode = "push"){
      address, which is only kept while that site is the one on screen. An open
      site writes its own address, and the page it was reached from rides along
      in the entry's state, so the crumb can name it again after Back, Forward
-     or a reload. */
+     or a reload. So does the arrival: a new entry carries its own, a replayed
+     or normalised one shows what its state says. */
+  const arrival = arrivalNext;
+  arrivalNext = null;
   try{
     const now = location.hash.slice(1);
-    const hash = id === "company" && siteOpen && siteHref(siteKey) || "#" + id;
-    const keep = historyMode === "replace" && !siteOpen && !SITE_HASH.test(now) && pageFromHash(now) === id;
-    if(historyMode !== "none" && !keep && location.hash !== hash)
-      history[historyMode === "replace" ? "replaceState" : "pushState"](
-        siteHistoryState(historyMode === "replace"), "", hash);
+    const hash = id === "company" && siteOpen && siteHref(siteKey) || "#" + route;
+    const keep = historyMode === "replace" && !siteOpen && !SITE_HASH.test(now) && pageFromHash(now) === id
+      && !(routeResolve(now) && routeResolve(now) !== route);
+    if(historyMode === "push" && location.hash !== hash){
+      history.pushState(routeHistoryState(false, arrival), "", hash);
+      routeArrival = arrival;
+      nxFocusArrival = !!arrival;
+    } else if(historyMode === "replace" && !keep && location.hash !== hash){
+      history.replaceState(routeHistoryState(true), "", hash);
+      routeArrival = routeStateArrival();
+    } else if(historyMode !== "push"){
+      routeArrival = routeStateArrival();
+    }
   }catch(e){}
+  paintShell();
+  /* Sent somewhere by a finding or a task: the keyboard goes with the reader,
+     to the strip that says why they are here (its way back is the next Tab). */
+  if(nxFocusArrival){
+    nxFocusArrival = false;
+    const strip = $("arrive");
+    if(strip && !strip.hidden && typeof strip.focus === "function") strip.focus({preventScroll: true});
+  }
   /* The chart is drawn again when its page shows, since it may have been
      drawn into a hidden container. */
   if(id === "company" && sub.company === "results" && !siteOpen && hasData()) drawChart();
@@ -24409,52 +29114,158 @@ function showPage(id, scroll = true, historyMode = "push"){
   wireReveal();
   requestAnimationFrame(inkHome);
 }
-$("nav").innerHTML = PAGES.map(p =>
-  `<a href="#${p.id}" data-id="${p.id}">${icon(p.id)}<span>${p.label}</span>${p.newFeature ? `<span class="feature-new" data-new-feature="${p.newFeature}" hidden>${tt("nav.new", "New")}</span>` : ''}</a>`).join("") + '<i class="ink"></i>';
+/* The masthead: the five places, then the two references and the utilities.
+   A place's link is its area; the Overview's carries the critical count. */
+const NX_ICON = {
+  back: '<path d="M15 6l-6 6 6 6"></path>',
+  chevd: '<path d="M6 9l6 6 6-6"></path>',
+};
+const nxIcon = name => NX_ICON[name] ? `<svg class="nx-i" viewBox="0 0 24 24" aria-hidden="true">${NX_ICON[name]}</svg>` : icon(name);
+function navHtml(){
+  return AREAS.map(a => `<a href="#${a.id}" data-id="${a.id}">${icon(a.icon)}<span>${a.label}</span>${
+    a.id === "overview" ? `<span class="nx-n" data-nav-crit hidden></span>` : ""}</a>`).join("") + '<i class="ink"></i>';
+}
+/* The City map and the Game guide after the sphere's shelf, then the menu. */
+function refsHtml(){
+  return REFS.map(r => `<a href="#${r.id}" data-id="${r.id}">${icon(r.icon)}<span>${r.label}</span>${
+    r.newFeature ? `<span class="feature-new" data-new-feature="${r.newFeature}" hidden>${tt("nav.new", "New")}</span>` : ""}</a>`).join("")
+    + `<button type="button" class="nx-more" id="navMore" aria-haspopup="true" aria-expanded="false" aria-label="${
+      attr(tt("nav.more.label", "More: search, preferences, help and what's new"))}">${icon("more")}</button>`;
+}
+/* The phone's bar: the five places and Map & more, which opens the references
+   and the utilities. */
+function phoneNavHtml(){
+  return AREAS.map(a => `<a href="#${a.id}" data-id="${a.id}">${icon(a.icon)}<span>${a.label}</span>${
+    a.id === "overview" ? `<span class="nx-n" data-nav-crit hidden></span>` : ""}</a>`).join("")
+    + `<button type="button" id="phoneMore" aria-haspopup="true" aria-expanded="false">${icon("map")}<span>${tt("nav.more.phone", "Map & more")}</span></button>`;
+}
+$("nav").innerHTML = navHtml();
+if($("navRefs")) $("navRefs").innerHTML = refsHtml();
+if($("phoneNav")) $("phoneNav").innerHTML = phoneNavHtml();
 featureDiscovery.refresh();
-/* Which pages a reader can be on. Without a save only the Wiki has anything to
-   show, so the rest say so rather than opening blank. */
+/* The area's own row of views, the one on screen lit, and the place's lit
+   link in the masthead and the phone's bar. */
+function paintShell(){
+  const r = ROUTES[route] ? route : "overview";
+  const area = routeArea(r);
+  document.querySelectorAll("#nav a[data-id], #navRefs a[data-id], #phoneNav a[data-id]").forEach(a => {
+    const on = a.dataset.id === area;
+    a.classList.toggle("on", on);
+    if(on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  });
+  paintLocal();
+  paintArrival();
+}
+function paintLocal(){
+  const host = $("localNav");
+  if(!host) return;
+  const r = ROUTES[route] ? route : "overview";
+  const a = AREAS.find(x => x.id === routeArea(r));
+  if(!a || !a.views || !hasData()){ host.hidden = true; host.innerHTML = ""; return; }
+  host.hidden = false;
+  host.setAttribute("aria-label", tt("nav.local.label", "{area} views", {area: a.label}));
+  host.innerHTML = `<span class="lab" aria-hidden="true">${spEsc(a.label)}</span>` + a.views.map(v => {
+    const id = `${a.id}/${v}`, n = routeCount(id);
+    return `<a href="#${id}" data-route="${id}"${id === r ? ` class="on" aria-current="page"` : ""}>${spEsc(routeViewLabel(id))}${
+      n ? `<small aria-label="${attr(tt("nav.local.count", {one: "{n} to do", other: "{n} to do"}, {n}))}">${n}</small>` : ""}</a>`;
+  }).join("");
+}
+/* The count beside a view in the area's row: what is still to do there. */
+function routeCount(id){
+  if(!hasData()) return 0;
+  if(id === "supply/changes") return typeof sbLeft !== "undefined" && sbLeft ? Object.values(sbLeft).reduce((s, n) => s + n, 0) : 0;
+  if(id === "staffing/needs" && typeof alertLines === "function")
+    return alertLines().filter(a => (a.group === "jobdemand" || a.group === "companydemand") && !(typeof kindOff === "function" && kindOff(a))).length;
+  return 0;
+}
+/* Why the reader is here and the way back: a finding's place and kind, or
+   the task they picked. */
+function paintArrival(){
+  const el = $("arrive");
+  if(!el) return;
+  const a = routeArrival;
+  if(!a || !hasData()){ el.hidden = true; el.innerHTML = ""; if(document.body && document.body.classList) document.body.classList.remove("nx-arrived"); return; }
+  el.hidden = false;
+  if(document.body && document.body.classList) document.body.classList.add("nx-arrived");
+  el.innerHTML = `<button type="button" class="nx-back" data-nx="back">${nxIcon("back")}<span>${spEsc(a.backLabel || tt("nav.from.overview", "Needs attention"))}</span></button>`
+    + `<span>${tt("nav.arrive.from", "You came from {what}", {what: `<b>${spEsc(a.what)}</b>`})}${a.pos ? ` · ${spEsc(a.pos)}` : ""}</span>`;
+}
+/* The way back: Back itself when the entry before is the one the reader came
+   from, so the Overview comes back as it was; otherwise a new visit to it,
+   given the state it was left in. */
+function arrivalReturn(){
+  const a = routeArrival;
+  if(!a) return;
+  let direct = false;
+  try{ direct = (a.depth || 1) === 1 && !!(history.state && history.state.nxArr); }catch(e){}
+  if(direct){ history.back(); return; }
+  openRoute(a.back || "overview", {restore: a.ov || null});
+}
+if($("arrive")) $("arrive").addEventListener("click", e => {
+  if(e.target.closest && e.target.closest("[data-nx=back]")) arrivalReturn();
+});
+/* Which places a reader can be on. Without a save only the Game guide has
+   anything to show, so the rest say so rather than opening blank. */
 function paintNav(){
   const open = hasData();
-  document.querySelectorAll("#nav a[data-id]").forEach(a => {
+  document.querySelectorAll("#nav a[data-id], #navRefs a[data-id], #phoneNav a[data-id]").forEach(a => {
     const off = !open && a.dataset.id !== "wiki";
     a.classList.toggle("off", off);
     a.setAttribute("aria-disabled", String(off));
     if(off) a.dataset.tip = tt("nav.off.tip", "Open a save to see this page");
     else delete a.dataset.tip;
   });
+  paintLocal();
 }
 /* The chrome written once at load, written again in the UI language when it
-   changes (web/i18n.js): the page tabs, their views, the tabs' tips and the
+   changes (web/i18n.js): the places, their views, the tabs' tips and the
    New badges the script wrote, the landing footer's game build, and the
    masthead clock's tip before a save is open. A board with a save redraws the
    masthead and the footer itself (renderAll()). */
 function navRelabel(){
-  document.querySelectorAll("#nav a[data-id]").forEach(a => {
-    const p = PAGES.find(x => x.id === a.dataset.id);
-    const words = p && a.querySelector("span:not(.feature-new)");
-    if(words) words.textContent = p.label;
-  });
-  document.querySelectorAll("#nav .feature-new, #ssField .feature-new, #ssFieldBtn .feature-new")
+  $("nav").innerHTML = navHtml();
+  if($("navRefs")) $("navRefs").innerHTML = refsHtml();
+  if($("phoneNav")) $("phoneNav").innerHTML = phoneNavHtml();
+  document.querySelectorAll("#nav .feature-new, #navRefs .feature-new, #ssField .feature-new, #ssFieldBtn .feature-new")
     .forEach(b => { b.textContent = tt("nav.new", "New"); });
+  featureDiscovery.refresh();
   Object.keys(SUBS).forEach(paintSubNav);
   paintNav();
+  paintShell();
   document.querySelectorAll("[data-foot-build]").forEach(el => {
     el.textContent = tt("foot.build", "Game build {n}", {n: el.dataset.footBuild});
   });
   if(!hasData() && $("clock")) $("clock").dataset.tip = tt("nav.clock.tip0", "Game time when the save was written. Day 1 was a Monday.");
   if(typeof ssChrome === "function") ssChrome();
+  if(typeof ovCritBadge === "function") ovCritBadge();
   if(typeof inkHome === "function") requestAnimationFrame(inkHome);
 }
 if(typeof ttOnChange === "function") ttOnChange(navRelabel);
-$("nav").addEventListener("click", e => {
+/* A place in the masthead or the phone's bar: its area, on the view it was
+   last left on this visit (Supply opens Changes the first time). */
+function navClick(e){
+  if(e.target.closest && e.target.closest("#navMore, #phoneMore")){
+    if(typeof nxMenuToggle === "function") nxMenuToggle(e.target.closest("#navMore, #phoneMore"));
+    return;
+  }
   const a = e.target.closest("a[data-id]");
   if(!a || e.button > 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
   if(!hasData() && a.dataset.id !== "wiki") return;
-  /* Company from the nav is the portfolio, even from a site's own page. */
+  /* Businesses from the nav is the portfolio, even from a site's own page. */
   siteShut();
-  showPage(a.dataset.id);
+  openRoute(a.dataset.id);
+}
+$("nav").addEventListener("click", navClick);
+if($("navRefs")) $("navRefs").addEventListener("click", navClick);
+if($("phoneNav")) $("phoneNav").addEventListener("click", navClick);
+/* The area's row: a view, with the arrival carried while the reader stays in
+   the area they were sent to. */
+if($("localNav")) $("localNav").addEventListener("click", e => {
+  const a = e.target.closest && e.target.closest("a[data-route]");
+  if(!a || e.button > 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  openRoute(a.dataset.route, {arrival: routeCarry(a.dataset.route)});
 });
 Object.entries(SUBS).forEach(([id, sv]) => $(sv.nav).addEventListener("click", e => {
   const a = e.target.closest("a[data-id]");
@@ -24462,11 +29273,13 @@ Object.entries(SUBS).forEach(([id, sv]) => $(sv.nav).addEventListener("click", e
   e.preventDefault();
   showSub(id, a.dataset.id);
 }));
-/* What a hash opens: a page, an old page name that has become a view, one of
-   the wiki's own routes (#wiki/<page>), a site's own page (#site/<slug>),
-   which lives on Company, or a section, which knows its page and view.
-   Anything else is not ours. */
+/* What a hash opens: a route (#supply/imports) or an area (#supply), a page,
+   an old page name that has become a view, one of the wiki's own routes
+   (#wiki/<page>), a site's own page (#site/<slug>), which lives on Company, or
+   a section, which knows its page and view. Anything else is not ours. */
 function pageFromHash(h){
+  const r = routeResolve(h);
+  if(r) return ROUTES[r].host[0];
   if(PAGES.some(p => p.id === h)) return h;
   if(PAGE_ALIASES[h]) return PAGE_ALIASES[h][0];
   if(/^wiki(\/|$)/.test(h)) return "wiki";
@@ -24480,6 +29293,8 @@ function pageFromHash(h){
    last used on screen. */
 function openHash(h, historyMode = "none"){
   if(PAGE_ALIASES[h]){ siteShut(); showPage(h, false, historyMode); return true; }
+  const r = routeResolve(h);
+  if(r && (hasData() || r === "wiki")){ openRoute(r, {historyMode, scroll: false, into: ROUTE_ALIAS_INTO[h]}); return true; }
   const id = pageFromHash(h);
   if(!id) return false;
   if(openSiteHash(h, historyMode)) return true;
@@ -24571,10 +29386,9 @@ function siteBySlug(slug){
    crumb that leads back: the view's own word where the page has views
    ("Checks"), else the page's ("Today"), and the address that was on screen. */
 function siteCameFrom(){
-  const p = PAGES.find(x => x.id === page);
-  if(!p) return null;
-  const v = SUBS[page] && SUBS[page].items.find(([k]) => k === sub[page]);
-  return {label: v ? v[1] : p.label, hash: location.hash || "#" + page};
+  if(!PAGES.some(x => x.id === page)) return null;
+  return {label: route === "overview" ? tt("nav.from.overview", "Needs attention") : routeViewLabel(route),
+    hash: location.hash || "#" + route};
 }
 /* The state a history entry carries: a new entry starts empty, a replaced one
    keeps what others stored on it, and either carries the crumb's way back
@@ -25204,34 +30018,61 @@ function wireSphere(){
      DOM until the board has been shown, and that one is about to be removed. */
   const first = $("orb"), dotEl = $("dot"), navEl = $("nav");
   if(!first || !dotEl || !navEl) return;
-  if(!first.isConnected || !navEl.getBoundingClientRect().width || !first.offsetParent){ setTimeout(wireSphere, 200); return; }
+  /* A narrow masthead hides the sphere (its shelf is the desktop's gap between
+     the places and the references): it is wired once the window is wide
+     enough to show it. */
+  if(!first.isConnected || !navEl.getBoundingClientRect().width || !first.offsetParent){
+    if(first.isConnected && navEl.isConnected && getComputedStyle(first).display === "none"){
+      window.addEventListener("resize", () => wireSphere(), {once: true});
+      return;
+    }
+    setTimeout(wireSphere, 200); return;
+  }
   sphereWired = true;
   inkHome();  // the underline was homed while the board was hidden, so its width is 0
   const parent = first.offsetParent || first.parentElement;
-  const GAP = 12, MAX = 3, SIZES = [100, 72, 54];
+  const GAP = 12, MAX = 3, SIZES = [64, 48, 38], SIZES_TWO = [40, 32, 26];
   let p0, base;
+  /* One row: the shelf follows the places, the balls resting on the rule under
+     the masthead. Two rows (a tablet, a long name): the places are the lower
+     row, so the shelf follows the brand and the balls rest on the rule
+     between the rows. */
   const measure = () => {
     p0 = parent.getBoundingClientRect();
-    const n = navEl.getBoundingClientRect();
-    base = { x: n.right - p0.left + 40, mid: null };
+    const n = navEl.getBoundingClientRect(), br = ($("brand") || navEl).getBoundingClientRect();
+    const two = n.top >= br.bottom - 1;
+    base = { x: (two ? br.right : n.right) - p0.left + 16, floor: two ? n.top - p0.top : p0.height, two, mid: null };
   };
   measure();
   const d0 = dotEl.getBoundingClientRect();
   const balls = [];
   const restX = k => base.x + balls.slice(0, k).reduce((a, b) => a + b.size + GAP, 0);
-  const topOf = size => p0.height - size;
+  const topOf = size => base.floor - size;
+  const sizeOf = k => Math.round((base.two ? SIZES_TWO : SIZES)[Math.min(k, SIZES.length - 1)] * (base.f || 1));
   /* The shelf runs to the masthead's right edge. Balls may roll behind the
      clock, which keeps itself readable over them; past the edge they would
      widen the page. */
   /* ...but never under the search field: it sits between the nav and the
      clock, so the shelf ends a gap short of it wherever it shares their row. */
   const wall = () => {
+    /* The references come after the shelf: the balls stop short of them. */
+    const refs = $("navRefs");
+    if(refs && refs.getClientRects().length){
+      const r = refs.getBoundingClientRect(), m = parent.getBoundingClientRect();
+      if(!(r.top >= m.bottom || r.bottom <= m.top)) return r.left - m.left - GAP;
+    }
     const f = typeof ssMastControl === "function" ? ssMastControl() : null;
     if(!f) return p0.width;
     const r = f.getBoundingClientRect(), m = parent.getBoundingClientRect();
     return r.top >= m.bottom || r.bottom <= m.top ? p0.width : r.left - m.left - GAP;
   };
   const room = () => wall() - base.x;
+  /* A shelf a little short of the first ball (a 1440 px desktop, whose places
+     and references leave 80 px) takes smaller balls, down to three-fifths;
+     shorter still, the balls step off it (fitShelf()). After measure(). */
+  const scaleShelf = () => { const full = (base.two ? SIZES_TWO : SIZES)[0], r = room();
+    base.f = r >= full ? 1 : r >= full * .6 ? r / full : 1; };
+  scaleShelf();
   const maxRun = () => {
     /* Include pointer/animation movement. During an entrance the newest
        ball is still on the left, so measure the actual rightmost one. */
@@ -25249,7 +30090,7 @@ function wireSphere(){
     i.style.left = (r.left + window.scrollX) + 'px'; i.style.top = (r.top + window.scrollY) + 'px'; i.style.width = r.width + 'px'; i.style.height = r.height + 'px';
     document.body.appendChild(i); setTimeout(() => i.remove(), 900); };
   const makeBall = (el, k) => {
-    const size = SIZES[Math.min(k, SIZES.length - 1)], rest = restX(k), top = topOf(size);
+    const size = sizeOf(k), rest = restX(k), top = topOf(size);
     el.style.width = el.style.height = size + 'px'; el.style.left = rest + 'px'; el.style.top = top + 'px';
     const sx = d0.left - p0.left + d0.width / 2 - (rest + size / 2), sy = d0.top - p0.top + d0.height / 2 - (top + size / 2), s0 = d0.width / size;
     const b = { el, core: q('i', el), seam: q('u', el), size, rest, sx, sy, s0, px: sx, py: sy, sc: s0, tx: 0, ty: 0, busy: true };
@@ -25268,7 +30109,7 @@ function wireSphere(){
   const spawn = () => {
     if (balls.some(b => b.busy)) return;
     measure();
-    const nextSize = SIZES[Math.min(balls.length, SIZES.length - 1)];
+    const nextSize = sizeOf(balls.length);
     const needed = balls.reduce((n, b) => n + b.size + GAP, 0) + nextSize;
     if(balls.length >= MAX || needed > room()){
       if(balls.length > 1) eat();
@@ -25296,6 +30137,7 @@ function wireSphere(){
     requestAnimationFrame(step);
   };
   balls.push(makeBall(first, 0)); enter(balls[0], 400);
+  requestAnimationFrame(() => fitShelf());
   /* Something on the page (the ball on the map) may swallow every ball on the
      shelf: they fly to the given viewport point one after another and vanish. */
   window.__consumeBalls = (tx, ty, onEach) => {
@@ -25355,8 +30197,16 @@ function wireSphere(){
     else wake();
   });
   /* The shelf moves when the window or the fonts do. */
-  const relayout = () => { measure(); balls.forEach((b, k) => { b.rest = restX(k); b.el.style.left = b.rest + 'px'; paint(b); }); wake(); };
+  /* A ball the shelf has no room for steps off it (and out of the pointer's
+     way) until there is room again. */
+  const fitShelf = () => balls.forEach(b => b.el.classList.toggle("nx-off", b.rest + b.size > wall() + 1));
+  /* Measured again whenever the masthead fits itself (nxFitMast()): one row
+     or two, the balls take that row's sizes and the shelf's room. */
+  const relayout = () => { measure(); scaleShelf(); balls.forEach((b, k) => { b.size = sizeOf(k); b.el.style.width = b.el.style.height = b.size + 'px';
+    b.rest = restX(k); b.el.style.left = b.rest + 'px'; b.el.style.top = topOf(b.size) + 'px'; paint(b); });
+    fitShelf(); wake(); };
   window.addEventListener('resize', relayout);
+  if($("mast")) $("mast").addEventListener('nxfit', relayout);
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(relayout);
 }
 
@@ -25474,9 +30324,13 @@ function ssFinder(preset){
   if(typeof premises === "function" && premises()) openFinder(preset);
   else showPage("map");
 }
-/* A hash the board already routes (#wiki/...): the hash listener opens it. */
+/* A hash the board already routes (#wiki/...): the hash listener opens it.
+   Another answer picked on the strip replaces the answer's own entry
+   (ssRepick), so the question stays one visit and the strip's Back one step. */
+let ssRepick = false;
 function ssHash(h){
   if(location.hash === h) openHash(h.slice(1), "none");
+  else if(ssRepick) location.replace(h);
   else location.hash = h;
 }
 /* The company's own shop types, the best-selling first: each has its own
@@ -25534,7 +30388,7 @@ function ssRing(el){
    the company-wide Staff list (R14) exist. */
 const SS_QUESTIONS = [
   {id: "profit", get q(){ return tt("nav.ask.profit.q", "Why did profit move?"); },
-   lands: () => tt("nav.ask.profit.lands", "Company › Results · the portfolio sorted by week on week"), page: "company",
+   lands: () => tt("nav.ask.profit.lands", "Businesses › Results · the portfolio sorted by week on week"), page: "company",
    go(){
      view = "pnl";
      const i = VIEWS.pnl.cols.findIndex(c => c[4] === "wow");
@@ -25544,72 +30398,39 @@ const SS_QUESTIONS = [
    },
    lit: "#secPortfolio", holds: () => view === "pnl"},
   {id: "open", get q(){ return tt("nav.ask.open.q", "Where should I open next?"); },
-   lands: () => tt("nav.ask.open.lands", "Map › Find a location · ranked by demand"), page: "map",
+   lands: () => tt("nav.ask.open.lands", "Expansion › Find a location · ranked by demand"), page: "map",
    go: () => ssFinder({cat: "retail", type: "", hoods: null}), lit: "#cityMapPage .places", dim: false, wait: true,
    holds: () => !!(cityMapPage && cityMapPage.finderOn())},
   {id: "fed", get q(){ return tt("nav.ask.fed.q", "Is my factory fed?"); },
-   lands: () => tt("nav.ask.fed.lands", "Supply › Factories · lines and factory inputs"), page: "supply",
-   go: () => ssSupply("factories"), lit: "#secFactories", holds: () => sub.supply === "factories"},
-  {id: "hire", get q(){ return tt("nav.ask.hire.q", "Whom should I hire?"); }, page: "company",
-   lands: () => { const b = D.businesses.find(x => x.key === ssStaffingSite());
-     return b ? tt("nav.ask.hire.lands.site", "Staffing on {site} · hiring lines", {site: b.name})
-       : tt("nav.ask.hire.lands.none", "Company › Results · the sites"); },
-   go: () => ssOpenSite(ssStaffingSite(), "#sp-roster"),
-   lit: () => siteOpen && ssStaffingSite() && siteKey === ssStaffingSite() ? $("sp-roster") : $("secPortfolio"),
-   holds: a => a.site === (siteOpen ? siteKey : null)},
+   lands: () => tt("nav.ask.fed.lands", "Supply › Production · lines and factory inputs"), page: "supply",
+   go: () => openRoute("supply/production"), lit: "#secFactories", holds: () => sub.supply === "factories"},
+  /* Hiring's home is Staffing › Staff needs (main's Staff page, issue #89):
+     the open places by role, the candidates and Quick hire, for every site. */
+  {id: "hire", get q(){ return tt("nav.ask.hire.q", "Whom should I hire?"); }, page: "staffing",
+   lands: () => tt("nav.ask.hire.lands.needs", "Staffing › Staff needs · open places and candidates"),
+   go: () => openRoute("staffing/needs", {into: "#secStaff"}), lit: "#secStaff",
+   holds: () => page === "staffing" && sub.staffing === "needs" && !siteOpen},
   {id: "prices", get q(){ return tt("nav.ask.prices.q", "Are my prices right?"); }, page: "wiki",
    lands: () => { const t = ssPricesType();
-     return t ? tt("nav.ask.prices.lands.type", "Wiki › {type} › Prices in your save", {type: t.type}) : tt("nav.ask.prices.lands.none", "Wiki"); },
+     return t ? tt("nav.ask.prices.lands.type", "Game guide › {type} › Prices in your save", {type: t.type}) : tt("nav.ask.prices.lands.none", "Game guide"); },
    go: () => ssPrices(), lit: "#wk-prices", wait: true, holds: a => location.hash === a.hash,
    /* A company with several kinds of shop picks which one's prices to read. */
    choices(){ const own = ssOwnTypes(), t = ssPricesType();
      return own.length > 1 ? own.map(x => ({id: x.slug, label: x.type, on: !!t && x.slug === t.slug})) : null; },
    choose(slug){ ssPricesPick = slug; }},
   {id: "import", get q(){ return tt("nav.ask.import.q", "What should I import this week?"); },
-   lands: () => tt("nav.ask.import.lands", "Supply › Change checklist"), page: "supply",
-   go: ssChecklist, lit: "#sbStrip", holds: () => page === "supply"},
+   lands: () => tt("nav.ask.import.lands", "Supply › Changes"), page: "supply",
+   go: () => openRoute("supply/changes"), lit: "#sbStrip", holds: () => page === "supply"},
   {id: "playing", get q(){ return tt("nav.ask.playing.q", "What am I playing on?"); },
    lands: () => tt("nav.ask.playing.lands", "Difficulty · every setting against Normal"), page: "",
    go: ssDifficulty, lit: () => fvShownChip(), dim: false, holds: () => ssDiffOpen()},
 ];
 const ssLands = qn => typeof qn.lands === "function" ? qn.lands() : qn.lands;
 
-/* The row under Next moves, and the button it folds into once used. Mounted
-   from here rather than written into the template, so the cards above it are
-   left as they are. */
-function ssAskMount(){
-  const sec = $("secMoves");
-  if(!sec || $("ssAsk")) return;
-  const row = document.createElement("nav");
-  row.className = "ss-ask"; row.id = "ssAsk"; row.setAttribute("aria-label", tt("nav.ask.label", "Ask the board"));
-  row.innerHTML = `<span class="ss-asklead"><i></i>${tt("nav.ask.label", "Ask the board")}</span>${SS_QUESTIONS.map(x =>
-    `<a class="ss-aq" href="#" data-ask="${x.id}">${ssEsc(x.q)}</a>`).join("")}<span class="ss-roll" aria-hidden="true"></span>`;
-  sec.appendChild(row);
-  const head = q(".sechead", sec);
-  if(head){
-    const aside = document.createElement("div");
-    aside.className = "aside"; aside.id = "ssAskMini";
-    aside.innerHTML = `<button type="button" class="ss-askmini" aria-label="${attr(tt("nav.ask.mini.label", "Ask the board (press /)"))}" aria-keyshortcuts="/"><i></i>${
-      tt("nav.ask.label", "Ask the board")}<span class="ss-kbd" aria-hidden="true">/</span></button>`;
-    head.appendChild(aside);
-    q("button", aside).addEventListener("click", () => ssOpen());
-  }
-  row.addEventListener("click", e => {
-    const a = e.target.closest("[data-ask]");
-    if(!a) return;
-    e.preventDefault();
-    ssAsk(a.dataset.ask);
-  });
-  /* The dot rolls to the question under the pointer. */
-  const ball = q(".ss-roll", row);
-  row.addEventListener("mouseover", e => {
-    const a = e.target.closest(".ss-aq");
-    if(!a || !ball) return;
-    const r = a.getBoundingClientRect(), s = row.getBoundingClientRect();
-    ball.style.transform = `translate(${(r.left - s.left + r.width / 2 - 4).toFixed(1)}px,${(r.top - s.top - 16).toFixed(1)}px) rotate(${Math.round(r.left)}deg)`;
-  });
-  ssAskPaint();
-}
+/* Ask the board used to be a row under Next moves as well, folded into a
+   button once used. The Overview's All tools replaced both (the redesign's
+   task directory, docs/ui-structure-proposal.md, E15); the questions remain
+   the palette's empty state. */
 function ssAskUsed(){
   let used = false;
   try{ used = localStorage.getItem(SS_ASK_KEY) === "1"; }catch(e){}
@@ -25624,18 +30445,22 @@ function ssAskPaint(){
 /* The landing on screen ({qn, strip, lit, litId, host, hash, site}), and the
    landing still on its way, with the address its question opened. */
 let ssAsked = null, ssTicket = 0, ssPending = null;
-function ssAsk(id, from = page){
+/* Where a question was asked: the address, and the site whose page it was
+   asked on. Its strip names that site and goes Back to it (ssLand()); asked
+   again for another answer, it keeps the same way back. */
+function ssAsk(id, from = page, origin = null){
   const qn = SS_QUESTIONS.find(x => x.id === id);
   if(!qn || !hasData()) return;
   try{ localStorage.setItem(SS_ASK_KEY, "1"); }catch(e){}
   ssAskPaint();
   ssClearAsked();
   const ticket = ++ssTicket;
+  const asked = origin || {hash: location.hash, site: siteOpen && page === "company" ? siteKey : null};
   qn.go();
   ssPending = {ticket, hash: location.hash};
-  ssLand(qn, from, ticket);
+  ssLand(qn, from, ticket, 0, asked);
 }
-function ssLand(qn, from, ticket, tries = 0){
+function ssLand(qn, from, ticket, tries = 0, origin = null){
   /* A later question, a search that went elsewhere, or the reader's own
      navigation takes over from a landing still on its way. */
   if(ticket !== ssTicket || !ssPending || ssPending.ticket !== ticket){
@@ -25652,7 +30477,7 @@ function ssLand(qn, from, ticket, tries = 0){
   const el = found && host.contains(found) && found.getClientRects().length ? found : null;
   /* The wiki opens its page once the address has changed, and draws its guide
      once its file is in; the map draws its finder once its file is: wait. */
-  if(!el && qn.wait && tries < 40){ setTimeout(() => ssLand(qn, from, ticket, tries + 1), 100); return; }
+  if(!el && qn.wait && tries < 40){ setTimeout(() => ssLand(qn, from, ticket, tries + 1, origin), 100); return; }
   ssPending = null;
   /* No answer on screen, nothing to point at. */
   if(!el) return;
@@ -25671,7 +30496,9 @@ function ssLand(qn, from, ticket, tries = 0){
      (the site was open already) the portfolio. */
   const onSite = siteOpen && page === "company";
   const viaSite = onSite && siteFrom ? siteFrom : null;
-  const backLabel = viaSite ? viaSite.label : onSite ? tt("nav.ask.portfolio", "Portfolio") : back.label;
+  /* Asked on a site's page and answered elsewhere: the way back is that page. */
+  const askedOn = !onSite && origin && origin.site ? D.businesses.find(b => b.key === origin.site) : null;
+  const backLabel = viaSite ? viaSite.label : onSite ? tt("nav.ask.portfolio", "Portfolio") : askedOn ? shortName(askedOn) : back.label;
   const choices = qn.choices ? qn.choices() : null;
   const pickLabel = tt("nav.ask.pick", "Answer for");
   strip.innerHTML = `<span class="ic" aria-hidden="true">?</span><span><small>${tt("nav.ask.asked", "YOU ASKED")}</small><br><b>${ssEsc(qn.q)}</b></span>`
@@ -25686,7 +30513,12 @@ function ssLand(qn, from, ticket, tries = 0){
     if(!b) return;
     if(b.dataset.ss === "another"){ ssOpen(); return; }
     /* Another of the question's answers: asked again, with the same way back. */
-    if(b.dataset.ss === "pick"){ e.preventDefault(); qn.choose(b.dataset.pick); ssAsk(qn.id, from); return; }
+    if(b.dataset.ss === "pick"){
+      e.preventDefault(); qn.choose(b.dataset.pick);
+      ssRepick = true;
+      try{ ssAsk(qn.id, from, origin); } finally { ssRepick = false; }
+      return;
+    }
     ssClearAsked();
     /* The crumb's own rule: Back while the entry carries the way back, else
        its address, else the portfolio. */
@@ -25696,6 +30528,10 @@ function ssLand(qn, from, ticket, tries = 0){
       return;
     }
     if(onSite && siteOpen){ closeSite(); return; }
+    /* An answer that went somewhere new goes Back there, the browser's Back,
+       so a site's page, a view's scope and the list's place come back as
+       they were; an answer on the page it was asked from has no visit to undo. */
+    if(origin && origin.hash !== undefined && location.hash !== origin.hash){ history.back(); return; }
     showPage(back.id);
   });
   ssAsked = {qn, strip, lit: el, litId: el.id || "", host, hash: location.hash, site: siteOpen ? siteKey : null};
@@ -25803,122 +30639,127 @@ const ssWorst = rows => rows.map(r => SS_SEV[r.level] || "opp")
    thing (its own id, line and go) in place of the view's single one. */
 const SS_VIEWS = [
   {id: "alerts", get t(){ return tt("nav.search.alerts.title", "Needs attention"); },
-   get p(){ return tt("nav.search.alerts.line", "Today"); }, ic: "today", syn: ["problems", "alerts", "warnings", "findings", "to do"],
+   get p(){ return tt("nav.search.alerts.line", "Overview"); }, ic: "today", syn: ["problems", "alerts", "warnings", "findings", "to do", "today"],
    /* What the list reads out, for the sizing on screen: above the gate, and of a kind still on. */
-   live: () => ({tag: tt("nav.search.today", "{n} today", {n: alertLines().filter(a => !kindOff(a)).length})}), go: () => reveal("alertSection")},
-  {id: "moves", get t(){ return tt("nav.search.moves.title", "Next moves"); },
-   get p(){ return tt("nav.search.moves.line", "Today"); }, ic: "today", syn: ["tools", "what next"],
-   go(){ showPage("today", false); settleScroll($("secMoves")); }},
+   live: () => ({tag: tt("nav.search.today", "{n} today", {n: alertLines().filter(a => !kindOff(a)).length})}), go: () => openRoute("overview")},
+  {id: "moves", get t(){ return tt("nav.search.moves.title", "All tools"); },
+   get p(){ return tt("nav.search.moves.line", "Overview"); }, ic: "today", syn: ["tools", "what next", "next moves", "tasks"],
+   go(){ openRoute("overview", {scroll: false}); ovJumpTools(); }},
   {id: "cash", get t(){ return tt("nav.search.cash.title", "Cash on hand"); },
-   get p(){ return tt("nav.search.cash.line", "Today"); }, ic: "coin", syn: ["debt", "loans", "money", "owe", "bank", "cash"],
+   get p(){ return tt("nav.search.cash.line", "Overview"); }, ic: "coin", syn: ["debt", "loans", "money", "owe", "bank", "cash"],
    live(){ const debt = (D.loans || []).reduce((s, l) => s + (l.remaining || 0), 0);
-     return debt ? {p: tt("nav.search.cash.owed", "Today · {w} owed on loans", {w: compact(debt)})} : {}; },
-   go(){ showPage("today"); ssRing(q('#kpis [data-kpi="cash"]')); }},
+     return debt ? {p: tt("nav.search.cash.owed", "Overview · {w} owed on loans", {w: compact(debt)})} : {}; },
+   go(){ openRoute("overview"); ssRing(q('#kpis [data-kpi="cash"]')); }},
   {id: "daily", get t(){ return tt("nav.search.daily.title", "Daily result"); },
-   get p(){ return tt("nav.search.daily.line", "Company › Results"); }, ic: "profit", syn: ["profit", "revenue", "chart", "income", "why did profit move"],
+   get p(){ return tt("nav.search.daily.line", "Businesses › Results"); }, ic: "profit", syn: ["profit", "revenue", "chart", "income", "why did profit move"],
    go: () => reveal("secDaily")},
   {id: "portfolio", get t(){ return tt("nav.search.portfolio.title", "Portfolio"); },
-   get p(){ return tt("nav.search.portfolio.line", "Company › Results · profit and loss by chain"); }, ic: "company",
+   get p(){ return tt("nav.search.portfolio.line", "Businesses › Results · profit and loss by chain"); }, ic: "company",
    syn: ["sites", "chains", "margin", "break even", "payback", "losing money"],
    /* The board has no break-even figure yet, and says so rather than land the
       player on a table that looks as if it should hold one. */
-   synP: {get "break even"(){ return tt("nav.search.portfolio.breakeven", "no break-even figure yet · Company › Results · profit and loss by chain"); },
-          get "payback"(){ return tt("nav.search.portfolio.payback", "no payback figure yet · Company › Results · profit and loss by chain"); }},
+   synP: {get "break even"(){ return tt("nav.search.portfolio.breakeven", "no break-even figure yet · Businesses › Results · profit and loss by chain"); },
+          get "payback"(){ return tt("nav.search.portfolio.payback", "no payback figure yet · Businesses › Results · profit and loss by chain"); }},
    go(){ view = "pnl"; sortKey = null; drawPortfolio(); reveal("secPortfolio"); }},
-  {id: "ops", get t(){ return tt("nav.search.ops.title", "Portfolio · Operations"); },
-   get p(){ return tt("nav.search.ops.line", "Company › Results · satisfaction, promotion, traffic"); }, ic: "company",
-   syn: ["satisfaction", "promotion", "foot traffic", "marketing", "security", "standards", "pull"],
-   go(){ view = "ops"; sortKey = null; drawPortfolio(); reveal("secPortfolio"); }},
+  {id: "ops", get t(){ return tt("nav.search.ops.title", "Standards"); },
+   get p(){ return tt("nav.search.ops.line", "Businesses › Standards · satisfaction, promotion, amenities, uniforms"); }, ic: "company",
+   syn: ["satisfaction", "promotion", "foot traffic", "marketing", "security", "standards", "pull", "operations", "amenities", "uniforms"],
+   go(){ openRoute("businesses/standards"); }},
   /* Weekly rhythm is By weekday in the Daily result chart now (R15). */
   {id: "rhythm", get t(){ return tt("nav.search.rhythm.title", "By weekday"); },
-   get p(){ return tt("nav.search.rhythm.line", "Company › Results · Daily result"); }, ic: "week",
+   get p(){ return tt("nav.search.rhythm.line", "Businesses › Results · Daily result"); }, ic: "week",
    syn: ["weekly rhythm", "weekday", "busiest day", "peak day", "rhythm"],
    go(){ if(weekdaySeries().length) chartWindow = "wd"; reveal("secDaily"); }},
-  {id: "products", get t(){ return tt("nav.search.products.title", "Products"); },
-   get p(){ return tt("nav.search.products.line", "Company › Products"); }, ic: "shelves", syn: ["sales", "units", "total sales", "best sellers", "what sells"],
-   live: () => ({p: tt("nav.search.products.sold", "Company › Products · {n} sold", {n: (D.products || []).length})}), go: () => reveal("secProducts")},
+  {id: "products", get t(){ return tt("nav.search.products.title", "Products & prices"); },
+   get p(){ return tt("nav.search.products.line", "Businesses › Products & prices"); }, ic: "shelves", syn: ["sales", "units", "total sales", "best sellers", "what sells", "products", "shop prices"],
+   live: () => ({p: tt("nav.search.products.sold", "Businesses › Products & prices · {n} sold", {n: (D.products || []).length})}), go: () => openRoute("businesses/prices")},
   {id: "payroll", get t(){ return tt("nav.search.payroll.title", "Payroll"); },
-   get p(){ return tt("nav.search.payroll.line", "Company › Payroll"); }, ic: "people", syn: ["wages", "salary", "salaries", "employees", "headcount", "staff"],
-   live: () => D.staff && D.staff.total ? {p: tt("nav.search.payroll.people", {one: "Company › Payroll · {s} person", other: "Company › Payroll · {s} people"},
+   get p(){ return tt("nav.search.payroll.line", "Staffing › Payroll"); }, ic: "people", syn: ["wages", "salary", "salaries", "employees", "headcount", "staff"],
+   live: () => D.staff && D.staff.total ? {p: tt("nav.search.payroll.people", {one: "Staffing › Payroll · {s} person", other: "Staffing › Payroll · {s} people"},
      {n: D.staff.total, s: ssNum(D.staff.total)})} : {}, go: () => reveal("secPayroll")},
+  {id: "staff", get t(){ return tt("nav.search.staff.title", "Hiring"); },
+   get p(){ return tt("nav.search.staff.line", "Staffing › Staff needs · open places, candidates, Quick hire"); }, ic: "people",
+   syn: ["hire", "hiring", "candidates", "headhunter", "quick hire", "open places", "staff", "staff needs"],
+   live: () => D.hiring ? {p: tt("nav.search.staff.open", "Staffing › Staff needs · open places, candidates, Quick hire")} : {},
+   go: () => openRoute("staffing/needs", {into: "#secStaff"})},
   {id: "milestones", get t(){ return tt("nav.search.milestones.title", "Milestones"); },
-   get p(){ return tt("nav.search.milestones.line", "Company › Milestones · career totals"); }, ic: "flag",
+   get p(){ return tt("nav.search.milestones.line", "Businesses › Milestones · career totals"); }, ic: "flag",
    syn: ["goals", "diplomas", "rivals", "career", "buildings owned", "tax paid"], go: () => reveal("secGoals")},
   /* The game's settings are the difficulty chip and its popover (R15). */
   {id: "difficulty", get t(){ return tt("nav.search.difficulty.title", "Difficulty"); },
    get p(){ return tt("nav.search.difficulty.line", "every setting against Normal"); }, ic: "tune",
    syn: ["settings", "game settings", "house rules", "custom", "tax rate", "what am i playing on"],
    live: () => D.meta && D.meta.difficulty ? {p: tt("nav.search.difficulty.named", "{name} · every setting against Normal", {name: fvDiffName(D.meta.difficulty)})} : {}, go: ssDifficulty},
-  {id: "checklist", get t(){ return tt("nav.search.checklist.title", "Change checklist"); },
-   get p(){ return tt("nav.search.checklist.line", "Supply · every tab"); }, ic: "calendar", syn: ["orders", "what to type", "import plan", "checklist"],
+  {id: "checklist", get t(){ return tt("nav.search.checklist.title", "Changes"); },
+   get p(){ return tt("nav.search.checklist.line", "Supply › Changes · every change to type"); }, ic: "calendar", syn: ["orders", "what to type", "import plan", "checklist", "change checklist"],
    live(){ const d = sbData(), n = d.rows.filter(r => !d.marks.has(r.key)).length;
-     return d.rows.length ? {p: n ? tt("nav.search.checklist.left", {one: "Supply · {n} change to type", other: "Supply · {n} changes to type"}, {n})
-       : tt("nav.search.checklist.done", "Supply · all ticked")} : {}; },
-   go: ssChecklist},
-  {id: "imports", get t(){ return tt("nav.search.imports.title", "Weekly imports"); },
-   get p(){ return tt("nav.search.imports.line", "Supply › Warehouses"); }, ic: "truck", syn: ["import", "importer", "contracts", "weekly order", "what should i import", "orders"],
-   go: () => ssSupply("warehouses")},
+     return d.rows.length ? {p: n ? tt("nav.search.checklist.left", {one: "Supply › Changes · {n} change to type", other: "Supply › Changes · {n} changes to type"}, {n})
+       : tt("nav.search.checklist.done", "Supply › Changes · all ticked")} : {}; },
+   go: () => openRoute("supply/changes")},
+  {id: "imports", get t(){ return tt("nav.search.imports.title", "Imports"); },
+   get p(){ return tt("nav.search.imports.line", "Supply › Imports · weekly contracts"); }, ic: "truck", syn: ["import", "importer", "contracts", "weekly order", "what should i import", "orders", "weekly imports", "import amounts"],
+   go: () => openRoute("supply/imports")},
   /* Top-ups are on every tab (a shelf's, a depot's, a factory input's): the
      tab with the most still to type, else Shops. */
-  {id: "topups", get t(){ return tt("nav.search.topups.title", "Daily top-ups"); },
-   get p(){ return tt("nav.search.topups.line", "Supply › Shops, Warehouses and Factories"); }, ic: "route", syn: ["top-up", "distribution", "logistics", "delivery plan"],
-   go: () => ssSupply(ssTopupTab())},
+  {id: "topups", get t(){ return tt("nav.search.topups.title", "Deliveries"); },
+   get p(){ return tt("nav.search.topups.line", "Supply › Deliveries · daily top-ups and wholesale"); }, ic: "route", syn: ["top-up", "distribution", "logistics", "delivery plan", "daily top-ups", "delivery targets"],
+   go(){ const tab = ssTopupTab(); openRoute(tab === "factories" ? "supply/production" : "supply/deliveries"); if(sub.supply !== tab) showSub("supply", tab); }},
   {id: "shops", get t(){ return tt("nav.search.shops.title", "Shops"); },
-   get p(){ return tt("nav.search.shops.line", "Supply › Shops · every shelf against tomorrow's round"); }, ic: "shelves", syn: ["shelves", "run out", "stock out", "empty shelf", "before the drop"],
+   get p(){ return tt("nav.search.shops.line", "Supply › Deliveries · every shelf against tomorrow's round"); }, ic: "shelves", syn: ["shelves", "run out", "stock out", "empty shelf", "before the drop"],
    go: () => ssSupply("shops")},
   {id: "warehouses", get t(){ return tt("nav.search.warehouses.title", "Warehouses"); },
-   get p(){ return tt("nav.search.warehouses.line", "Supply › Warehouses · every depot"); }, ic: "crate", syn: ["warehouse", "depot", "cover", "second-tier", "before the import"],
+   get p(){ return tt("nav.search.warehouses.line", "Supply › Imports · every depot"); }, ic: "crate", syn: ["warehouse", "depot", "cover", "second-tier", "before the import"],
    go: () => ssSupply("warehouses")},
   {id: "idle", get t(){ return tt("nav.search.idle.title", "Idle stock"); },
    get p(){ return tt("nav.search.idle.line", "Supply · grouped on each tab"); }, ic: "crate", syn: ["dead stock", "not moving", "overstock", "too much stock"],
    go: () => ssSupply(ssIdleTab())},
   {id: "lines", get t(){ return tt("nav.search.lines.title", "Factory lines"); },
-   get p(){ return tt("nav.search.lines.line", "Supply › Factories · machines and the hours they run"); }, ic: "gear", syn: ["machines", "recipes", "24/7", "staffed hours", "run hours"],
+   get p(){ return tt("nav.search.lines.line", "Supply › Production · machines and the hours they run"); }, ic: "gear", syn: ["machines", "recipes", "24/7", "staffed hours", "run hours"],
    go: () => ssSupply("factories")},
   {id: "feed", get t(){ return tt("nav.search.feed.title", "Factory inputs"); },
-   get p(){ return tt("nav.search.feed.line", "Supply › Factories"); }, ic: "pipe", syn: ["inputs", "ingredients", "fed", "factory inputs", "is my factory fed", "feed the factories"],
+   get p(){ return tt("nav.search.feed.line", "Supply › Production"); }, ic: "pipe", syn: ["inputs", "ingredients", "fed", "factory inputs", "is my factory fed", "feed the factories"],
    live(){ const short = alertLines().filter(a => a.group === "feed");
-     return short.length ? {p: tt("nav.search.feed.short", {one: "Supply › Factories · {n} input short", other: "Supply › Factories · {n} inputs short"}, {n: short.length}),
+     return short.length ? {p: tt("nav.search.feed.short", {one: "Supply › Production · {n} input short", other: "Supply › Production · {n} inputs short"}, {n: short.length}),
        dot: ssWorst(short), kw: ssShortInputs()} : {}; },
    go: () => ssSupply("factories")},
   {id: "factorystaff", get t(){ return tt("nav.search.factorystaff.title", "Staffing for factory lines"); },
-   get p(){ return tt("nav.search.factorystaff.line", "Supply › Factories"); }, ic: "roster", syn: ["factory workers", "factory staffing", "factory shifts", "run hours"],
+   get p(){ return tt("nav.search.factorystaff.line", "Supply › Production"); }, ic: "roster", syn: ["factory workers", "factory staffing", "factory shifts", "run hours"],
    go(){ ssSupply("factories"); setTimeout(() => { const el = $("sbStaff"); if(el) settleScroll(el); }, 60); }},
   {id: "flow", get t(){ return tt("nav.search.flow.title", "Goods flow"); },
-   get p(){ return tt("nav.search.flow.line", "Supply · the diagram view of each tab"); }, ic: "route", syn: ["diagram", "supply chain", "routes", "pipes"],
-   go(){ sbViewOn = "diagram"; remember(SB_VIEW_KEY, "diagram"); drawSupplyTab(sub.supply); wireAll(); ssSupply(sub.supply, true); }},
+   get p(){ return tt("nav.search.flow.line", "Supply › Goods flow · the diagram"); }, ic: "route", syn: ["diagram", "supply chain", "routes", "pipes", "trace goods"],
+   go: () => openRoute("supply/flow")},
   {id: "market", get t(){ return tt("nav.search.market.title", "Market demand"); },
-   get p(){ return tt("nav.search.market.line", "Growth › Demand"); }, ic: "growth", syn: ["demand", "hype", "waves", "neighbourhood"],
-   go: () => reveal("secMarket")},
-  {id: "plan", get t(){ return tt("nav.search.plan.title", "Plan a chain"); },
-   get p(){ return tt("nav.search.plan.line", "Growth › Plan a chain"); }, ic: "growth", syn: ["new factory", "recipe plan", "expand"],
-   go: () => reveal("secPlan")},
+   get p(){ return tt("nav.search.market.line", "Expansion › Demand"); }, ic: "growth", syn: ["demand", "hype", "waves", "neighbourhood", "market"],
+   go: () => openRoute("expansion/demand")},
+  {id: "plan", get t(){ return tt("nav.search.plan.title", "Plan a factory"); },
+   get p(){ return tt("nav.search.plan.line", "Expansion › Plan a factory"); }, ic: "growth", syn: ["new factory", "recipe plan", "expand", "plan a chain"],
+   go: () => openRoute("expansion/factory")},
   {id: "finder", get t(){ return tt("nav.search.finder.title", "Find a location"); },
-   get p(){ return tt("nav.search.finder.line", "Map"); }, ic: "pin", syn: ["rent", "premises", "building", "floor size", "m²", "vacant", "where should i open", "size"],
+   get p(){ return tt("nav.search.finder.line", "Expansion › Find a location"); }, ic: "pin", syn: ["rent", "premises", "building", "floor size", "m²", "vacant", "where should i open", "size"],
    live(){ const n = ((D.premises || {}).buildings || []).filter(b => b.type === "retail" && b.status === "vacant").length;
-     return n ? {p: tt("nav.search.finder.vacant", "Map · {n} vacant", {n})} : {}; },
+     return n ? {p: tt("nav.search.finder.vacant", "Expansion › Find a location · {n} vacant", {n})} : {}; },
    go: () => ssFinder({cat: "retail", type: "", hoods: null})},
-  {id: "map", get t(){ return tt("nav.search.map.title", "Map"); },
-   get p(){ return tt("nav.search.map.line", "Map · the city"); }, ic: "map", syn: ["city", "address", "where is"], go: () => showPage("map")},
-  {id: "staffing", get t(){ return tt("nav.search.staffing.title", "Staffing"); },
-   get p(){ return tt("nav.search.staffing.line", "each shop's page"); }, ic: "roster",
+  {id: "map", get t(){ return tt("nav.search.map.title", "City map"); },
+   get p(){ return tt("nav.search.map.line", "City map · the city"); }, ic: "map", syn: ["city", "address", "where is", "map"], go: () => openRoute("map")},
+  {id: "staffing", get t(){ return tt("nav.search.staffing.title", "Schedules"); },
+   get p(){ return tt("nav.search.staffing.line", "Staffing › Schedules · each shop's week"); }, ic: "roster",
    syn: ["hire", "hiring", "schedule", "shifts", "roster", "bizman", "overstaffed", "whom should i hire"],
    live(){ const b = D.businesses.find(x => x.key === ssStaffingSite());
-     return b ? {p: tt("nav.search.staffing.first", "each shop's page · first: {site}", {site: b.name}),
+     return b ? {p: tt("nav.search.staffing.first", "Staffing › Schedules · first: {site}", {site: b.name}),
        land: tt("nav.search.staffing.land", "{site} › Staffing", {site: b.name})} : {}; },
-   go: () => ssOpenSite(ssStaffingSite(), "#sp-roster")},
-  {id: "crew", get t(){ return tt("nav.search.crew.title", "Crew"); },
-   get p(){ return tt("nav.search.crew.line", "each site's page · who works there, what they want"); }, ic: "crew", syn: ["hire", "demands", "quit", "people"],
-   go: () => ssOpenSite(ssCrewSite(), "#sp-crew")},
+   go: () => routeOpenSite(ssStaffingSite(), "#sp-roster", "staffing/schedules")},
+  {id: "crew", get t(){ return tt("nav.search.crew.title", "Staff needs"); },
+   get p(){ return tt("nav.search.crew.line", "Staffing › Staff needs · demands and hiring"); }, ic: "crew", syn: ["hire", "demands", "quit", "people", "crew", "whom to hire"],
+   go: () => openRoute("staffing/needs")},
   {id: "prices", get t(){ return tt("nav.search.prices.title", "Prices in your save"); },
-   get p(){ return tt("nav.search.prices.line", "Wiki"); }, ic: "tag", syn: ["prices", "pricing", "market price", "too expensive", "are my prices right"],
+   get p(){ return tt("nav.search.prices.line", "Game guide"); }, ic: "tag", syn: ["prices", "pricing", "market price", "too expensive", "are my prices right"],
    /* One entry for each kind of shop the company runs, each opening its own guide. */
-   each: () => ssOwnTypes().map(t => ({id: `view:prices:${t.slug}`, p: tt("nav.search.prices.guide", "Wiki › {type} guide", {type: t.type}),
+   each: () => ssOwnTypes().map(t => ({id: `view:prices:${t.slug}`, p: tt("nav.search.prices.guide", "Game guide › {type}", {type: t.type}),
      kw: [t.type, ...ssEnglish([t.slug])], go: () => ssPrices(t.slug)})), go: () => ssPrices()},
-  {id: "wiki", get t(){ return tt("nav.search.wiki.title", "Wiki"); },
-   get p(){ return tt("nav.search.wiki.line", "the game's own help"); }, ic: "wiki", syn: ["help", "guide", "manual"], need: false, go: () => showPage("wiki")},
+  {id: "wiki", get t(){ return tt("nav.search.wiki.title", "Game guide"); },
+   get p(){ return tt("nav.search.wiki.line", "the game's own help"); }, ic: "wiki", syn: ["help", "guide", "manual", "wiki"], need: false, go: () => openRoute("wiki")},
   {id: "changelog", get t(){ return tt("nav.search.changelog.title", "Changelog"); },
-   get p(){ return tt("nav.search.changelog.line", "footer · what is new"); }, ic: "list", syn: ["new", "updates", "release notes"], need: false,
+   get p(){ return tt("nav.search.changelog.line", "More · what's new"); }, ic: "list", syn: ["new", "updates", "release notes"], need: false,
    go(){ const d = $("changelogDialog"); if(d && !d.open){ d.showModal(); featureDiscovery.visit("changelog"); d.scrollTop = 0; } }},
 ];
 /* The words players use for a kind of finding. */
@@ -26216,7 +31057,7 @@ const ssMastControl = () => [ssField, ssFieldBtn].find(el => el.isConnected && e
    field. Where they cannot both have it the field narrows, down to SS_FIELD_MIN,
    and below that it steps down to its icon. Measured at full width each time,
    whatever the last measure decided. */
-const SS_BALL_ROOM = 40 + 100 + 12, SS_FIELD_MIN = 180, SS_ICON_GAP = 12;
+const SS_BALL_ROOM = 16 + 64 + 12, SS_FIELD_MIN = 180, SS_ICON_GAP = 12;
 function ssFitMast(){
   const mast = $("mast"), nav = $("nav");
   if(!mast || !nav) return;
@@ -26227,22 +31068,53 @@ function ssFitMast(){
   const n = nav.getBoundingClientRect(), f = ssField.getBoundingClientRect();
   /* The nav on a row of its own (a narrow window) leaves the field its row. */
   if(n.top >= f.bottom || f.top >= n.bottom) return;
-  const room = Math.floor(f.right - (n.right + SS_BALL_ROOM));
-  if(room >= f.width) return;
-  if(room >= SS_FIELD_MIN){ ssField.style.width = room + "px"; return; }
+  /* The row is the places, the sphere's shelf, the references, the field and
+     the clock. What the shelf does not need of the gap before the references
+     is the field's to lose; past that the row overflows by the rest. */
+  const refs = $("navRefs");
+  const r = refs && refs.getClientRects().length ? refs.getBoundingClientRect() : null;
+  const over = Math.max(0, mast.scrollWidth - mast.clientWidth);
+  const slack = Math.floor((r ? r.left - n.right : f.left - n.right) - SS_BALL_ROOM - over);
+  if(slack >= 0) return;
+  const room = Math.floor(f.width + slack);
+  if(room >= SS_FIELD_MIN){
+    ssField.style.width = room + "px";
+    /* Narrowed, the field still says all its words (a longer translation
+       needs more than the floor), or it is its icon. */
+    if(ssField.scrollWidth <= ssField.clientWidth + 1) return;
+    ssField.style.width = "";
+  }
   mast.classList.add("ss-tight");
-  /* The icon keeps out of the ball's room too. A long clock -- a flags line,
-     the difficulty chip from 1501 px -- can push it in there, so it closes on
-     the clock, down to the sphere's own gap. A very long save name can still
-     leave it no room (at 1301 px, and with the chip at about 1501 to 1530 px):
-     then it sits over the ball's resting place. */
-  const short = Math.ceil(n.right + SS_BALL_ROOM - ssFieldBtn.getBoundingClientRect().left);
-  const give = (parseFloat(getComputedStyle(mast).columnGap) || 0) - SS_ICON_GAP;
-  if(short > 0 && give > 0) ssFieldBtn.style.marginRight = `-${Math.min(short, give)}px`;
 }
-window.addEventListener("resize", ssFitMast);
-if(window.ResizeObserver) ["nav", "brand", "clock"].forEach(id => { if($(id)) new ResizeObserver(ssFitMast).observe($(id)); });
-if(document.fonts && document.fonts.ready) document.fonts.ready.then(ssFitMast);
+/* The one-row masthead, where it fits; where it would not (a long company
+   name, a longer translation), the two rows a tablet has. Measured in one
+   row each time, after the search field has given what it can. */
+function nxFitMast(){
+  const mast = $("mast");
+  if(!mast) return;
+  mast.classList.remove("nx-wrap");
+  ssFitMast();
+  /* Every part at its own width (nothing shrinks or wraps its words while
+     measured); the sphere rolls on the shelf and is not a part of the row. */
+  mast.classList.add("nx-measure");
+  const edge = mast.getBoundingClientRect().right;
+  const over = [...mast.children].some(el => !el.classList.contains("orb") && el.getClientRects().length
+    && el.getBoundingClientRect().right > edge + 1);
+  mast.classList.remove("nx-measure");
+  if(over){ mast.classList.add("nx-wrap"); ssFitMast(); }
+  /* The sphere's shelf follows (wireSphere()). */
+  mast.dispatchEvent(new Event("nxfit"));
+}
+window.addEventListener("resize", nxFitMast);
+/* Watched through the parts whose size moves it, fitted before the next paint
+   (as ssFitMast() was), so the masthead is never drawn or measured unfitted;
+   a change nxFitMast() makes itself (the class) settles in one pass. A change
+   of language waits a frame for the new words. */
+let nxFitting = false;
+const nxFitSoon = () => { if(nxFitting) return; nxFitting = true; requestAnimationFrame(() => { nxFitting = false; nxFitMast(); }); };
+if(window.ResizeObserver) ["navRefs", "brand", "clock"].forEach(id => { if($(id)) new ResizeObserver(() => nxFitMast()).observe($(id)); });
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(nxFitMast);
+if(typeof ttOnChange === "function") ttOnChange(nxFitSoon);
 
 const ssScrim = document.createElement("div");
 ssScrim.className = "ss-scrim"; ssScrim.hidden = true;
@@ -26616,7 +31488,6 @@ document.addEventListener("keydown", e => {
     ssOpen();
   }
 });
-ssAskMount();
 /* A UI table already in force before this script ran (a fast fetch, or the
    CLI's --lang page) wrote the chrome above in its language; the landing's
    footer and the clock's first tip still need it. */
@@ -26625,7 +31496,9 @@ if(typeof ttLang !== "undefined" && ttLang !== "en") navRelabel();
 /* nav underline follows the pointer, then goes home --------------------------- */
 function inkHome(){
   const nav = $("nav"); if(!nav) return;
-  const a = nav.querySelector("a.on"); if(!a) return;
+  const a = nav.querySelector("a.on");
+  /* On the City map or the Game guide no place is lit, and nor is the line. */
+  if(!a){ nav.style.setProperty("--nw", "0px"); return; }
   const r = a.getBoundingClientRect(), n = nav.getBoundingClientRect();
   nav.style.setProperty("--nx", (r.left - n.left) + "px"); nav.style.setProperty("--nw", r.width + "px");
 }
@@ -26676,55 +31549,214 @@ const wireTiles = once(() => {
   });
 });
 
-/* cards tilt toward the pointer ------------------------------------------------ */
+/* the Overview's own controls, bound once and delegated ------------------------
+   Details opens a finding's pane in place and remembers it (ovOpen), "Show N
+   more" unfolds the rest of the list, All tools jumps to the directory and
+   hands it the keyboard, and a task row opens its route with the way back.
+   The three rows that carry what they know about this save keep the Next
+   moves cards' ids (planImportsCard, optimizeStaffingCard, findLocationCard),
+   and wireCards() is still the name wireAll() and the tests call. */
+function ovJumpTools(){
+  const head = $("tools"), title = $("toolsTitle");
+  if(!head) return;
+  head.scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"});
+  if(title) title.focus({preventScroll: true});
+}
 const wireCards = once(() => {
-  $("planImportsCard").addEventListener("click", e => {
+  on("click", ".ov-det", (btn, e) => {
+    e.preventDefault(); e.stopPropagation();
+    const row = btn.closest(".find"), pane = row && row.querySelector(".ov-x");
+    if(!pane) return;
+    const open = pane.hidden;
+    pane.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+    const words = btn.querySelector("span");
+    if(words) words.textContent = open ? tt("today.det.hide", "Hide") : tt("today.det.show", "Details");
+    if(open) ovOpen.add(row.dataset.id); else ovOpen.delete(row.dataset.id);
+  });
+  on("click", "[data-ov-more]", (btn, e) => {
     e.preventDefault();
-    ssChecklist();
+    ovShowAll = !ovShowAll;
+    drawAlerts();
+    const again = q("[data-ov-more]");
+    if(again) again.focus({preventScroll: true});
   });
-  $("optimizeStaffingCard").addEventListener("click", e => {
+  on("click", "[data-ov-tools]", (btn, e) => { e.preventDefault(); ovJumpTools(); });
+  on("click", "[data-ov-top]", (btn, e) => {
     e.preventDefault();
-    /* Nothing to open before the payload carries a plan: the card then behaves
-       like the rest of the panel's entry points and simply shows the sites.
-       With a site to open, the panel is drawn first and the scroll is left to
-       reveal(), which lands on the Roster itself -- the two of them racing was
-       what put the player two blocks above it. */
-    const card = $("optimizeStaffingCard");
-    if(card.dataset.site) openSite(card.dataset.site, false);
-    reveal("secDetail", "push", "#sp-roster");
-    /* And the block says it has been arrived at, because a page that jumps
-       somewhere leaves the player to work out what moved. The ring itself is
-       an animation, so a reader who asked for no motion is covered by the
-       blanket rule in the stylesheet rather than by a branch here. */
-    const block = q("#sp-roster");
-    if(block){
-      block.classList.remove("sp-arrived");
-      void block.offsetWidth;  // restart it on a second click
-      block.classList.add("sp-arrived");
-    }
+    const sec = $("alertSection");
+    if(sec) sec.scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"});
+    const h = $("ovTitle");
+    if(h){ h.tabIndex = -1; h.focus({preventScroll: true}); }
   });
-  $("findLocationCard").addEventListener("click", e => {
-    e.preventDefault();
-    /* Retail, any type: the count on the card is the retail one. */
-    if(D.premises) openFinder({cat:"retail", type:"", hoods:null});
-    else showPage("map");
+  on("click", "[data-ov-rank]", (btn, e) => { e.preventDefault(); ovForget(); drawAlerts(); });
+  on("click", ".ov-kmore", btn => {
+    const host = $("pageToday"), open = !host.classList.contains("ov-kopen");
+    host.classList.toggle("ov-kopen", open);
+    btn.setAttribute("aria-expanded", String(open));
   });
-  document.addEventListener("mousemove", e => {
-    const c = closest(e, ".move, .drop"); if(!c || REDUCED) return;
-    const r = c.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
-    c.style.setProperty("--ry", (x * 10) + "deg"); c.style.setProperty("--rx", (-y * 8) + "deg");
-  });
-  onLeave(".move, .drop", c => { c.style.setProperty("--ry", "0deg"); c.style.setProperty("--rx", "0deg"); });
+  /* A task row, a Details link or the changes line: its route, with the way
+     back. Find a suitable location opens the finder on retail, as the card
+     did; a modified click is the browser's. */
+  on("click", "[data-ov-route]", (a, e) => {
+    if(e.button > 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    e.preventDefault(); e.stopPropagation();
+    if(!hasData()) return;
+    const id = a.dataset.ovRoute;
+    const label = (a.querySelector("[data-tt]") || a).textContent.trim();
+    const o = {};
+    if(a.dataset.ovInto) o.into = a.dataset.ovInto;
+    if(id === "expansion/finder") o.preset = {cat: "retail", type: "", hoods: null};
+    /* Build shop schedules opens on the shop it names. */
+    if(a.id === "optimizeStaffingCard" && a.dataset.site) o.pick = a.dataset.site;
+    if(a.closest("#alerts")){
+      const row = a.closest(".find");
+      openRoute(id, {...o, arrival: row ? {what: label, pos: "", back: "overview", backLabel: tt("nav.from.overview", "Needs attention"), depth: 1, ov: ovRemember(row.dataset.id)} : null});
+    } else ovTool(id, label, o);
+  }, true);
+  window.addEventListener("scroll", () => { if(page === "today") requestAnimationFrame(ovStickyCheck); }, {passive: true});
+  window.addEventListener("resize", () => { if(page === "today") ovStickyCheck(); });
 });
+
+/* the adapters' own buttons, bound once: each opens the existing evidence
+   under the route it belongs to, so the shell and a site's crumb say where the
+   reader came from. */
+function routeOpenSite(key, into, id){
+  routeNext = id;
+  try{ ssOpenSite(key, into); } finally { routeNext = null; }
+}
+const wireAdapters = once(() => {
+  on("click", "[data-std]", (btn, e) => {
+    e.preventDefault();
+    const sj = STD_SUBJECTS.find(x => x.id === btn.dataset.std);
+    if(!sj) return;
+    /* Promotion is the comparison right below; the others open the first
+       business that needs them, on its Standards block. */
+    if(sj.id === "promotion" || !btn.dataset.site){ settleScroll($("secPortfolio")); return; }
+    routeOpenSite(btn.dataset.site, sj.block, "businesses/standards");
+  });
+  on("click", "[data-price-site]", (btn, e) => { e.preventDefault(); routeOpenSite(btn.dataset.priceSite, "#sp-shelves", "businesses/prices"); });
+  on("click", "[data-price-guide]", (btn, e) => { e.preventDefault(); ssPrices(btn.dataset.priceGuide); });
+  on("click", "[data-sched-open]", (btn, e) => {
+    e.preventDefault();
+    const b = D.businesses.find(x => x.key === btn.dataset.schedOpen);
+    routeOpenSite(btn.dataset.schedOpen, nxStaffInto(b), "staffing/schedules");
+  });
+  on("click", "[data-need-hire]", (a, e) => { e.preventDefault(); settleScroll($("secStaff")); });
+  on("click", "[data-prod-staff]", (btn, e) => { e.preventDefault(); openRoute("supply/production", {into: "#sbStaff"}); });
+  on("click", "[data-need-open]", (btn, e) => {
+    e.preventDefault();
+    const a = nxFindings(["jobdemand", "companydemand"]).find(x => x.id === btn.dataset.needOpen);
+    if(a) goToAlert(a);
+  });
+});
+
+/* the utilities: ··· in the masthead, Map & more on a phone -----------------
+   One menu hung off <body> (a section would clip it): search, what's new, the
+   preferences and help in the footer, and on a phone the City map and the
+   Game guide as well. Arrow keys move through it, Escape closes it and gives
+   the keyboard back to the button that opened it. */
+const nxMenu = document.createElement("div");
+nxMenu.className = "nx-menu"; nxMenu.id = "nxMenu"; nxMenu.hidden = true;
+nxMenu.setAttribute("role", "menu");
+nxMenu.setAttribute("aria-label", tt("nav.more.title", "More"));
+document.body.appendChild(nxMenu);
+let nxMenuFrom = null;
+const NX_MENU_ICON = {
+  search: '<circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4.5 4.5"></path>',
+  help: '<circle cx="12" cy="12" r="8.5"></circle><path d="M9.8 9.5a2.3 2.3 0 0 1 4.4.9c0 1.6-2.2 2-2.2 3.4M12 16.8v.01"></path>',
+};
+function nxMenuItems(phone){
+  const svg = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+  const item = (id, ic, label) => `<button type="button" role="menuitem" data-nx-item="${id}">${ic}<span>${spEsc(label)}</span></button>`;
+  return (phone ? `<span class="lab" role="presentation">${tt("nav.more.refs", "Reference")}</span>`
+      + REFS.filter(r => hasData() || r.id === "wiki").map(r => item(r.id, icon(r.icon), r.label)).join("") : "")
+    + `<span class="lab" role="presentation">${tt("nav.more.utils", "Utilities")}</span>`
+    + (hasData() ? item("search", svg(NX_MENU_ICON.search), tt("nav.more.search", "Search the board")) : "")
+    + item("news", spIcon("list"), tt("nav.more.news", "What's new"))
+    + item("prefs", icon("tune"), tt("nav.more.prefs", "Preferences: theme and game names"))
+    + item("help", svg(NX_MENU_ICON.help), tt("nav.more.help", "Help & feedback"));
+}
+function nxMenuToggle(btn){
+  if(!nxMenu.hidden && nxMenuFrom === btn){ nxMenuClose(true); return; }
+  nxMenuClose(false);
+  const phone = btn.id === "phoneMore";
+  nxMenu.innerHTML = nxMenuItems(phone);
+  nxMenu.hidden = false;
+  nxMenuFrom = btn;
+  btn.setAttribute("aria-expanded", "true");
+  const r = btn.getBoundingClientRect(), w = nxMenu.offsetWidth, h = nxMenu.offsetHeight;
+  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+  nxMenu.style.left = Math.max(8, Math.min(r.right - w, vw - w - 8)) + "px";
+  nxMenu.style.top = Math.max(8, phone ? r.top - h - 8 : Math.min(r.bottom + 8, vh - h - 8)) + "px";
+  const first = nxMenu.querySelector("[data-nx-item]");
+  if(first) first.focus({preventScroll: true});
+}
+function nxMenuClose(focus){
+  if(nxMenu.hidden) return;
+  nxMenu.hidden = true;
+  if(nxMenuFrom){ nxMenuFrom.setAttribute("aria-expanded", "false"); if(focus && nxMenuFrom.isConnected) nxMenuFrom.focus({preventScroll: true}); }
+  nxMenuFrom = null;
+}
+function nxMenuDo(id){
+  if(id === "map" || id === "wiki"){ if(hasData()) openRoute(id); else if(window.BigCopilotBoard) window.BigCopilotBoard.browseWiki(); return; }
+  if(id === "search"){ if(typeof ssOpen === "function") ssOpen(); return; }
+  if(id === "news"){
+    const d = $("changelogDialog");
+    if(d && !d.open){ d.showModal(); featureDiscovery.visit("changelog"); d.scrollTop = 0; }
+    return;
+  }
+  /* The preferences and the help live in the footer for now: the menu takes
+     the reader there and hands the keyboard to the first control. */
+  const foot = q(".wrap > .sitefoot") || q(".sitefoot");
+  if(!foot) return;
+  const box = id === "prefs" ? foot.querySelector(".sf-theme") || foot : foot.querySelector(".sf-nav") || foot;
+  box.scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "center"});
+  const to = id === "prefs" ? box.querySelector('[data-theme-set][aria-pressed="true"], button') : box.querySelector("a");
+  if(to) to.focus({preventScroll: true});
+}
+nxMenu.addEventListener("click", e => {
+  const b = e.target.closest("[data-nx-item]");
+  if(!b) return;
+  nxMenuClose(false);
+  nxMenuDo(b.dataset.nxItem);
+});
+nxMenu.addEventListener("keydown", e => {
+  const items = $$("[data-nx-item]", nxMenu), i = items.indexOf(document.activeElement);
+  if(e.key === "Escape"){ e.preventDefault(); nxMenuClose(true); }
+  else if(e.key === "ArrowDown" || e.key === "ArrowUp"){
+    e.preventDefault();
+    const n = items.length, down = e.key === "ArrowDown";
+    const next = items[i < 0 ? (down ? 0 : n - 1) : (i + (down ? 1 : -1) + n) % n];
+    if(next) next.focus();
+  } else if(e.key === "Home" || e.key === "End"){ e.preventDefault(); (e.key === "Home" ? items[0] : items[items.length - 1]).focus(); }
+  else if(e.key === "Tab") nxMenuClose(false);
+});
+document.addEventListener("click", e => {
+  if(nxMenu.hidden || nxMenu.contains(e.target) || (nxMenuFrom && nxMenuFrom.contains(e.target))) return;
+  nxMenuClose(false);
+});
+window.addEventListener("resize", () => nxMenuClose(false));
 
 /* severity dots filter the list; the dot on a row silences it ------------------ */
 const sevOff = new Set();
 function applySev(){
-  $$(".sev[data-kind]").forEach(s => s.classList.toggle("off", sevOff.has(s.dataset.kind)));
+  $$(".sev[data-kind]").forEach(s => {
+    s.classList.toggle("off", sevOff.has(s.dataset.kind));
+    if(s.tagName === "BUTTON") s.setAttribute("aria-pressed", String(!sevOff.has(s.dataset.kind)));
+  });
   /* The main list only: the smaller findings under "show" are filtered by
-     kind alone, as they always were. */
+     kind alone, as they always were. A group's heading goes with its rows,
+     and a list the filters have emptied says so rather than looking healthy. */
   $$("#alerts .find").forEach(f => f.classList.toggle("hide", [...sevOff].some(k => f.classList.contains(k))));
+  $$("#alerts .ov-band").forEach(b => b.classList.toggle("hide", sevOff.has(b.dataset.kind)));
+  const all = $$("#alerts .find"), none = $("ovFiltered");
+  if(none) none.hidden = !(all.length && all.every(f => f.classList.contains("hide")));
+  /* A filter unfolds every row it keeps, so a filtered list is never an empty
+     one with the rest folded away behind "Show N more". */
+  const box = $("alerts");
+  if(box) box.classList.toggle("ov-sev", sevOff.size > 0);
+  if($("ovMore") && $("ovMore").innerHTML) $("ovMore").hidden = sevOff.size > 0;
 }
 const bindSev = once(() => on("click", ".sev[data-kind]", s => {
   sevOff.has(s.dataset.kind) ? sevOff.delete(s.dataset.kind) : sevOff.add(s.dataset.kind);
@@ -27290,6 +32322,7 @@ function gwUpdateMod(kind){
   if(kind === "uniforms") return tt("nav.dlg.mod.uniforms", "Update the Big Copilot Link mod to set uniforms from here");
   if(kind === "imports") return tt("nav.dlg.mod.imports", "Update the Big Copilot Link mod to change imports from here");
   if(kind === "schedule") return tt("nav.dlg.mod.schedule", "Update the Big Copilot Link mod to write schedules from here");
+  if(kind === "hire") return tt("nav.dlg.mod.hire", "Update the Big Copilot Link mod to hire and place staff from here");
   return tt("nav.dlg.mod.other", "Update the Big Copilot Link mod to {kind} from here", {kind});
 }
 /* How long an apply's Undo lasts, by the kind of write (no full stop). */
@@ -27333,6 +32366,7 @@ const GW_P = {
   save: '<path d="M5 4h11l3 3v13H5z"></path><path d="M8 4v5h7V4M8 20v-6h8v6"></path>',
   skip: '<path d="M6 5.5v13l9-6.5zM18 5v14"></path>',
   hire: '<circle cx="10" cy="8" r="3.5"></circle><path d="M3.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"></path>',
+  phone: '<rect x="7" y="2.5" width="10" height="19" rx="2"></rect><path d="M11 18.5h2"></path>',
 };
 const gwSvg = (name, cls) => `<svg${cls ? ` class="${cls}"` : ""} viewBox="0 0 24 24" aria-hidden="true">${GW_P[name] || ""}</svg>`;
 const gwI = name => `<span class="gw-i">${gwSvg(name)}</span>`;
@@ -27565,10 +32599,11 @@ function gwUniforms(keys){
    offered only when every error the answer names is one of them; the rest
    ask for another request, or a refreshed board. */
 const GW_FIXABLE = new Set(["screen_open", "no_locker", "no_preset", "no_business", "no_agent", "no_warehouse",
-  "locked", "backorder", "not_assigned"]);
+  "locked", "backorder", "not_assigned", "myemployees"]);
 const gwFixable = answer => {
   const a = answer || {};
-  const codes = [a.siteError, ...(a.rows || []).flatMap(r => r ? [r.error, ...(r.products || []).map(p => p && p.error)] : [])].filter(Boolean);
+  /* A hire's dry run names an app open in the game as `blocked`. */
+  const codes = [a.siteError, a.blocked, ...(a.rows || []).flatMap(r => r ? [r.error, ...(r.products || []).map(p => p && p.error)] : [])].filter(Boolean);
   return codes.length > 0 && codes.every(c => GW_FIXABLE.has(c));
 };
 /* Why a row was refused, in plain words: the rule, then the fix. An entry may
@@ -27616,6 +32651,20 @@ const GW_REFUSE = {
     overlap_station: {get rule(){ return tt("nav.dlg.refuse.overlapstation.rule", "Two people would share one station"); }, get fix(){ return tt("nav.dlg.refuse.overlapstation.fix", "Refresh the board."); }},
   },
 };
+/* A hire's rows name their scope: a candidate hired, an employee moved, a
+   site, or one shift of a site's week (the schedule's own codes). */
+GW_REFUSE.hire = Object.assign({}, GW_REFUSE.schedule, {
+  not_found: r => r.scope === "hire" ? {rule: "No longer among the headhunters' candidates", fix: "Refresh the board."}
+    : r.scope === "move" ? {rule: "Nobody by that id works for you any more", fix: "Refresh the board."} : GW_REFUSE.any.not_found,
+  changed: r => r.scope === "hire" ? {rule: "The candidate's wage has changed since this board was read", fix: "Refresh the board: the page picks again."}
+    : r.scope === "move" ? {rule: "Not where this board read them any more", fix: "Refresh the board."} : GW_REFUSE.any.changed,
+  no_skill: r => r.scope === "shift" ? GW_REFUSE.schedule.no_skill
+    : {rule: "Has none of the skills this business takes", fix: "Refresh the board."},
+  in_training: {rule: "In training: the game moves nobody who is training", fix: "Wait for the training to end, or untick the move."},
+  no_business: {rule: "No business is set up here", fix: "Set one up in BizMan first."},
+  screen_open: {rule: "Open in BizMan right now, or being filled in automatically", fix: "Close that BizMan screen in the game, then try again."},
+  headquarters: {rule: "A headquarters' hours are not written from here", fix: "Refresh the board."},
+});
 /* The lock window, Sunday 16:00 to Monday 09:00 an hour a cell: shut from
    20:00 to 08:00, and now ringed when it falls inside. */
 function gwLockStrip(){
@@ -27660,6 +32709,8 @@ const GW_CANNOT = {
     tt("nav.dlg.cannot.interior.fix", "Close it in the game, then try again."), "sofa"]; },
   get casino(){ return [tt("nav.dlg.cannot.casino.text", "The game takes no changes on the casino boat"),
     tt("nav.dlg.cannot.casino.fix", "Leave the boat in the game, then try again."), "clock"]; },
+  get myemployees(){ return [tt("nav.dlg.cannot.myemployees.text", "MyEmployees is open in the game"),
+    tt("nav.dlg.cannot.myemployees.fix", "Close the MyEmployees app on your phone in the game, then try again."), "phone"]; },
   get other(){ return [tt("nav.dlg.cannot.other.text", "The game takes no changes right now"), tt("nav.dlg.moment", "Try again in a moment."), "clock"]; },
 };
 /* What a failed write says, and what the dialog offers next: `wire` and
@@ -27983,7 +33034,12 @@ function gwFailed(dlg, spec, res, retry, recheck){
                                another: {skip, pass(what), label, go}; pass
                                leaves this site (skipped, not written...) and
                                go, absent on the last, opens the next
+     more                      optional, {label, go}: a second way on
+                               beside Close once an apply went through
      onDone(answer)            optional: heard once an apply went through
+     onFailed(res)             optional: heard when an apply fails (not
+                               when the game approved afresh in an open
+                               dialog, which asks the game again)
      onUndo()                  optional: heard once its undo went through
      startUndo                 optional: the dialog opens by undoing the
                                kind's last write, then asks the game afresh
@@ -28004,7 +33060,7 @@ function gwConfirm(spec){
   let seq = 0;           // the newest dry run: an older one's late answer is dropped
   let allowed = false;   // the game approved this browser for the dry run under way
   const view = gwApprovalView(dlg, () => { allowed = true; asking(); });
-  const nothing = none => gwPaint(dlg, {phase: "nothing", wire: "ok", say: `<b>${tt("nav.dlg.say.nothing", "Nothing to write")}</b>`, meta: gwNow(),
+  const nothing = none => gwPaint(dlg, {phase: "nothing", wire: "ok", say: (spec.nothingSay && spec.nothingSay()) || `<b>${tt("nav.dlg.say.nothing", "Nothing to write")}</b>`, meta: gwNow(),
     body: `<p class="gw-said">${none}</p>`,
     buttons: ["|", [tt("nav.dlg.close", "Close"), () => dlg.close(), {kind: spec.next ? "ghost" : "go"}], ...skip("nothing to write")]});
   const asking = () => gwPaint(dlg, {phase: "asking", wire: "ask",
@@ -28090,6 +33146,7 @@ function gwConfirm(spec){
       /* Approved again mid-apply: the apply was not sent twice; the player
          reviews the game's answer afresh first, on the same approval. */
       if(res.error === "reapproved" && dlg.open) return plan({asked: res.asked});
+      if(spec.onFailed) spec.onFailed(res);
       allowed = false;
       return dlg.open ? gwFailed(dlg, spec, res, () => plan(), () => plan()) : gwToast();
     }
@@ -28110,6 +33167,7 @@ function gwConfirm(spec){
       body: (spec.doneBody ? spec.doneBody(answer, spec) : `<p class="gw-said ok">${spec.done(answer)}</p>${spec.draw(answer, "done")}`) + gwReread(false),
       hint: !undoable ? "" : typeof hint === "string" ? hint : `${stays()}.`,
       buttons: [...(undoable ? [[spec.undoLabel ? spec.undoLabel() : tt("nav.dlg.undo.button", "Undo"), () => gwUndo(spec, dlg), {kind: "undo", icon: "undo", key: "undo"}]] : []), "|",
+        ...(spec.more ? [[spec.more.label, spec.more.go, {kind: "ghost", key: "more"}]] : []),
         spec.next && spec.next.go ? [spec.next.label, spec.next.go, {kind: "go", icon: "right", key: "next"}] : [tt("nav.dlg.close", "Close"), () => dlg.close(), {kind: "go"}]]});
   };
   /* After an undo in this dialog: the undo said, and the write offered
@@ -28699,10 +33757,16 @@ const GW_HQ = "ba:businesstype_headquarters";
    opening hours, and none where nothing was planned. */
 function gwRosterPlan(key){
   const b = (D.businesses || []).find(x => x.key === key);
-  if(!b || b.typeSlug === GW_HQ || b.status !== "retail") return null;
+  if(!b || b.typeSlug === GW_HQ) return null;
+  /* An office: Peter's office default (officeStaffing), which never opens it. */
+  if(b.status === "office"){
+    const office = gwOfficeRow(key);
+    return office && (office.shifts || []).length ? office : null;
+  }
+  if(b.status !== "retail") return null;
   const base = spRosterRow(key);
   if(!base || base.failed) return null;
-  const row = spOffersFull(base) && spPlanRead(base.key) === "full" ? spFullRow(base) : base;
+  const row = spShownRow(base);
   return (row.shifts || []).length ? row : null;
 }
 /* The week a write sends, from the plan's rows, their station and person
@@ -28714,7 +33778,8 @@ function gwRosterPlan(key){
 function gwRosterWeek(row){
   const bench = new Set([...(row.bench || []), ...((row.addPeople || {}).assign || [])].map(r => r.p));
   const days = new Map();
-  let sent = 0, kept = 0;
+  let sent = 0, kept = 0, unreadable = 0;
+  const added = [];  // an office's: the planned entries the write adds
   const put = s => {
     const st = (row.stations || [])[s.s], who = (row.people || [])[s.p];
     if(!st || !spHasId(st.id) || !who || !spHasId(who.id) || !(s.d >= 0 && s.d < 7)) return false;
@@ -28722,14 +33787,36 @@ function gwRosterWeek(row){
     days.get(s.d).push({f: s.f, t: s.t, employeeId: who.id, itemInstanceId: st.id});
     return true;
   };
-  (row.shifts || []).forEach(s => { if(!spNobody(s.p) && !bench.has(s.p) && put(s)) sent++; });
-  if(!row.full && spCoverOnly(row))
+  if(row.office){
+    /* An office's write adds, like Quick hire: every entry at the office
+       stays as it stands, and the office default's entries for the office's
+       own people go in only where that computer and that person are free
+       then. Nobody's hours change, so nobody is taken off the office. */
+    /* Busy by the rows' own indices, so an entry this board cannot send (a
+       station or person with no id) still keeps its hours from an addition;
+       and any such entry stops the write (`unreadable`), since the week sent
+       replaces the office's and would drop it. */
+    const busy = [];
+    unreadable += Number(row.unrepresentable) || 0;
+    const clash = s => busy.some(b => b.d === s.d && b.f < s.t && s.f < b.t && (b.p === s.p || b.s === s.s));
+    ((row.current || {}).list || []).forEach(s => {
+      busy.push({d: s.d, f: s.f, t: s.t, p: s.p, s: s.s});
+      if(put(s)) kept++; else unreadable++;
+    });
+    (row.shifts || []).forEach(s => {
+      if(spNobody(s.p) || bench.has(s.p) || clash(s)) return;
+      if(put(s)){ sent++; added.push(s); busy.push({d: s.d, f: s.f, t: s.t, p: s.p, s: s.s}); }
+    });
+  } else (row.shifts || []).forEach(s => { if(!spNobody(s.p) && !bench.has(s.p) && put(s)) sent++; });
+  if(!row.office && !row.full && spCoverOnly(row))
     ((row.current || {}).list || []).filter(s => !s.k).forEach(s => { if(put(s)) kept++; });
-  return {days: [...days].sort((a, b) => a[0] - b[0]).map(([d, shifts]) => ({d, shifts})), sent, kept};
+  return {days: [...days].sort((a, b) => a[0] - b[0]).map(([d, shifts]) => ({d, shifts})), sent, kept, unreadable, added};
 }
 /* Whether the game's schedule already is this week, entry for entry (and
    open around the clock where the plan wants that). */
 function gwRosterMatches(row, week){
+  /* An office's write only adds: written once there is nothing left to add. */
+  if(row.office) return week.sent === 0;
   const line = (d, s) => [d, s.f, s.t, s.employeeId, s.itemInstanceId].join("|");
   const want = week.days.flatMap(({d, shifts}) => shifts.map(s => line(d, s))).sort();
   const have = ((row.current || {}).list || []).map(s => {
@@ -28738,11 +33825,18 @@ function gwRosterMatches(row, week){
   }).sort();
   return !(row.full && !row.openNow) && want.length === have.length && want.every((x, i) => x === have[i]);
 }
-const gwScheduleSites = () => (D.staffing || []).map(r => r.key).filter(key => {
+/* An office row's computers: the stations of its one role, by index. */
+const gwOfficeComputers = row => new Set((row.roles || []).flatMap(r => r.stations || []));
+const gwOfficeRow = key => {
+  const list = Array.isArray(D.officeStaffing) ? D.officeStaffing : [];
+  const row = list.find(r => r.key === key && !r.failed);
+  return row ? Object.assign({}, row, {full: false, office: true}) : null;
+};
+const gwScheduleSites = () => [...(D.staffing || []), ...(Array.isArray(D.officeStaffing) ? D.officeStaffing : [])].map(r => r.key).filter(key => {
   const row = gwRosterPlan(key);
   if(!row) return false;
   const week = gwRosterWeek(row);
-  return week.sent > 0 && !gwRosterMatches(row, week);
+  return week.sent > 0 && !week.unreadable && !gwRosterMatches(row, week);
 });
 /* The roster's own write, and every planned shop's in turn. How many people
    the plan still waits on stays beside it until they are added, so a partial
@@ -28752,7 +33846,9 @@ function gwRosterButtons(key){
   const row = gwRosterPlan(key);
   if(!row) return "";
   const one = gwButton("schedule", tt("sp.gw.sch.one", "Write this roster to the game"), `data-gw-sites="${attr(JSON.stringify([key]))}"`,
-    gwRosterWeek(row).sent ? "" : tt("sp.gw.sch.blocked", "Every entry in this plan waits on somebody who does not work here yet: add them first"), {icon: "hire"});
+    row.office && gwRosterWeek(row).unreadable ? tt("sp.gw.sch.office.unreadable", "An entry here can't be read; change it in the game first")
+      : gwRosterWeek(row).sent ? "" : row.office ? tt("sp.gw.sch.office.written", "Every entry the office default can add is in the game")
+      : tt("sp.gw.sch.blocked", "Every entry in this plan waits on somebody who does not work here yet: add them first"), {icon: "hire"});
   const all = gwScheduleSites();
   const many = all.length > 1
     ? gwButton("schedule", tt("sp.gw.sch.all", "Write all {n} planned sites", {n: all.length}), `data-gw-sites="${attr(JSON.stringify(all))}"`, "", {alt: true}) : "";
@@ -28836,14 +33932,19 @@ function gwSchedule(keys, i = 0, run = [], o = {}){
     kind: "schedule", icon: "roster", againLabel: tt("sp.gw.sch.again", "Write again"),
     title: many ? tt("sp.gw.sch.all", "Write all {n} planned sites", {n: keys.length}) : tt("sp.gw.sch.one", "Write this roster to the game"),
     where: () => many ? `${gwSteps(keys, run, i)}<span>${tt("sp.gw.run.where", "{n} of {of} · {name}", {n: i + 1, of: keys.length, name})}</span>` : gwWhere(b),
-    nothing: () => !gwRosterPlan(key) ? tt("sp.gw.sch.noplan", "This shop has no plan to write any more.")
-      : typeof (site() || {}).shiftPrint !== "string" ? tt("sp.gw.sch.reread", "Read the game again first: this board does not know the shop's schedule well enough to replace it.")
+    nothing: () => !gwRosterPlan(key) ? (b.status === "office" ? tt("sp.gw.sch.noplan.office", "This office has no plan to write any more.")
+        : tt("sp.gw.sch.noplan", "This shop has no plan to write any more."))
+      : b.status === "office" && gwRosterWeek(gwRosterPlan(key)).unreadable
+        ? tt("sp.gw.sch.office.unreadable", "An entry here can't be read; change it in the game first")
+      : typeof (site() || {}).shiftPrint !== "string" ? (b.status === "office"
+        ? tt("sp.gw.sch.reread.office", "Read the game again first: this board does not know the office's schedule well enough to add to it.")
+        : tt("sp.gw.sch.reread", "Read the game again first: this board does not know the shop's schedule well enough to replace it."))
       : "",
     body: () => {
       const row = gwRosterPlan(key), week = gwRosterWeek(row);
       last = {row, week, now: (row.current || {}).list || []};
       return {address: gwAddress(key), expect: site().shiftPrint,
-              openAllHours: !!(row.full && !row.openNow && openAll), days: week.days};
+              openAllHours: !!(!row.office && row.full && !row.openNow && openAll), days: week.days};
     },
     verdict: answer => answer.ok ? `<b>${tt("sp.gw.sch.takes", "The game takes the week")}</b>` : `<b>${tt("sp.gw.refuses", "The game refuses this")}</b>`,
     object: row => {
@@ -28871,10 +33972,11 @@ function gwSchedule(keys, i = 0, run = [], o = {}){
           other: "<b>{h} h a week stay empty</b> until you add {n} people. Write the roster again then: the board keeps this note on the roster until it is full."},
           {h: add.hoursUncovered || 0, n: add.people})) : "");
       const whole = tt("sp.gw.plan.whole", "replaces the whole week");
-      const which = row.full ? `<span class="gw-plan full">${gwSvg("sun")}${tt("sp.pick.full", "Full cover 24/7")}</span><span class="gw-only">${tt("sp.gw.plan.every", "every station, every hour")}</span>`
+      const which = row.office ? `<span class="gw-plan">${gwSvg("roster")}${tt("sp.gw.plan.office", "Office default")}</span><span class="gw-only">${tt("sp.gw.plan.adds", "adds to the week")}</span>`
+        : row.full ? `<span class="gw-plan full">${gwSvg("sun")}${tt("sp.pick.full", "Full cover 24/7")}</span><span class="gw-only">${tt("sp.gw.plan.every", "every station, every hour")}</span>`
         : spCoverOnly(row) ? `<span class="gw-plan">${gwSvg("roster")}${tt("sp.gw.plan.cover", "Cleaning and security")}</span><span class="gw-only">${whole}</span>`
         : `<span class="gw-plan">${gwSvg("roster")}${tt("sp.pick.demand", "Demand plan")}</span><span class="gw-only">${whole}</span>`;
-      const kept = week.kept ? gwCall("info", "info", tt("sp.gw.sch.kept", {
+      const kept = week.kept && !row.office ? gwCall("info", "info", tt("sp.gw.sch.kept", {
         one: "The {n} serving entry in the game stays as it stands: this plan covers cleaning and security only.",
         other: "The {n} serving entries in the game stay as they stand: this plan covers cleaning and security only."}, {n: week.kept})) : "";
       /* Full cover opens the shop around the clock, unless the player opts out. */
@@ -28896,6 +33998,16 @@ function gwSchedule(keys, i = 0, run = [], o = {}){
       };
       const left = (answer.leftWithout || []).map(p => `<span class="person"><i>${spEsc(gwInitials(p.name))}</i>${spEsc(p.name || tt("sp.gw.someone", "someone"))}${
         roleOf(p.employeeId) ? `<small>${roleOf(p.employeeId)}</small>` : ""}</span>`);
+      /* An office's write adds: the hours and the people it adds them for. */
+      let adds = "";
+      if(row.office){
+        const had = new Set(now.map(s => `${s.d}|${s.f}|${s.t}|${((row.people || [])[s.p] || {}).id}|${((row.stations || [])[s.s] || {}).id}`));
+        const added = week.days.flatMap(({d, shifts}) => shifts.map(s => Object.assign({d}, s)))
+          .filter(s => !had.has(`${s.d}|${s.f}|${s.t}|${s.employeeId}|${s.itemInstanceId}`));
+        const who = [...new Set(added.map(s => s.employeeId))].map(id => spEsc(((row.people || []).find(p => p.id === id) || {}).name || tt("sp.gw.someone", "someone")));
+        adds = added.length ? gwCall("info", "roster", tt("sp.gw.sch.adds", "<b>Adds {h} h for {who}</b>; nobody's current hours change.", {h: gwHours(added), who: who.join(", ")}))
+          : gwCall("info", "roster", tt("sp.gw.sch.office.written", "Every entry the office default can add is in the game"));
+      }
       const over = (answer.warnings || []).filter(w => w.type === "overworked").map(w =>
         gwCall("warn", "flame", tt("sp.gw.over", "<b>{name}</b> works {n} h on {day}. The game allows it.",
           {name: spEsc(w.name || tt("sp.gw.someone.cap", "Someone")), n: Number(w.hours), day: WEEKDAY_NAMES[w.d] ? ttDay(w.d) : tt("sp.gw.aday", "a day")})));
@@ -28903,7 +34015,7 @@ function gwSchedule(keys, i = 0, run = [], o = {}){
         + gwTiles([[labels[0], now.length, sentList.length], [labels[1], gwHours(now), gwHours(sentList)], [labels[2], nowPeople, afterPeople]])
         + gwWeek(now, week.days) + kept + toggle
         + (left.length ? `<div class="gw-box">${gwCall("", "exit", tt("sp.gw.left", "<b>No shift here after this</b>. The game takes them off their work here and adds a to-do, as its own schedule does."))}<div class="gw-pills">${left.join("")}</div></div>` : "")
-        + (add.people ? gwAddBox(add, gwHours(sentList)) : "") + over.join("");
+        + adds + (add.people ? gwAddBox(add, gwHours(sentList)) : "") + over.join("");
     },
     bind: (dlg, replan) => {
       const sw = dlg.querySelector("[data-gw-open]");
@@ -28997,6 +34109,7 @@ const bindWrites = once(() => {
       ? gwUniformAll().map(b => b.key) : JSON.parse(btn.dataset.gwSites || "[]"));
     else if(kind === "imports") gwImports(btn.dataset.gwDepot || null);
     else if(kind === "schedule") gwSchedule(JSON.parse(btn.dataset.gwSites || "[]"));
+    else if(kind === "hire") hrReview();
   }, true);
 });
 function wireWrites(){ bindWrites(); gwToast(); gwReadBack(); }
@@ -29004,12 +34117,12 @@ function wireWrites(){ bindWrites(); gwToast(); gwReadBack(); }
 /* Everything above, after every render. Delegated handlers bind once; the
    state-carrying ones re-apply their state to the fresh markup. */
 function wireAll(){
-  wireTips(); wireTiles(); wireCards();
+  wireTips(); wireTiles(); wireCards(); wireAdapters();
   wireSev(); wireFinds(); wireKinds();
   wireChart(); wirePortfolio(); wireSiteReads();
   wireFlow(); bindSupply();
   wireHeat(); wirePlan();
-  wireReveal(); wireWrites();
+  wireReveal(); wireWrites(); wireStaff();
 }
 
 /* The board with no numbers in it: the Wiki reads straight from the game's own
@@ -29041,11 +34154,15 @@ function boot(){
     return;
   }
   paintNav();
-  /* A site's address reopens that site. An old page name is handed over
-     whole, so the view that replaced it is the one that opens — not whichever
-     view of its new page was last used. */
-  if(!openSiteHash(h, "replace"))
-    showPage(PAGE_ALIASES[h] ? h : pageFromHash(h) || remembered(PAGE_KEY) || "today", false, "replace");
+  /* A site's address reopens that site. A route or an area opens as itself,
+     and with no hash the route last shown does. An old page name is handed
+     over whole, so the view that replaced it is the one that opens — not
+     whichever view of its new page was last used. */
+  if(!openSiteHash(h, "replace")){
+    const r = routeResolve(h) || (h ? null : routeResolve(remembered(ROUTE_KEY) || ""));
+    if(r) openRoute(r, {historyMode: "replace", scroll: false, into: ROUTE_ALIAS_INTO[h]});
+    else showPage(PAGE_ALIASES[h] ? h : pageFromHash(h) || remembered(PAGE_KEY) || "today", false, "replace");
+  }
   /* Bound once: the nav underline, the coin, and the sphere's entrance. A live
      refresh re-renders the numbers but never replays these. */
   wireNav(); wireCoin(); wireSphere();

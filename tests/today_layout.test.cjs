@@ -115,25 +115,25 @@ test('below the gate and switched off are two lines, each with its own show', as
   } finally { await page.close(); }
 });
 
-test('Payroll says what was booked yesterday, $0 included, once a day has finished', async () => {
+test('Payroll, at the foot of Staff, says what was booked yesterday, $0 included, once a day has finished', async () => {
   const page = await today(1440);
   try {
-    const quiet = await page.evaluate(() => {
+    const facts = await page.evaluate(() => {
       Object.assign(D.staff, {total: 2, roles: [{role: 'Cashier', count: 2, cost: 8800}],
                               avgSatisfaction: 90, unhappy: 0, absent: 0, complaining: 0});
       const read = wageBill => {
-        D.kpi.wageBill = wageBill; drawPayroll();
-        return document.querySelector('#secPayroll .sechead .quiet').textContent;
+        D.kpi.wageBill = wageBill; drawStaff();
+        return [...document.querySelectorAll('#hrPayroll .facts > div')].slice(0, 3).map(r => r.textContent).join(' · ');
       };
       const out = [read(9000), read(0)];
       D.daily = []; out.push(read(0));
       return out;
     });
-    assert.deepEqual(quiet, [
-      "2 people · $8,800/day at today's rates · $9,000 booked yesterday",
-      "2 people · $8,800/day at today's rates · $0 booked yesterday",
+    assert.deepEqual(facts, [
+      'People2 · Wages a day$8,800 · Booked yesterday$9,000',
+      'People2 · Wages a day$8,800 · Booked yesterday$0',
       // No finished day: there is no yesterday to have booked anything.
-      "2 people · $8,800/day at today's rates",
+      'People2 · Wages a day$8,800 · Satisfaction90%',
     ]);
   } finally { await page.close(); }
 });
@@ -156,12 +156,23 @@ test('the Portfolio total meets Today\'s profit through the company costs', asyn
   } finally { await page.close(); }
 });
 
-test('at 390 px Today pairs its tiles, stacks its cards and never scrolls sideways', async () => {
+test('at 390 px the Overview folds its figures into one line, pairs them when opened, stacks its tool panels and never scrolls sideways', async () => {
   const page = await today(390);
   try {
+    // The phone's company line comes first, so Needs attention is on the first screen;
+    // "All figures" opens the four tiles in place.
+    const folded = await page.evaluate(() => ({
+      line: getComputedStyle(document.getElementById('ovCtx')).display !== 'none' && document.getElementById('ovCtx').textContent,
+      tiles: getComputedStyle(document.getElementById('kpis')).display,
+    }));
+    assert.match(folded.line, /Profit.*Cash.*All figures/s);  // the day is the masthead's clock, right above
+    assert.equal(folded.tiles, 'none', 'the tiles wait for All figures');
+    await page.evaluate(() => wireCards()); // the board wires it in renderAll(); this harness draws alone
+    await page.click('#ovCtx .ov-kmore');
+    assert.equal(await page.getAttribute('#ovCtx .ov-kmore', 'aria-expanded'), 'true');
     const m = await page.evaluate(() => {
       const tiles = [...document.querySelectorAll('#kpis .kpi')].map(t => t.getBoundingClientRect());
-      const cards = [...document.querySelectorAll('#secMoves .move')].map(c => c.getBoundingClientRect());
+      const cards = [...document.querySelectorAll('#secMoves .ov-p')].map(c => c.getBoundingClientRect());
       const row = document.querySelector('#alerts .find');
       const site = row.querySelector('.site').getBoundingClientRect();
       const what = row.querySelector('.what').getBoundingClientRect();
@@ -176,7 +187,8 @@ test('at 390 px Today pairs its tiles, stacks its cards and never scrolls sidewa
     assert.equal(m.tileTops[0], m.tileTops[1]);
     assert.equal(m.tileTops[2], m.tileTops[3]);
     assert.ok(m.tileTops[2] > m.tileTops[0], 'two rows of two');
-    assert.equal(new Set(m.cardLefts).size, 1, 'the cards stack');
+    assert.equal(m.cardLefts.length, 4, 'the four tool panels');
+    assert.equal(new Set(m.cardLefts).size, 1, 'the panels stack');
     assert.ok(m.sentenceBelowSite, 'the sentence has a line of its own');
   } finally { await page.close(); }
 });
@@ -242,7 +254,9 @@ test('at 390 px the Growth grid narrows its names, never its cells or the page',
 
 // --- Today with the other passes on it (site pages R9, search R10/R11, folds R15) ----
 
-test('at 390 px the count lines, the Ask row and a live Plan imports card share Today without overlap', async () => {
+/* Next moves and the Ask the board row became All tools (docs/ui-route-migration.md):
+   the live Plan imports card is the Calculate import amounts row, by the same id. */
+test('at 390 px the count lines, the tool panels and a live import task share the Overview without overlap', async () => {
   const page = await today(390);
   try {
     const m = await page.evaluate(() => {
@@ -251,21 +265,20 @@ test('at 390 px the count lines, the Ask row and a live Plan imports card share 
       document.querySelector('[data-td-toggle="off"]').click();
       const box = el => { const r = el.getBoundingClientRect(); return {l: r.left, t: r.top, r: r.right, b: r.bottom}; };
       const meets = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
-      const blocks = [...document.querySelectorAll('#alerts .find, #alertMinor .td-count, #alertMinor .find, #kpis .kpi, #secMoves .move, #ssAsk')]
+      const blocks = [...document.querySelectorAll('#alerts .find, #alertMinor .td-count, #alertMinor .find, #kpis .kpi, #secMoves .ov-p')]
         .filter(el => el.getClientRects().length).map(el => ({el: el.id || el.className, ...box(el)}));
       const clashes = [];
       blocks.forEach((a, i) => blocks.slice(i + 1).forEach(b => { if(meets(a, b)) clashes.push(`${a.el} / ${b.el}`); }));
-      const ask = document.getElementById('ssAsk'), card = document.getElementById('planImportsCard');
+      const card = document.getElementById('planImportsCard');
       return {clashes, scroll: document.documentElement.scrollWidth, width: document.documentElement.getBoundingClientRect().width,
-        askShown: ask.getClientRects().length > 0, askInside: box(ask).l >= -0.5 && box(ask).r <= innerWidth + 0.5,
-        askBelowCards: box(ask).t >= Math.max(...[...document.querySelectorAll('#secMoves .move')].map(c => box(c).b)) - 0.5,
-        cardText: card.querySelector('.what').textContent, cardInside: box(card).r <= innerWidth + 0.5,
+        askGone: !document.getElementById('ssAsk'),
+        cardText: card.querySelector('.what').textContent, cardInside: box(card).r <= innerWidth + 0.5 && box(card).l >= -0.5,
         lines: document.querySelectorAll('#alertMinor .td-count').length};
     });
     assert.deepEqual(m.clashes, [], 'nothing on Today overlaps');
     assert.ok(m.scroll <= m.width, 'no sideways scroll');
     assert.equal(m.lines, 2);
-    assert.ok(m.askShown && m.askInside && m.askBelowCards, 'the Ask row sits under the cards, inside the window');
+    assert.ok(m.askGone, 'the Ask the board row is folded into All tools; its questions stay in the search palette');
     assert.match(m.cardText, /^12 import settings/);
     assert.ok(m.cardInside);
   } finally { await page.close(); }
@@ -283,7 +296,7 @@ test("an Overstaffed hours row, one per site, opens its site's page from its sen
     // The sentence is the finding: the site's page, with the finding lit and the way back to Today.
     await row.locator('.what').click();
     assert.deepEqual(await page.evaluate(() => [location.hash, siteOpen, spArrived === D.minor.rows[1].id, siteFrom && siteFrom.label]),
-      ['#site/secondavenue-10', true, true, 'Today']);
+      ['#site/secondavenue-10', true, true, 'Needs attention']);
     await page.evaluate(() => { siteShut(); showPage('today'); showSwitchedOff = true; drawAlerts(); });
     // The name is the site's own page, with no finding.
     await page.locator('[data-td-rows="off"] .find').first().locator('a.ss-sl').click();
