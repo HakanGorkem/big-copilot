@@ -43,8 +43,13 @@ async function board(o = {}) {
     Object.defineProperty(window, 'localStorage', {configurable: true, get: () => ({getItem: no, setItem: no, removeItem: no})});
   });
   await page.route('https://**', route => route.abort());
-  await page.route('https://search.test/', route =>
-    route.fulfill({contentType: 'text/html; charset=utf-8', body: html}));
+  await page.route('https://search.test/**', route => {
+    const p = new URL(route.request().url()).pathname;
+    if(p === '/') return route.fulfill({contentType: 'text/html; charset=utf-8', body: html});
+    /* The web build's own files beside the page (its scripts, the wiki's data). */
+    const f = path.join(__dirname, '..', 'web', decodeURIComponent(p));
+    return process.env.BOARD_TARGET === 'web' && fs.existsSync(f) ? route.fulfill({path: f}) : route.fulfill({status: 404, body: ''});
+  });
   await page.goto('https://search.test/', {waitUntil: 'load'});
   if(o.data === false) return page;
   await page.evaluate(([SHOP, GYM, FACTORY, DEPOT]) => {
@@ -78,7 +83,7 @@ async function board(o = {}) {
         text: 'Fabric (Expensive) arrives at 600/day against 1,000 needed', worth: null, unit: ''}],
       minor: {rows: [{group: 'idlestaff', level: 'info', site: '[LM] Test Clothing', siteKey: SHOP, id: 'idle-1',
         text: 'Test Clothing runs 40 staff-hours a week that buy nothing', worth: 100, unit: '/day wages'}]},
-      premises: {buildings: [], demand: {
+      premises: {buildings: [], forSale: [], demand: {
         'ba:neighborhood_hellskitchen': [{slug: 'ba:businesstype_gym', type: 'Gym', demand: 80, category: 'retail'}],
         'ba:neighborhood_midtown': [{slug: 'ba:businesstype_gym', type: 'Gym', demand: 60, category: 'retail'},
                     {slug: 'ba:businesstype_lawfirm', type: 'Law Firm', demand: 70, category: 'office'}]}},
@@ -241,7 +246,8 @@ test('a synonym says so beside the real name, and "break even" says there is no 
     await page.keyboard.press('/');
     await typed(page, 'hire');
     const first = await page.$eval('#ssRes .ss-row.on', el => [el.querySelector('.t').textContent, el.querySelector('.ss-syn').textContent]);
-    assert.equal(first[0], 'Schedules≈ hire');
+    // Hiring is where "hire" leads (issue #89): Staffing › Staff needs.
+    assert.equal(first[0], 'Hiring≈ hire');
     assert.equal((await groups(page))[0], 'Pages & views');
     await typed(page, 'break even');
     const row = page.locator('#ssRes .ss-row', {hasText: 'Portfolio'}).first();
@@ -437,7 +443,10 @@ const shelfAtRest = page => page.evaluate(() => { window.shelfMark = null; }).th
 test('the sphere rests between the places and the references, and the field steps down before the row would crowd', async () => {
   const page = await board({data: false, width: 1440});
   try {
-    await page.evaluate(() => { $('title').textContent = 'Big Copilot'; wireSphere(); });
+    /* The web build shows its landing until the board is entered (app.js
+       enterBoard()); the CLI page is the board itself. */
+    await page.evaluate(web => { if(web) document.body.classList.add('has-board'); $('title').textContent = 'Big Copilot'; wireSphere(); },
+      process.env.BOARD_TARGET === 'web');
     await page.locator('#orb.live').waitFor();
     await shelfAtRest(page);  // under reduced motion an entrance ends at its 400 ms mark
     const [orb, refs, nav] = await page.evaluate(() => ['orb', 'navRefs', 'nav'].map(id => {
@@ -848,7 +857,7 @@ test('profit: switching the portfolio to Operations takes the landing down', asy
    test board draws itself: a live refresh then runs as the app runs it. */
 const quietRender = page => page.evaluate(() => {
   ['indexTrends', 'drawMast', 'drawKpis', 'drawAlerts', 'drawRhythm', 'drawSupplyStrip', 'drawShopsTab', 'drawWarehousesTab', 'drawFactoriesTab',
-   'drawFlow', 'drawMovers', 'drawMarket', 'drawPlan', 'drawProducts', 'drawPayroll', 'drawGoals', 'drawFindLocation',
+   'drawFlow', 'drawMovers', 'drawMarket', 'drawPlan', 'drawProducts', 'drawStaff', 'drawGoals', 'drawFindLocation',
    'drawOptimizeStaffing', 'drawFooter', 'wireAll', 'refreshCityMaps'].forEach(name => { window[name] = () => {}; });
 });
 
@@ -1058,6 +1067,21 @@ test('By weekday is found by the old section\'s name and opens the chart on it',
     assert.equal(await lit(page), 'By weekday≈ weekly rhythm');
     await page.keyboard.press('Enter');
     assert.deepEqual(await page.evaluate(() => [page, sub.company, chartWindow]), ['company', 'results', 'wd']);
+    assert.deepEqual(page.errors, []);
+  } finally { await page.close(); }
+});
+
+test('Hiring is found by its name and by "staff", and opens Staffing on Staff needs, not the Overview', async () => {
+  const page = await board();
+  try {
+    await page.keyboard.press('/');
+    // Main's Company › Staff page is Staffing › Staff needs (the redesign's one hiring home).
+    await typed(page, 'staff');
+    assert.ok(await page.locator('#ssRes .ss-row .t', {hasText: /^Hiring/}).count(), 'the hiring view answers "staff"');
+    await typed(page, 'hiring');
+    assert.equal(await lit(page), 'Hiring');
+    await page.keyboard.press('Enter');
+    assert.deepEqual(await page.evaluate(() => [page, sub.staffing, route, $('secStaff').hidden]), ['staffing', 'needs', 'staffing/needs', false]);
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
 });

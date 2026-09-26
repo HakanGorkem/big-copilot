@@ -32,7 +32,7 @@ function board({saved = {}, data = {}} = {}) {
       },
       back(){move(-1);},
     },
-    localStorage:{getItem(key){return saved[key] ?? null;}, setItem(){}},
+    localStorage:{getItem(key){return saved[key] ?? null;}, setItem(key, value){saved[key] = String(value);}},
     document:{querySelectorAll(){return [];}, body:{classList:{add(){}, remove(){}}},
               addEventListener(type, fn, capture){if (capture) captured[type] = fn;}},
     window:{scrollY:0, addEventListener(type, fn){listeners[type] = fn;}},
@@ -117,9 +117,46 @@ test('Businesses carries Results, Products & prices, Standards and Milestones; S
   assert.equal(vm.runInContext('SUBS.company.start', b.context), 'results');
   const staffing = vm.runInContext('SUBS.staffing.items', b.context);
   assert.deepEqual([...staffing].map(([, label]) => label), ['Schedules', 'Staff needs', 'Payroll']);
-  assert.deepEqual([...staffing].map(([, , anchor]) => anchor), ['secSchedules', 'secNeeds', 'secPayroll']);
+  assert.deepEqual([...staffing].map(([, , anchor]) => anchor), ['secSchedules', 'secStaff', 'secPayroll'],
+    'Staff needs is anchored on the hiring page (issue #89)');
   b.context.showSub('staffing', 'payroll');
   assert.match(b.$('staffingNav').innerHTML, /href="#secPayroll" data-id="payroll" class="on"/);
+});
+
+/* Main folded Payroll into its Company › Staff page (issue #89); the redesign
+   keeps both as Staffing views. An old hash, an old section link and a
+   remembered view each open the one it named. */
+test('the old #payroll hash, #secPayroll and a remembered Payroll open Staffing › Payroll', () => {
+  for (const hash of ['#payroll', '#secPayroll']) {
+    const b = board({data: sites()});
+    b.context.location.hash = hash;
+    b.boot();
+    assert.equal(b.page(), 'staffing', hash);
+    assert.equal(b.sub('staffing'), 'payroll', hash);
+    assert.equal(vm.runInContext('route', b.context), 'staffing/payroll', hash);
+  }
+  const saved = {ba_dash_company: 'payroll', ba_dash_page: 'company'};
+  const b = board({saved});
+  assert.equal(b.sub('company'), 'results', 'Company has no Payroll view any more');
+  assert.equal(saved.ba_dash_staffing, 'payroll', 'the remembered view moves to Staffing');
+  assert.equal(saved.ba_dash_route, 'staffing/payroll', 'and a board opened with no hash opens it');
+});
+
+/* Staff was a Company view on main: its name, its section and a remembered
+   Staff open Staffing › Staff needs, whose second half is that page. */
+test('the #staff hash, #secStaff and a remembered Staff open Staffing › Staff needs', () => {
+  for (const hash of ['#staff', '#secStaff']) {
+    const b = board({data: sites()});
+    b.context.location.hash = hash;
+    b.boot();
+    assert.equal(b.page(), 'staffing', hash);
+    assert.equal(b.sub('staffing'), 'needs', hash);
+    assert.equal(vm.runInContext('route', b.context), 'staffing/needs', hash);
+  }
+  assert.equal(vm.runInContext('pageFromHash("staff")', board().context), 'staffing');
+  const saved = {ba_dash_company: 'staff'};
+  board({saved});
+  assert.equal(saved.ba_dash_staffing, 'needs');
 });
 
 test('the site panel decides its own visibility when a Company view arrives', () => {
@@ -143,7 +180,8 @@ test('a Today finding opens Company on Results, and Back returns to Today', () =
 
 test('every Company section deep link opens the view that holds it', () => {
   for (const [hash, pageId, view] of [['#secDaily','company','results'], ['#secPortfolio','company','results'],
-                              ['#secProducts','company','products'], ['#secPayroll','staffing','payroll'], ['#secGoals','company','milestones']]) {
+                              ['#secProducts','company','products'], ['#secStaff','staffing','needs'],
+                              ['#secPayroll','staffing','payroll'], ['#secGoals','company','milestones']]) {
     const b = board();
     b.context.location.hash = hash;
     b.boot();
@@ -282,7 +320,7 @@ for (const [pageId, view, anchor, nav] of [
   ['growth','market','secMarket','growthNav'], ['growth','plan','secPlan','growthNav'],
   ['company','products','secProducts','companyNav'], ['staffing','payroll','secPayroll','staffingNav'],
   ['company','milestones','secGoals','companyNav'], ['company','standards','secStandards','companyNav'],
-  ['staffing','schedules','secSchedules','staffingNav'], ['staffing','needs','secNeeds','staffingNav'],
+  ['staffing','schedules','secSchedules','staffingNav'], ['staffing','needs','secStaff','staffingNav'],
 ]) test(`modified-click destination boots ${pageId}/${view}`, () => {
   const b = board();
   b.context.showSub(pageId, view);
@@ -450,7 +488,7 @@ test('Company in the nav, and a Company hash, are the portfolio again', () => {
 });
 
 test('an address that answers nothing lands on the portfolio and says so', () => {
-  const b = board({data: sites(), saved: {ba_dash_company: 'payroll'}});
+  const b = board({data: sites(), saved: {ba_dash_company: 'staff'}});
   b.context.location.hash = '#site/nowhere-1';
   b.boot();
   assert.equal(b.page(), 'company');

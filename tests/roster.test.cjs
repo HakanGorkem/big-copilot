@@ -46,6 +46,15 @@ before(async () => {
   // every read and write there throws, which is the one case the ticks must
   // survive but not the case being tested.
   server = http.createServer((req, res) => {
+    /* The web build loads its own files beside the page (scripts, fonts):
+       those are web/'s, not the page again. */
+    const p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    const f = path.join(ROOT, 'web', p);
+    if(process.env.BOARD_TARGET === 'web' && p !== '/' && f.startsWith(path.join(ROOT, 'web')) && fs.existsSync(f) && fs.statSync(f).isFile()){
+      const type = {'.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.woff2': 'font/woff2', '.svg': 'image/svg+xml'}[path.extname(f)];
+      res.writeHead(200, type ? {'content-type': type} : {});
+      return fs.createReadStream(f).pipe(res);
+    }
     res.writeHead(200, {'content-type': 'text/html; charset=utf-8'});
     res.end(html);
   });
@@ -1749,7 +1758,7 @@ test('a plan half of which waits on hires says what to delete and what to leave'
     // Not "delete the cleaning and security hours and drag these in": half of
     // "these" is dashed, and the hours under them would stand bare.
     assert.match(note, /Delete the cleaning and security hours the solid entries replace/);
-    assert.match(note, new RegExp(`leave what is under the ${counts.hire} dashed entry`));
+    assert.match(note, new RegExp(`leave what is under the ${counts.hire} dashed ${counts.hire === 1 ? 'entry' : 'entries'}`));
     assert.doesNotMatch(note, /drag these in instead/);
   } finally { await page.close(); }
 });

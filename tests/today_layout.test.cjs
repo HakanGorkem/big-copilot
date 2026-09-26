@@ -115,25 +115,25 @@ test('below the gate and switched off are two lines, each with its own show', as
   } finally { await page.close(); }
 });
 
-test('Payroll says what was booked yesterday, $0 included, once a day has finished', async () => {
+test('Payroll, at the foot of Staff, says what was booked yesterday, $0 included, once a day has finished', async () => {
   const page = await today(1440);
   try {
-    const quiet = await page.evaluate(() => {
+    const facts = await page.evaluate(() => {
       Object.assign(D.staff, {total: 2, roles: [{role: 'Cashier', count: 2, cost: 8800}],
                               avgSatisfaction: 90, unhappy: 0, absent: 0, complaining: 0});
       const read = wageBill => {
-        D.kpi.wageBill = wageBill; drawPayroll();
-        return document.querySelector('#secPayroll .sechead .quiet').textContent;
+        D.kpi.wageBill = wageBill; drawStaff();
+        return [...document.querySelectorAll('#hrPayroll .facts > div')].slice(0, 3).map(r => r.textContent).join(' · ');
       };
       const out = [read(9000), read(0)];
       D.daily = []; out.push(read(0));
       return out;
     });
-    assert.deepEqual(quiet, [
-      "2 people · $8,800/day at today's rates · $9,000 booked yesterday",
-      "2 people · $8,800/day at today's rates · $0 booked yesterday",
+    assert.deepEqual(facts, [
+      'People2 · Wages a day$8,800 · Booked yesterday$9,000',
+      'People2 · Wages a day$8,800 · Booked yesterday$0',
       // No finished day: there is no yesterday to have booked anything.
-      "2 people · $8,800/day at today's rates",
+      'People2 · Wages a day$8,800 · Satisfaction90%',
     ]);
   } finally { await page.close(); }
 });
@@ -156,9 +156,20 @@ test('the Portfolio total meets Today\'s profit through the company costs', asyn
   } finally { await page.close(); }
 });
 
-test('at 390 px the Overview pairs its figures, stacks its tool panels and never scrolls sideways', async () => {
+test('at 390 px the Overview folds its figures into one line, pairs them when opened, stacks its tool panels and never scrolls sideways', async () => {
   const page = await today(390);
   try {
+    // The phone's company line comes first, so Needs attention is on the first screen;
+    // "All figures" opens the four tiles in place.
+    const folded = await page.evaluate(() => ({
+      line: getComputedStyle(document.getElementById('ovCtx')).display !== 'none' && document.getElementById('ovCtx').textContent,
+      tiles: getComputedStyle(document.getElementById('kpis')).display,
+    }));
+    assert.match(folded.line, /Profit.*Cash.*Day.*All figures/s);
+    assert.equal(folded.tiles, 'none', 'the tiles wait for All figures');
+    await page.evaluate(() => wireCards()); // the board wires it in renderAll(); this harness draws alone
+    await page.click('#ovCtx .ov-kmore');
+    assert.equal(await page.getAttribute('#ovCtx .ov-kmore', 'aria-expanded'), 'true');
     const m = await page.evaluate(() => {
       const tiles = [...document.querySelectorAll('#kpis .kpi')].map(t => t.getBoundingClientRect());
       const cards = [...document.querySelectorAll('#secMoves .ov-p')].map(c => c.getBoundingClientRect());

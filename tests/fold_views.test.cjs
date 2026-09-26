@@ -226,10 +226,17 @@ const mastBoxes = (page, [save, flags]) => page.evaluate(async ([save, flags, FL
 const NORMAL = {label: 'Normal', slot: 2, harder: 0, easier: 0, startingMoney: 0, rules: []};
 // Where the search control starts, and where the sphere's first ball needs it
 // to start: 40 px after the nav, 100 px of ball, 12 px of gap.
-const ballRoom = page => page.evaluate(() => ({control: ssMastControl().getBoundingClientRect().left,
-  right: ssMastControl().getBoundingClientRect().right,
-  rest: document.getElementById('nav').getBoundingClientRect().right + SS_BALL_ROOM,
-  clock: document.getElementById('clock').getBoundingClientRect().left}));
+// Where the masthead takes two rows (a long name, the redesign's wider places),
+// the places are the lower row and the shelf follows the brand on the top row,
+// its first ball 40 px (nxFitMast(), wireSphere()).
+const ballRoom = page => page.evaluate(() => {
+  const two = document.getElementById('mast').classList.contains('nx-wrap');
+  return {control: ssMastControl().getBoundingClientRect().left,
+    right: ssMastControl().getBoundingClientRect().right,
+    rest: two ? document.getElementById('brand').getBoundingClientRect().right + 16 + 40 + 12
+      : document.getElementById('nav').getBoundingClientRect().right + SS_BALL_ROOM,
+    clock: document.getElementById('clock').getBoundingClientRect().left};
+});
 
 test("at 1501 px and over the chip ends the clock's last line, inside the masthead", async () => {
   for (const width of [1501, 1530, 1600]) for (const save of ['Fixture', LONG]) for (const flags of [false, true]) {

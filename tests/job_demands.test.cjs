@@ -171,7 +171,7 @@ test('the company-wide demand finding lands on the Crew with the most people lac
     assert.equal(await page.locator('#sp-crew .sp-dem.sp-hit').count(), 1);
     assert.match(await page.locator('#sp-crew .sp-dem.sp-hit').innerText(), /Gold Health Insurance/);
     // No site lacks it any more: the link falls back to Staffing › Staff needs,
-    // which lists it as company-wide.
+    // which lists it as company-wide, above the hiring page (main's Staff).
     await page.evaluate(() => {
       D.businesses.forEach(b => { b.staffLackingCompany = 0; b.staffDemands = []; });
       siteOpen = false; drawSite();

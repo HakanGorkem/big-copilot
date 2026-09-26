@@ -1712,6 +1712,21 @@ function openFinder(preset = {}, focus = false){
     if(view.narrow) to.scrollIntoView({block: "nearest"});
   });
 }
+/* Expansion › Find a location reached with no preset -- Back, Forward, a
+   reload, the area's own row, the masthead's remembered view: the finder as
+   the reader left it, switched on, its filters, saved searches and pick
+   untouched (only openFinder() applies a preset). */
+function showFinder(){
+  if(!premises()) return;
+  if(typeof routeNext !== "undefined" && routeNext === null) routeNext = "expansion/finder";
+  showPage("map");
+  showCityMap();
+  const view = cityMapPage;
+  if(view.fs.on) return;
+  view.loadFinder();
+  view.fs.on = true;
+  view.ready.then(ok => { if(ok) view.update(); });
+}
 function refreshCityMaps(){
   const character=D?.meta?.character || D?.supply?.factories?.character || D?.meta?.save;
   if(cityMapCharacter !== undefined && character!==cityMapCharacter){

@@ -344,6 +344,11 @@ const LINK_HEALTH = {schemaVersion: 1, stamp: 's1', busy: false, company: 'Costy
   day: 12, hour: 9, minute: 5, refreshedAt: '2026-09-25T09:05:00Z', writes: []};
 async function shell(t, {ui = '', width = 1280, remembered = false, permission = 'granted', held = false} = {}){
   const context = await browser.newContext({viewport: {width, height: 900}, locale: 'en-US', reducedMotion: 'reduce'});
+  /* The game link is 127.0.0.1 and this page is not: a browser with Local
+     Network Access (Edge, newer Chrome) holds the request for a prompt nobody
+     answers. The player grants it once; here it is granted up front. A
+     browser without the permission ignores it. */
+  await context.grantPermissions(['local-network-access']).catch(() => {});
   t.after(() => context.close());
   await context.addInitScript(({remembered, permission, held}) => {
     // `held`: the first read of a save waits for readSave(fail), which lets
