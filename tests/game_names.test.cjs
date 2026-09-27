@@ -339,6 +339,10 @@ test('the picker is a listbox button: every choice listed, the current one marke
   // Each group has its heading, which is not an option.
   assert.deepEqual(await pop.locator('.gn-grp').evaluateAll(els => els.map(e => [e.textContent, e.getAttribute('role'),
     e.nextElementSibling.dataset.value])), [['Whole page', 'presentation', 'en'], ['Game names only', 'presentation', 'cs']]);
+  // Each group names its options, so a screen reader says which group a language is in.
+  assert.deepEqual(await pop.locator('[role="group"]').evaluateAll(els => els.map(e => [
+    document.getElementById(e.getAttribute('aria-labelledby')).textContent, e.querySelectorAll('[role="option"]').length])),
+    [['Whole page', 6], ['Game names only', 16]]);
   assert.deepEqual(rows.find(r => r[0] === 'ja'), ['ja', 'ja', '日本語']);
   assert.deepEqual(await pop.locator('[aria-selected="true"]').evaluateAll(els => els.map(e => e.dataset.value)), ['en']);
   // 22 rows scroll inside a list that stays within the window.
@@ -445,6 +449,27 @@ test("a whole-page language switches the page's words with the names, and says i
   // Kept: the next visit opens in German, words and names.
   const again = await site(t, {context});
   await again.page.waitForFunction(() => ttLang === 'de' && gnLang === 'de');
+  assert.deepEqual(errors, []);
+});
+
+test("one choice is both layers or neither: a page table that will not load leaves everything as it was", async t => {
+  const {page, errors} = await site(t);
+  await page.route('**/i18n/fr.json*', route => route.fulfill({status: 404, body: ''}));
+  await choose(page, 'fr');
+  await page.waitForFunction(() => document.querySelector('.sf-landing [data-gn-pick]').dataset.value === 'en');
+  assert.deepEqual(await page.evaluate(() => [gnLang, ttLang, localStorage.getItem('ba_dash_names')]), ['en', 'en', null]);
+  assert.deepEqual(errors, []);
+});
+
+test('a switch draws the open board once, after both layers are in', async t => {
+  const {page, errors} = await site(t);
+  await boardOn(page);
+  await page.evaluate(() => { window.__draws = 0; const was = renderCalm; window.renderCalm = (...a) => { window.__draws++; return was(...a); }; });
+  await page.evaluate(() => gnChoose('fr'));
+  assert.deepEqual(await page.evaluate(() => [gnLang, ttLang, window.__draws]), ['fr', 'fr', 1]);
+  // A names-only language over an English page loads no page table and draws once.
+  await page.evaluate(async () => { await gnChoose('en'); window.__draws = 0; await gnChoose('pl'); });
+  assert.deepEqual(await page.evaluate(() => [gnLang, ttLang, window.__draws]), ['pl', 'en', 1]);
   assert.deepEqual(errors, []);
 });
 

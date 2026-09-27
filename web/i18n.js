@@ -258,11 +258,17 @@ function ttSetTable(lang, table){
   ttWhenDom(() => tApply());
   ttListeners.slice().forEach(fn => { try{ fn(ttLang); }catch(e){ console.error(e); } });
 }
-/* A language's table, fetched beside the page with the build stamp. */
+/* A language's table, fetched once beside the page with the build stamp (a
+   failed fetch is tried again next time). */
+const ttTables = new Map();
 function ttLoad(lang){
+  if(ttTables.has(lang)) return ttTables.get(lang);
   const v = encodeURIComponent((typeof window !== "undefined" && window.LEDGER_BUILD) || "");
-  return fetch(`i18n/${encodeURIComponent(lang)}.json${v ? `?v=${v}` : ""}`)
+  const got = fetch(`i18n/${encodeURIComponent(lang)}.json${v ? `?v=${v}` : ""}`)
     .then(r => { if(!r.ok) throw new Error(`i18n/${lang}.json: ${r.status}`); return r.json(); });
+  ttTables.set(lang, got);
+  got.catch(() => ttTables.delete(lang));
+  return got;
 }
 /* Switch the UI language. A table that will not load leaves the page as it
    was and resolves false. */

@@ -15961,7 +15961,7 @@ tr.ss-ring > td{animation:ss-flash 2.4s ease-out}
    those that change only the game's names. */
 .gn-grp{padding:10px 12px 4px;color:var(--ink-2);font:600 10.5px/1.2 Archivo,"Helvetica Neue",Arial,sans-serif;
   letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
-.gn-grp:first-child{padding-top:6px}
+.gn-group:first-child .gn-grp{padding-top:6px}
 /* Under the picker while the page's words are machine-drafted. */
 .gn-note{display:inline-block;max-width:240px;color:var(--ink-2);font-size:12px;line-height:1.4;
   text-decoration:underline;text-decoration-color:var(--rule);text-underline-offset:3px}
@@ -17110,12 +17110,36 @@ function gnPaint(lang = gnLang){
   gnNote();
   if(gnPopFor) gnMark();
 }
-/* The page's own words in the language picked, where Big Copilot has them
+/* The page's own words for a language picked, where Big Copilot has them
    (TT_LANGS in web/i18n.js); English for a language that changes only the
    game's names. */
-function gnUi(lang){
-  if(typeof setUiLang !== "function") return Promise.resolve(false);
-  return setUiLang(typeof ttKnown === "function" && ttKnown(lang) ? lang : "en");
+const gnUiLang = lang => typeof ttKnown === "function" && ttKnown(lang) ? lang : "en";
+/* One Language choice, both layers or neither: the page's words and the
+   game's names are both fetched first, and only then kept and put in force.
+   A table that will not load leaves the page, the names, the picker and the
+   kept choice as they were. The latest choice wins a race. */
+let gnSwitchSeq = 0, gnHold = 0, gnPending = false;
+async function gnSwitch(lang){
+  if(!gnKnown(lang)) lang = "en";
+  const seq = ++gnSwitchSeq, ui = gnUiLang(lang);
+  const canUi = typeof setUiLang === "function" && typeof ttLoad === "function";
+  try{
+    await Promise.all([lang !== "en" ? gnLoad(lang) : null, canUi && ui !== "en" ? ttLoad(ui) : null]);
+  }catch(e){
+    if(seq === gnSwitchSeq) gnPaint();
+    return false;
+  }
+  if(seq !== gnSwitchSeq) return false;
+  gnRemember(lang);
+  /* Both layers change, and the board is drawn once, after both. */
+  gnHold++;
+  try{
+    const [names] = await Promise.all([setGameNames(lang),
+      canUi && ui !== (typeof ttLang === "string" ? ttLang : "en") ? setUiLang(ui) : true]);
+    return names;
+  }finally{
+    if(!--gnHold && gnPending){ gnPending = false; gnRedraw(); }
+  }
 }
 /* "Machine-translated. Help check it" under every picker, while the page's
    words are in a language still mostly machine-drafted (its data-drafted). */
@@ -17143,6 +17167,8 @@ async function setGameNames(lang){
   return true;
 }
 function gnRedraw(){
+  /* While gnSwitch() puts both layers in force, one redraw waits for both. */
+  if(gnHold){ gnPending = true; return; }
   if(typeof hasData === "function" && hasData()){
     D = localiseNames(D);
     renderCalm(false);
@@ -17196,20 +17222,19 @@ function gnOffer(){
   const whole = typeof ttKnown === "function" && ttKnown(lang);
   el.innerHTML = `<p>${whole ? "Show Big Copilot in" : "Show game names in"} <span lang="${attr(lang)}">${spEsc(word)}</span>?</p>
     <div class="gn-offer-acts"><button type="button" class="gn-yes">Yes</button><button type="button" class="gn-no">No thanks</button></div>`;
-  el.querySelector(".gn-yes").onclick = () => { gnOfferClose(el, "yes"); gnRemember(lang); gnUi(lang); setGameNames(lang); };
+  el.querySelector(".gn-yes").onclick = () => { gnOfferClose(el, "yes"); gnSwitch(lang); };
   el.querySelector(".gn-no").onclick = () => gnOfferClose(el, "no");
   document.body.appendChild(el);
   return el;
 }
-/* A language picked in the footer: kept, the offer answered, the page's words
-   and the game's names switched. */
+/* A language picked in the footer: the offer answered, the picker showing it
+   while its tables load, then the page's words and the game's names switched
+   and the choice kept. */
 function gnChoose(lang){
-  gnRemember(lang);
   const offer = document.querySelector(".gn-offer");
   if(offer) gnOfferClose(offer, "picked");
   gnPaint(lang);
-  gnUi(lang);
-  return setGameNames(lang);
+  return gnSwitch(lang);
 }
 function wireGameNames(){
   gnPickers().forEach(p => {
@@ -17358,19 +17383,26 @@ function gnOpen(p, key){
   const btn = p.querySelector(".gn-btn"), head = p.closest(".sf-gn") && p.closest(".sf-gn").querySelector(".sf-head");
   if(head && head.id) gnPop.setAttribute("aria-labelledby", head.id);
   gnPop.textContent = "";
-  /* A heading before each group: the languages the whole page comes in, then
+  /* The options in two groups, each named by its heading, so a screen reader
+     says which a language is: the languages the whole page comes in, then
      those that change only the game's names. Headings are not options, so the
      keys and type-ahead pass them by. */
   const groups = {page: tt("foot.lang.page", "Whole page"), names: tt("foot.lang.names", "Game names only")};
-  let group = null;
+  let group = null, host = gnPop;
   gnOpts(p).forEach((o, i) => {
     if(o.dataset.group && o.dataset.group !== group && groups[o.dataset.group]){
       group = o.dataset.group;
+      host = document.createElement("div");
+      host.className = "gn-group";
+      host.setAttribute("role", "group");
+      host.setAttribute("aria-labelledby", `gnGrp-${group}`);
       const h = document.createElement("div");
       h.className = "gn-grp";
+      h.id = `gnGrp-${group}`;
       h.setAttribute("role", "presentation");
       h.textContent = groups[group];
-      gnPop.appendChild(h);
+      host.appendChild(h);
+      gnPop.appendChild(host);
     }
     const row = document.createElement("div");
     row.className = "gn-opt";
@@ -17380,7 +17412,7 @@ function gnOpen(p, key){
     ["lang", "translate"].forEach(a => { if(o.getAttribute(a)) row.setAttribute(a, o.getAttribute(a)); });
     row.innerHTML = `<span class="gn-word"></span>${GN_TICK}`;
     row.firstChild.textContent = o.textContent;
-    gnPop.appendChild(row);
+    host.appendChild(row);
   });
   gnPopFor = p; gnTyped = "";
   gnMark();
