@@ -3961,7 +3961,9 @@ def _supply(
                 # shelf before the next morning's round.
                 level = "critical" if cover_fit == "short" else "warn"
                 reason = "shortfall"
-            elif not supply["active"]:
+            # A paused import beside a route its senders hold a week for is the
+            # backup the board calls it, not a line to resume.
+            elif not supply["active"] and not unmeasured:
                 level, reason = ("critical" if cover < 7 else "warn"), "paused"
             elif order_fit == "short":
                 level, reason = "critical", "order"
@@ -4932,8 +4934,14 @@ def _supply_facts(ctx: dict) -> dict:
                 "parts": {"lines": round(lines_use), "sites": round(sites), "route": round(routed)},
                 "imp": False, "wholesale": True, "day": deal["day"],
             }, "weekly"
+        # A route the log cannot measure, from senders holding a week of the
+        # need (_supply's heldUpstream): the import is not the whole supply,
+        # and pausing it asks nothing back while they hold it.
+        # Only for a depot no factory line draws on: the row's week is the
+        # shops' sales, and a line's need would not be in it.
+        upstream = bool(row and row.get("heldUpstream")) and not lines_use
         p = {}
-        if paused and use and not covered:
+        if paused and use and not covered and not upstream:
             p["paused"] = True
             p["cover"] = row["cover"] if row else (stock / (use / 7) if use else 60)
         elif not entry and use and not covered and (lines_use or not inbound):
@@ -4941,11 +4949,6 @@ def _supply_facts(ctx: dict) -> dict:
             p["noplanLvl"] = "warn" if stock < use else "info"
         if row is not None and row["basis"] == "order" and not lines_use:
             p["young"] = "young"
-        # A route the log cannot measure, from senders holding a week of the
-        # need (_supply's heldUpstream): the import is not the whole supply.
-        # Only for a depot no factory line draws on: the row's week is the
-        # shops' sales, and a line's need would not be in it.
-        upstream = bool(row and row.get("heldUpstream")) and not lines_use
         short = []
         if entry and not paused and use and not upstream and _below(brought, use):
             short.append("order")

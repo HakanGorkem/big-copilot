@@ -14,13 +14,13 @@ from test_routed_supply import DAY, DEPOT, FACTORY, FOOD, SHOP, SaveStub, contra
 SOLD = 500  # what the shop sells a day, and so the depot's draw
 
 
-def supply_for(factory_units, route=True, target=10000, depot_units=9000):
+def supply_for(factory_units, route=True, target=10000, depot_units=9000, active=True):
     """_supply() over a factory, a depot and a shop with no logged rounds: the
     depot's draw is the shop's sales, and a 1,000 Smart Delivery import is a
     fraction of the week's 3,500. The factory's route tops the depot up to
     `target`. Returns the depot's import row, its fact and the order findings."""
     plans = [plan(DEPOT, SHOP, 2000)] + ([plan(FACTORY, DEPOT, target)] if route else [])
-    save = SaveStub({}, plans, [contract(1000, 1000, smart=True)])
+    save = SaveStub({}, plans, [contract(1000, 1000, smart=True, active=active)])
 
     def business(site, name, kind, status, units, rate):
         return {"key": site_key(site), "name": name, "code": "", "neighbourhood": "",
@@ -78,6 +78,20 @@ class HeldUpstreamTests(unittest.TestCase):
         self.assertEqual((row["orderFit"], row["coverFit"]), ("ok", "short"))
         self.assertEqual((row["level"], row["reason"]), ("critical", "shortfall"))
         self.assertEqual((fact["st"], fact["why"]), ("short", "shortfall"))
+
+
+    def test_pausing_the_backup_beside_a_held_route_asks_nothing_back(self):
+        """The board calls the import a backup; pausing it must not turn the
+        line into a paused import to resume."""
+        row, fact, _orders = supply_for(factory_units=20000, active=False)
+        self.assertTrue(row.get("heldUpstream"))
+        self.assertNotEqual(row["reason"], "paused")
+        self.assertEqual((fact["st"], fact["why"]), ("covered", "route"))
+
+    def test_a_paused_import_without_a_held_route_is_still_paused(self):
+        row, fact, _orders = supply_for(factory_units=1000, active=False)
+        self.assertEqual(row["reason"], "paused")
+        self.assertEqual(fact["st"], "paused")
 
 
 if __name__ == "__main__":
