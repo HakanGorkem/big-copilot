@@ -5,7 +5,9 @@
     python tools/i18n.py ship [--check]            write web/i18n/<lang>.json (build_web.py calls ship())
     python tools/i18n.py accept LANG [KEY ...]     record the current English as what KEY was translated from
     python tools/i18n.py glossary LANG --out PATH  the game's own words for terms our English uses
-    python tools/i18n.py draft-sheet LANG [--out PATH]  what a translator has to do, with context
+    python tools/i18n.py draft-sheet LANG [--out PATH] [--review]  what a translator has to do, with context
+    python tools/i18n.py import-draft LANG FILE --model M  take a machine draft in, marked unreviewed
+    python tools/i18n.py reviewed LANG KEY ... | --all  a native speaker has checked KEY
 
 The English is never kept in a file: it stays at the call site, beside its key
 (docs/architecture.md, "UI text"), and `extract` reads it from there:
@@ -29,6 +31,11 @@ Missing and stale translations never fail the build: the page falls back to
 English per key. `status --strict` fails on them, for a
 translation pull request.
 
+A machine draft (`import-draft`) ships like any translation, and
+i18n/<lang>.ai.json names each drafted key and the model that wrote it until a
+native speaker checks it (`reviewed`, which also accepts it). `status` counts
+the drafts awaiting review; they never fail it.
+
 `glossary` and `draft-sheet` read the installed game's text. That text is the
 game's, so neither writes into this repository.
 """
@@ -48,6 +55,8 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 SOURCE_DIR = os.path.join(ROOT, "i18n")
+# Beside <lang>.json and <lang>.base.json: the machine-drafted keys awaiting review.
+AI_SUFFIX = ".ai.json"
 # The scripts a page runs, beside the board script inside ba_dashboard.py.
 JS_FILES = ("web/i18n.js", "web/app.js", "web/update.js", "web/community.js", "web/map.js", "web/wiki.js")
 # A key is <area>.<thing>[.<part>]; the area names the page, and the pull
@@ -60,7 +69,7 @@ PLURAL_SUFFIX = re.compile(r"_(zero|one|two|few|many|other)$")
 FIELD = re.compile(r"\{(\w+)(?::([^{}]+))?\}")
 SPECS = re.compile(r",|\$|\$c|day|,?\.\df")
 # CLDR plural categories of the languages Big Copilot is translated into.
-PLURALS = {"en": ("one", "other"), "de": ("one", "other")}
+PLURALS = {"en": ("one", "other"), "de": ("one", "other"), "pt": ("one", "many", "other")}
 ATTRS = ("data-tt-title", "data-tt-aria-label", "data-tt-placeholder", "data-tt-tip")
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 
@@ -577,12 +586,38 @@ def load(lang: str, root: str = ROOT) -> tuple[dict, dict]:
     return read(f"{lang}.json"), read(f"{lang}.base.json")
 
 
+def drafted(lang: str, root: str = ROOT) -> dict:
+    """i18n/<lang>.ai.json: {key: model} for every machine-drafted key nobody
+    has reviewed yet."""
+    path = os.path.join(root, "i18n", f"{lang}{AI_SUFFIX}")
+    if not os.path.isfile(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in data.items()):
+        raise CatalogueError(f"i18n/{lang}{AI_SUFFIX} is not a flat object of strings")
+    return data
+
+
+def _write(name: str, data: dict) -> None:
+    """One of i18n/'s files, sorted, one key a line; an empty .ai.json is removed."""
+    path = os.path.join(SOURCE_DIR, name)
+    if not data and name.endswith(AI_SUFFIX):
+        if os.path.isfile(path):
+            os.remove(path)
+        return
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(dict(sorted(data.items())), fh, ensure_ascii=False, indent=1)
+        fh.write("\n")
+
+
 def languages(root: str = ROOT) -> list[str]:
     """The languages with a translation under i18n/."""
     folder = os.path.join(root, "i18n")
     if not os.path.isdir(folder):
         return []
-    return sorted(n[:-5] for n in os.listdir(folder) if n.endswith(".json") and not n.endswith(".base.json"))
+    return sorted(n[:-5] for n in os.listdir(folder)
+                  if n.endswith(".json") and not n.endswith((".base.json", AI_SUFFIX)))
 
 
 def status(lang: str, english: dict | None = None, params: dict | None = None) -> dict:
@@ -670,9 +705,12 @@ def ship(check: bool = False, root: str = ROOT, english: dict | None = None,
 
 def accept(lang: str, keys: list[str], english: dict | None = None) -> list[str]:
     """Record the current English as what each key was translated from. With
-    no keys, every translated key that has no base yet."""
+    no keys, every translated key that has no base yet. A person accepting a
+    key has checked it, so any machine-draft mark on it goes too, and so do
+    the marks of keys no longer translated or no longer in the English."""
     english = catalogue() if english is None else english
     table, base = load(lang)
+    marks = drafted(lang)
     keys = keys or [k for k in table if k not in base]
     done = []
     for k in keys:
@@ -683,10 +721,82 @@ def accept(lang: str, keys: list[str], english: dict | None = None) -> list[str]
             raise CatalogueError(f"{k!r} is no longer in the English")
         base[k] = text
         done.append(k)
-    with open(os.path.join(SOURCE_DIR, f"{lang}.base.json"), "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(dict(sorted(base.items())), fh, ensure_ascii=False, indent=1)
-        fh.write("\n")
+    _write(f"{lang}.base.json", base)
+    if marks:
+        _write(f"{lang}{AI_SUFFIX}", {k: m for k, m in marks.items() if k not in set(done)
+                                      and k in table and _english_for(k, english)[0] is not None})
     return done
+
+
+def live_marks(lang: str, english: dict) -> dict:
+    """drafted() minus the marks of keys no longer translated or no longer in
+    the English: the drafts a native speaker still has to check."""
+    table, _ = load(lang)
+    return {k: m for k, m in drafted(lang).items() if k in table and _english_for(k, english)[0] is not None}
+
+
+def import_draft(lang: str, draft: dict, model: str, english: dict | None = None,
+                 params: dict | None = None) -> dict:
+    """Take a machine draft ({key: text}) into i18n/<lang>.json, record its
+    English and mark each key as drafted by `model`. A current translation a
+    person wrote or reviewed is never replaced: a draft only fills keys that
+    are missing, stale, mismatched or still unreviewed drafts. Returns
+    {"taken": [...], "kept": [...], "refused": {key: why}}."""
+    if english is None:
+        found = calls()
+        english, params = catalogue(found), passed(found)
+    table, base = load(lang)
+    marks = drafted(lang)
+    st = status(lang, english, params)
+    redo = set(st["stale"]) | set(st["mismatch"]) | set(marks)
+    forms = PLURALS.get(lang, ("one", "other"))
+    kept, refused, good = [], {}, {}
+    # A plural comes whole: every form the language has, from the draft or
+    # already translated and current (a changed English may leave one form to redo).
+    given = collections.defaultdict(set)
+    current = [k for k in table if k not in st["stale"] and k not in st["mismatch"]]
+    for k in [*draft, *current]:
+        if PLURAL_SUFFIX.search(k):
+            given[_base_key(k)].add(PLURAL_SUFFIX.search(k).group(1))
+    for k, text in sorted(draft.items()):
+        plural = PLURAL_SUFFIX.search(k)
+        lacking = sorted(set(forms) - given[_base_key(k)]) if plural else []
+        if not isinstance(text, str) or not text.strip():
+            refused[k] = "empty"
+        elif _english_for(k, english)[0] is None:
+            refused[k] = "not in the English"
+        elif plural and plural.group(1) not in forms:
+            refused[k] = f"{lang} has no plural form {plural.group(1)!r}"
+        elif lacking:
+            refused[k] = f"the draft lacks the plural forms {', '.join(lacking)}"
+        elif not fits(k, text, english, lang, params):
+            refused[k] = "placeholders unlike the English"
+        elif k in table and k not in redo:
+            kept.append(k)
+        else:
+            good[k] = text
+    # A form the language lacks is refused alone; any other refused form takes its group with it.
+    broken = {_base_key(k) for k in refused if PLURAL_SUFFIX.search(k) and PLURAL_SUFFIX.search(k).group(1) in forms}
+    taken = []
+    for k, text in good.items():
+        if PLURAL_SUFFIX.search(k) and _base_key(k) in broken:
+            refused[k] = "another plural form of it was refused"
+            continue
+        table[k], base[k], marks[k] = text, _english_text(k, english), model
+        taken.append(k)
+    _write(f"{lang}.json", table)
+    _write(f"{lang}.base.json", base)
+    _write(f"{lang}{AI_SUFFIX}", marks)
+    return {"taken": taken, "kept": kept, "refused": refused}
+
+
+def reviewed(lang: str, keys: list[str], english: dict | None = None) -> list[str]:
+    """A native speaker has checked these keys against today's English: accept
+    them, which drops their machine-draft marks. With no keys, every drafted
+    key still translated and still in the English."""
+    english = catalogue() if english is None else english
+    keys = keys or sorted(live_marks(lang, english))
+    return accept(lang, keys, english) if keys else []
 
 
 # -------------------------------------------------------- the game's words
@@ -738,16 +848,23 @@ def glossary(lang: str, english: dict | None = None) -> dict:
     return dict(sorted(out.items()))
 
 
-def draft_sheet(lang: str, english: dict | None = None, terms: dict | None = None) -> list[dict]:
+def draft_sheet(lang: str, english: dict | None = None, terms: dict | None = None,
+                review: bool = False) -> list[dict]:
     """The keys a translator has to do (missing and stale), with the context
     a good translation needs: the English, what it was before, the page, the
-    call sites, a length budget, and the game's words in it."""
+    call sites, a length budget, and the game's words in it. With review=True,
+    instead the machine drafts a native speaker has to check, each with its
+    text and the model that wrote it."""
     full = catalogue(where=True)
     english = {k: v["en"] for k, v in full.items()} if english is None else english
     table, base = load(lang)
-    st = status(lang, english)
+    marks = drafted(lang)
+    if review:
+        st = {"review": sorted(live_marks(lang, english))}
+    else:
+        st = {s: v for s, v in status(lang, english).items() if s in ("missing", "stale")}
     rows = []
-    for state in ("missing", "stale"):
+    for state in st:
         for k in st[state]:
             en = english.get(k) or _english_text(k, english) or ""
             row = {"key": k, "state": state, "area": k.split(".")[0], "en": en,
@@ -755,6 +872,8 @@ def draft_sheet(lang: str, english: dict | None = None, terms: dict | None = Non
                    "budget": int(len(en) * 1.3 + 0.999)}
             if state == "stale":
                 row["was"], row[lang] = base.get(k), table.get(k)
+            elif state == "review":
+                row[lang], row["model"] = table[k], marks[k]
             if terms:
                 low = en.lower()
                 row["terms"] = {t: w for t, w in terms.items()
@@ -786,6 +905,15 @@ def main(argv=None) -> int:
     p.add_argument("lang")
     p.add_argument("--out", help="a path outside the repository; stdout by default")
     p.add_argument("--no-terms", action="store_true", help="leave out the game's words (no game needed)")
+    p.add_argument("--review", action="store_true", help="instead, the machine drafts awaiting review")
+    p = sub.add_parser("import-draft", help="take a machine draft in, marked unreviewed")
+    p.add_argument("lang")
+    p.add_argument("file", help='a JSON object {"key": "text"}')
+    p.add_argument("--model", required=True, help="the model that wrote it, recorded per key")
+    p = sub.add_parser("reviewed", help="a native speaker has checked these keys")
+    p.add_argument("lang")
+    p.add_argument("keys", nargs="*")
+    p.add_argument("--all", action="store_true", help="every machine-drafted key")
     args = ap.parse_args(argv)
     out = sys.stdout
     if hasattr(out, "reconfigure"):
@@ -808,6 +936,11 @@ def main(argv=None) -> int:
                 for kind, keys in st.items():
                     for k in keys:
                         print(f"  {kind}: {k}")
+                marks = live_marks(lang, english)
+                if marks:
+                    models = collections.Counter(marks.values())
+                    print(f"  {len(marks)} machine-drafted, awaiting review ("
+                          + ", ".join(f"{n} by {m}" for m, n in sorted(models.items())) + ")")
                 if args.strict:
                     bad += sum(len(v) for v in st.values())
             return 1 if bad else 0
@@ -819,6 +952,24 @@ def main(argv=None) -> int:
         elif args.cmd == "accept":
             done = accept(args.lang, args.keys)
             print(f"i18n/{args.lang}.base.json: {len(done)} keys accepted")
+        elif args.cmd == "import-draft":
+            with open(args.file, encoding="utf-8") as fh:
+                draft = json.load(fh)
+            if not isinstance(draft, dict):
+                raise CatalogueError(f"{args.file} is not a JSON object")
+            got = import_draft(args.lang, draft, args.model)
+            print(f"i18n/{args.lang}.json: {len(got['taken'])} drafted keys taken, "
+                  f"{len(got['kept'])} kept as a person wrote them, {len(got['refused'])} refused")
+            for k, why in got["refused"].items():
+                print(f"  refused: {k} ({why})")
+            return 1 if got["refused"] else 0
+        elif args.cmd == "reviewed":
+            if not args.keys and not args.all:
+                raise CatalogueError("name the reviewed keys, or give --all")
+            english = catalogue()
+            done = reviewed(args.lang, args.keys, english)
+            print(f"i18n/{args.lang}{AI_SUFFIX}: {len(done)} keys reviewed, "
+                  f"{len(live_marks(args.lang, english))} left")
         elif args.cmd == "glossary":
             path = _outside_repo(args.out)
             terms = glossary(args.lang)
@@ -827,7 +978,7 @@ def main(argv=None) -> int:
             print(f"{path}: {len(terms)} terms")
         elif args.cmd == "draft-sheet":
             terms = None if args.no_terms else glossary(args.lang)
-            rows = draft_sheet(args.lang, terms=terms)
+            rows = draft_sheet(args.lang, terms=terms, review=args.review)
             if args.out:
                 with open(_outside_repo(args.out), "w", encoding="utf-8") as fh:
                     json.dump(rows, fh, ensure_ascii=False, indent=1)
