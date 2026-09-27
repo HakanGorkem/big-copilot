@@ -691,23 +691,23 @@ four of them. Each page is a `div.page` that `showPage()` unhides.
 | `supply` | Supply | `pageSupply` | one tab at a time — see below |
 | `staffing` | Staffing | `pageStaffing` | one view at a time — see below |
 | `growth` | Expansion | `pageGrowth` | one view at a time — see below |
-| `map` | City map (and Expansion › Find a location) | `pageMap` | `showCityMap` / `refreshCityMaps` in `web/map.js`, which also hosts the location finder as a mode of the page — `openFinder()` switches it on with a preset, `showFinder()` without one (the filters as they were left), and `CityMapView` ranks the `premises` rows beside the map |
+| `map` | City map (and Expansion › Find a location) | `pageMap` | `showCityMap` / `refreshCityMaps` in `web/map.js`, which also hosts the location finder as a mode of the page — `openFinder()` switches it on with a preset, `showFinder()` without one (a replayed entry's own filters, `nxFs`, else those on screen), and `CityMapView` ranks the `premises` rows beside the map. The route decides the mode: `map` is always the plain map, `expansion/finder` the finder. The board script heads the page (`#mapHead`) and puts the finder's ways on under it (`#finderCtx`), both from `drawFinderCtx()` |
 | `wiki` | Game guide | `pageWiki` | `wikiVisit` → `showWikiRoute` in `web/wiki.js`; the entry is omitted when `showWikiRoute` is undefined |
 
 Company's views (Businesses):
 
 | View | Section | Drawn by |
 | --- | --- | --- |
-| Results | `secDaily` (its By weekday option, `drawWeekday`, replaced the Weekly rhythm section; an old `#secRhythm` link lands here through `SEC_MOVED`), `secPortfolio`, `secDetail` | `drawChart`, `drawPortfolio`, `drawSitePicker` + `drawSite` |
-| Products & prices (`products`) | `secPrices`, `secProducts` | `drawPriceShops`, `drawProducts` |
-| Standards | `secStandards`, then `secPortfolio` (its `data-sub` is `results standards`) switched to Operations | `drawStandards`, `drawPortfolio` |
-| Milestones | `secGoals` | `drawGoals`; the difficulty is not here but a chip at the end of the clock's last line at 1501 px and over (`drawMast`) and, at 1500 px and under, the footer stamp (`drawFooter`, `#footDiff`), built by `fvDiffChip()`, with a body-level popover (`#fvDiffPop`) from `drawDifficulty()` |
+| Results | `secDaily` (Company results; its By weekday option, `drawWeekday`, replaced the Weekly rhythm section; an old `#secRhythm` link lands here through `SEC_MOVED`), `secFinance` (Company finances), `secPortfolio`, `secDetail` | `drawChart`, `drawFinance`, `drawPortfolio`, `drawSitePicker` + `drawSite`. A business's page (`drawSite`) carries its findings, tiles and blocks, a Schedule summary (`spSchedSummary()`, `#sp-sched`; the planner is Staffing › Schedules') and, in its head, the ways to its planners (`spActs()`, `data-site-go`) |
+| Products & prices (`products`) | `secPrices`, `secProducts` | `drawPriceShops` (a chip a shop or office, `data-price-pick`; the picked one's prices beside the market's lowest in its neighbourhood, `bzPriceTable()`; kept on the entry as `nxPrice`), `drawProducts` (Sales across the company) |
+| Standards | `secStandards`, then `secPortfolio` (its `data-sub` is `results standards`) switched to Operations | `drawStandards` (the four subjects, then `stdTable()`: every shop and office, satisfaction, promotion, amenity lamps, uniforms with the write and its progress), `drawPortfolio` |
+| Milestones | `secGoals` | `drawGoals` (Career goals with bars, Career totals); the difficulty is not here but a chip at the end of the clock's last line at 1501 px and over (`drawMast`) and, at 1500 px and under, the footer stamp (`drawFooter`, `#footDiff`), built by `fvDiffChip()`, with a body-level popover (`#fvDiffPop`) from `drawDifficulty()` |
 
 Staffing's views:
 
 | View | Section | Drawn by |
 | --- | --- | --- |
-| Schedules | `secSchedules` | `drawSchedules`: every shop and office in a list (`data-sched-pick`), each with its plan's state and progress (`schedProgress()`), and the chosen one's scheduling beside it in `#schDetail`: a shop's `spRosterBlock()` or an office's `spOfficeRoster()`, the same planner and write a business's page carries, with the id `schRoster`. The pick (`schedLit`) rides on the history entry (`nxSch`). Factories open Supply › Production on their scope |
+| Schedules | `secSchedules` | `drawSchedules`: every shop and office in a list (`data-sched-pick`), each with its plan's state and progress (`schedProgress()`), and the chosen one's scheduling beside it in `#schDetail`: a shop's `spRosterBlock()` or an office's `spOfficeRoster()`, the planner and its write, `#sp-roster`. Since chunk 3 this is the one place the planner is drawn: a business's page summarises it (`spSchedSummary()`) and links here. Its handlers are bound by `wireAll()` (`wireRoster()`). The pick (`schedLit`) rides on the history entry (`nxSch`). Factories open Supply › Production on their scope |
 | Staff needs (`needs`) | `secNeeds`, `secStaff` | `drawNeeds` (Unmet demands, `#nxDemands`, and the last hire or move made from here with its progress), then the hiring page from `hiring`, `candidates`, `staffing`, `factoryStaffing` and `officeStaffing` (`drawStaff`, issue #89, `docs/staff-hire-plan.md`) under "Whom to hire": open places, candidates, Quick hire, the hire write with no undo, and its short current-staff summary (`hrPayroll`) linking to Payroll. "Write their week" opens Schedules on the site |
 | Payroll | `secPayroll` | `drawPayroll`: rate and booked tiles and their difference, the roles, and the sites whose books part from their rates (`payrollOff()`), each opening its crew; the view an old `#payroll` or `#secPayroll` link opens |
 
@@ -785,6 +785,21 @@ view whose DOM it writes; if other code reads state it computes from another pag
 `""` so it is drawn on every refresh. A wrong tag shows old numbers until the next full
 redraw. A row calls its function by name, `() => drawX()`, not `drawX` itself, so a test
 that stubs `window.drawX` is the one the row runs.
+
+### The utilities
+
+The masthead's ··· (and Map & more on a phone, `nxMenuItems()`) lists Search, What's new,
+Preferences and Help & feedback. Preferences and Help & feedback are sheets over the board
+(`pxOpen()`, `#pxSheet`, the board script's `/* --- Preferences and Help & feedback` section),
+hung off `<body>` at z-index 55, under the popovers a row can open (the language list, the checks
+panel and the difficulty popover, 60). They hold no setting of their own: each row reuses the
+control that exists — the theme buttons (`data-theme-set`), a copy of the footer's Language
+picker (wired by `wireGameNames()`), the web page's game-text chip and Forget history, the checks
+panel (`data-kinds`), the difficulty chip (`data-fv-at="prefs"`) — and Help's links are copied
+from the footer. A row's controls appear only where they exist (the game text and Forget history
+on the web page; the CLI's page says where its history file is). `data-open-prefs="<row>"`
+anywhere opens Preferences on that row. Escape closes a popover first, then the sheet, and the
+keyboard returns to the control that opened it.
 
 ### Routes
 

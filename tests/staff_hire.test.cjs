@@ -1553,7 +1553,7 @@ test('Staff with no hours: a site whose own staff the plan counts on have no hou
   // Their week is Staffing › Schedules', with the site picked and its planner beside the list.
   await link.click();
   await page.waitForFunction(() => route === 'staffing/schedules');
-  assert.deepEqual(await page.evaluate(() => [schedLit, !!document.querySelector('#schDetail #schRoster')]), [G, true]);
+  assert.deepEqual(await page.evaluate(() => [schedLit, !!document.querySelector('#schDetail #sp-roster')]), [G, true]);
   // Not counted in the order: nobody is hired for those hours.
   assert.equal(await page.evaluate(() => hrTotals(hrModel()).hire), 7);
 });
@@ -1597,7 +1597,7 @@ test('Staff with no hours: shops and offices, each measured on the plan its Staf
   assert.match(out.demand, /HART\. Law40 h with nobody on/);
 });
 
-test('an office week is written from its site page: the office default for its own staff, never opening it', async (t) => {
+test('an office week is written from Staffing › Schedules: the office default for its own staff, never opening it', async (t) => {
   const page = await board(t);
   const out = await page.evaluate(([O, LAW]) => {
     const row = D.officeStaffing.find(r => r.key === O);
@@ -1608,8 +1608,8 @@ test('an office week is written from its site page: the office default for its o
       address: body.address, business: 'HART. Law', before: {shifts: 0, print: 'a'}, after: {shifts: 2, print: 'b'},
       removed: 0, added: 2, openedHours: false, leftWithout: [], warnings: [], siteError: null, rows: []}});
     Object.assign(D.businesses.find(b => b.key === O), {status: 'office'});
-    openSite(O, false);
-    const block = document.querySelector('#secDetail #sp-roster');
+    openRoute('staffing/schedules', {pick: O});
+    const block = document.querySelector('#schDetail #sp-roster');
     return {plan: !!gwRosterPlan(O), block: block && block.textContent.replace(/\s+/g, ' ').trim(),
       button: !!(block && block.querySelector('[data-gw-sites]'))};
   }, [O, LAW]);
@@ -1618,7 +1618,7 @@ test('an office week is written from its site page: the office default for its o
   assert.match(out.block, /Waiting on a hire\s*14 h/);
   assert.match(out.block, /Hours \/ week\s*0 → 28/);
   assert.equal(out.button, true);
-  await page.locator('#secDetail #sp-roster [data-gw-sites]').first().click();
+  await page.locator('#schDetail #sp-roster [data-gw-sites]').first().click();
   await phase(page, 'ready');
   const w = await page.evaluate(() => window.hrWrites.filter(x => x.kind === 'schedule').at(-1));
   assert.deepEqual(w.body, {address: addr(O), expect: '0ff1ce00', openAllHours: false, days: [
@@ -1657,9 +1657,9 @@ test('an office write only adds: the week as it stands plus the planned entries 
     window.hrAnswer = async (kind, body, o) => ({status: 200, error: null, body: {ok: true, kind, dryRun: !!o.dryRun, stamp: 's',
       address: body.address, business: 'HART. Law', before: {shifts: 3, print: 'a'}, after: {shifts: 4, print: 'b'},
       removed: 3, added: 4, openedHours: false, leftWithout: [], warnings: [], siteError: null, rows: []}});
-    openSite(O, false);
+    openRoute('staffing/schedules', {pick: O});
   }, [O]);
-  await page.locator('#secDetail #sp-roster [data-gw-sites]').first().click();
+  await page.locator('#schDetail #sp-roster [data-gw-sites]').first().click();
   await phase(page, 'ready');
   const text = await page.locator('dialog.gw-dlg').textContent();
   assert.match(text, /Adds 14 h for Lena Voss; nobody's current hours change\./);
@@ -1679,8 +1679,8 @@ test('an office entry this board cannot read stops the office write, and still k
       current: {list: [{d: 1, s: 0, f: 10, t: 14, p: 1}]}});
     Object.assign(D.businesses.find(b => b.key === O), {status: 'office'});
     const week = gwRosterWeek(gwRosterPlan(O));
-    openSite(O, false);
-    const b = document.querySelector('#secDetail #sp-roster [data-gw-sites]');
+    openRoute('staffing/schedules', {pick: O});
+    const b = document.querySelector('#schDetail #sp-roster [data-gw-sites]');
     return {unreadable: week.unreadable, days: week.days.map(x => x.d), listed: gwScheduleSites().includes(O),
       off: b && (b.getAttribute('aria-disabled') === 'true' || b.disabled), why: b && (b.getAttribute('aria-label') || b.title || b.textContent)};
   }, [O]);

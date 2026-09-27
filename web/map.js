@@ -631,9 +631,10 @@ class CityMapView {
     const changed = () => { this.showAll = false; this.saveFinder(); this.update(); };
     this.root.querySelector('[data-f="tog"]').onclick = () => {
       this.fs.on = !this.fs.on; this.deselect(); changed();
-      // On, the page is Expansion › Find a location; off, the City map: the
-      // address and the lit place follow (routeFor() in the board script).
-      if(this === cityMapPage && page === "map" && typeof routeSync === "function") routeSync();
+      // On, the page is Expansion › Find a location; off, the City map. Each
+      // is a visit of its own, so Back from one returns to the other.
+      if(this === cityMapPage && page === "map" && typeof openRoute === "function") openRoute(this.fs.on ? "expansion/finder" : "map", {scroll: false});
+      else if(this === cityMapPage && page === "map" && typeof routeSync === "function") routeSync();
     };
     this.root.querySelectorAll('.fchip.cat').forEach(chip => chip.onclick = () => {
       // A sort the player picked travels to the new category when it can; the
@@ -750,6 +751,7 @@ class CityMapView {
     // and a new load opens the plain map with the filters where they were left.
     const {on, ...filters} = this.fs;
     try{ localStorage.setItem(store, JSON.stringify(filters)); }catch(e){}
+    finderStateRemember(this);
   }
   /* Opened from Today or a Growth cell: the finder comes on with a preset. */
   setFinder(preset = {}){
@@ -1726,8 +1728,11 @@ function openFinder(preset = {}, focus = false){
     if(!to) return;
     to.focus({preventScroll: true});
     // Narrow, the filters sit above the results in the same scroller, so the
-    // first result may still be below what the panel shows.
-    if(view.narrow) to.scrollIntoView({block: "nearest"});
+    // first result may still be below what the panel shows; on a short
+    // window the page's own heading and the arrival strip can push it under
+    // the window's edge too. The keyboard's place is always in view.
+    const r = to.getBoundingClientRect();
+    if(view.narrow || r.bottom > (window.innerHeight || 0) || r.top < 0) to.scrollIntoView({block: "nearest"});
   });
 }
 /* Expansion › Find a location reached with no preset -- Back, Forward, a
@@ -1747,8 +1752,35 @@ function showFinder(mode = "push"){
     view.fs.on = true;
     view.ready.then(ok => { if(ok) view.update(); });
   }
+  /* Back, Forward and a reload give the visit the filters it had (nxFs):
+     two questions asked from Demand keep their own answers. A new visit
+     keeps the filters on screen, and they become its own. */
+  const kept = mode !== "push" ? finderEntryState() : null;
+  if(kept){
+    view.ready.then(ok => {
+      if(!ok) return;
+      view.fs = {...view.fs, ...view.savedFilters({filters: kept}), on: true};
+      view.clampSort(); view.showAll = false;
+      view.update();
+    });
+  } else finderStateRemember(view);
   finderPickRestore(view, mode !== "push");
 }
+/* The filters of a visit to Find a location, kept on its history entry
+   (nxFs) beside its pick: written whenever they change (saveFinder()), read
+   when the entry is shown again. Only the finder's own, on the City map's
+   page while the finder is on. */
+function finderStateRemember(view){
+  if(view !== cityMapPage || typeof page === "undefined" || page !== "map" || !view.finderOn()) return;
+  try{
+    const st = Object.assign({}, history.state || {});
+    st.nxFs = finderPick(view.fs);
+    history.replaceState(st, '', location.href);
+  }catch(e){}
+  // The ways on under the map follow the business type picked.
+  if(typeof drawFinderCtx === "function") drawFinderCtx();
+}
+const finderEntryState = () => { try{ const s = (history.state || {}).nxFs; return s && typeof s === "object" ? s : null; }catch(e){ return null; } };
 /* The building picked in the finder is kept on the history entry (nxPick),
    beside the route and the arrival, so a reload of Find a location -- or Back
    to it -- opens it again. Only the finder's own pick, on the City map's page. */

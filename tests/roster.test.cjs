@@ -104,8 +104,13 @@ async function shop(which = 'full', edit, boot){
       hourFindings: [],
       staffing,
     };
-    siteKey = b.key; siteOpen = true;
-    drawSite();
+    /* The shop's week is planned on Staffing › Schedules, the one planner
+       (a business's own page carries its summary): drawn there, the shop
+       picked, as the site's page used to draw it, into its page without
+       showing it. drawShop() draws it again after a test changes the plan;
+       a test that needs the layout opens the route. */
+    window.drawShop = () => { drawSchedules(); wireAll(); };
+    schedPick(b.key); wireAll();
   }, [[row], business()]);
   require('./_payload_contract.cjs').assertPayloadShape(await page.evaluate(() => D), 'roster');
   return page;
@@ -500,7 +505,7 @@ test('a tick kept from a plan that has changed does not count', async () => {
       const real = r.shifts.find(s => s.p !== null && s.k === 'security');
       localStorage.setItem('ba_dash_roster:' + key, JSON.stringify([spTickId(r, real)]));
       real.p = null;
-      drawSite();
+      drawShop();
       return [q('#sp-roster .sp-count').textContent,
         q('#sp-roster').dataset.tickable, $$('#sp-roster .sp-shift.sp-done').length];
     }, KEY);
@@ -610,7 +615,7 @@ test('the now/plan and day tabs centre their labels beside a two-line step', asy
   const page = await shop('pinned');
   try {
     // Laid out, not just drawn: the page the panel lives on is shown.
-    await page.evaluate(() => { showPage('company'); drawSite(); });
+    await page.evaluate(() => openRoute('staffing/schedules', {pick: D.businesses[0].key}));
     const pills = await page.$$eval('#sp-roster .sp-nowplan a, #sp-roster .sp-daytabs a', els => els.map(a => {
       const box = a.getBoundingClientRect();
       const range = document.createRange();
@@ -633,9 +638,9 @@ test('hovering a shift lights that person everywhere they are named', async () =
     const p = ROWS.full.people.findIndex(x => x.name === 'FULL1');
     await page.evaluate(sel => q(sel).dispatchEvent(new MouseEvent('mouseover', {bubbles: true})),
       `#sp-roster .sp-shift[data-p="${p}"]`);
-    const lit = await page.$$eval('#sitePanel .sp-me', els => els.map(e => e.className));
+    const lit = await page.$$eval('#schDetail .sp-me', els => els.map(e => e.className));
     assert.ok(lit.length >= 2, lit.join(' | '));
-    assert.ok(lit.some(c => /person/.test(c)), 'the Crew pill too');
+    assert.ok(lit.every(c => /sp-shift|sp-step|sp-need|sp-hc|sp-new|person/.test(c)), lit.join(' | '));
   } finally { await page.close(); }
 });
 
@@ -645,7 +650,7 @@ test('a name held by two people is not tied to a roster person at all', async ()
     const both = await page.evaluate(() => {
       D.businesses[0].people = [{name: 'FULL1', role: 'Cashier', absent: false, daily: 200},
         {name: 'FULL1', role: 'Cleaner', absent: false, daily: 200}];
-      drawSite();
+      siteKey = D.businesses[0].key; siteOpen = true; drawSite();
       return $$('#sp-crew .person[data-p]').length;
     });
     assert.equal(both, 0, 'an ambiguous name lights nobody');
@@ -675,11 +680,11 @@ async function reticked(edit){
       const r = spRosterRow(key);
       const line = spTickableRows(r).find(s => s.k === undefined);
       localStorage.setItem('ba_dash_roster:' + key, JSON.stringify([spTickId(r, line)]));
-      drawSite();
+      drawShop();
       const before = $$('#sp-roster .sp-shift.sp-done').length;
       // eslint-disable-next-line no-new-func
       new Function('row', 'line', body)(r, line);
-      drawSite();
+      drawShop();
       return [before, $$('#sp-roster .sp-shift.sp-done').length,
         q('#sp-roster .sp-count').textContent];
     }, [KEY, edit]);
@@ -750,7 +755,7 @@ test('two different lines never share one tick', async () => {
     const marked = await page.evaluate(() => {
       const bars = $$('#sp-roster button.sp-shift');
       bars[0].click();
-      drawSite();
+      drawShop();
       return $$('#sp-roster .sp-shift.sp-done').length;
     });
     assert.equal(marked, 1);
@@ -812,7 +817,7 @@ test('a tick is kept per site and survives the next draw', async () => {
     assert.equal(await page.locator('#sp-roster .sp-count').innerText(), '1');
     const stored = await page.evaluate(k => localStorage.getItem('ba_dash_roster:' + k), KEY);
     assert.match(stored, /\[1,/, 'the weekday, then the station and person by id');
-    await page.evaluate(() => drawSite());
+    await page.evaluate(() => drawShop());
     assert.match(await bar.getAttribute('class'), /sp-done/, 'the tick came back');
     await page.evaluate(() => q('#sp-roster .sp-clear').click());
     assert.equal(await page.locator('#sp-roster .sp-shift.sp-done').count(), 0);
@@ -872,7 +877,7 @@ test('an unmeasured need strip is empty, and the note above it says why', async 
     const drawn = await page.evaluate(() => {
       D.staffing[0].need['ba:skill_customerservice'] =
         Array.from({length: 7}, () => Array(24).fill(3));
-      drawSite();
+      drawShop();
       return $$('#sp-roster .sp-need').length;
     });
     assert.equal(drawn, 0);
@@ -897,7 +902,7 @@ test('a site the planner could not plan says so rather than leaving a hole', asy
   try {
     await page.evaluate(k => {
       D.staffing = [{key: k, name: 'HART. Test 12', typeSlug: 'x', failed: true}];
-      drawSite();
+      drawShop();
     }, KEY);
     assert.equal(await page.locator('#sp-roster .sp-read').innerText(), 'Plan unavailable');
     assert.match(await page.locator('#sp-roster .sechead .why').getAttribute('data-tip'),
@@ -910,7 +915,7 @@ test('a shop with no row at all draws the block and throws nothing', async () =>
   try {
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
-    await page.evaluate(() => { D.staffing = []; drawSite(); });
+    await page.evaluate(() => { D.staffing = []; drawShop(); });
     assert.equal(await page.locator('#sp-roster').count(), 1);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
@@ -930,7 +935,7 @@ test('a row of nothing but edges still draws, and opens on a day', async () => {
         open: Array.from({length: 7}, () => []),
         current: {shifts: 0, fragments: 0, cleaning: 0, security: 0, list: []},
       });
-      drawSite();
+      drawShop();
       return [$$('#sp-roster .sp-daytabs a.sp-on').length, $$('#sp-roster .sp-day.sp-on').length];
     });
     assert.deepEqual(tabs, [1, 1]);
@@ -951,7 +956,7 @@ test('forty stations and sixty people draw without falling over', async () => {
       r.roles = [{skill: 'ba:skill_customerservice', label: 'Customer Service',
         stations: r.stations.map((_, k) => k)}];
       r.shifts = r.stations.map((_, s) => ({d: 1, s, f: 8, t: 20, p: s % 60}));
-      drawSite();
+      drawShop();
       return $$('#sp-roster .sp-day[data-d="1"] .sp-grow').length;
     });
     assert.equal(rows, 41, 'the need strip and forty stations');
@@ -1482,9 +1487,9 @@ test('a bar too narrow for both keeps its hours and loses the name', async () =>
   const page = await shop('shut');
   try {
     await page.setViewportSize({width: 400, height: 900});
-    /* Nothing inside a page the harness never opened has a width. drawChart()
-       is stubbed for the same reason as in the landing test: no history. */
-    await page.evaluate(() => { drawChart = () => {}; showPage('company'); });
+    /* Nothing inside a page the harness never opened has a width: the
+       planner's own page, Staffing › Schedules, is opened. */
+    await page.evaluate(() => openRoute('staffing/schedules', {pick: D.businesses[0].key}));
     const bar = page.locator('#sp-roster .sp-day.sp-on button.sp-shift').first();
     const box = await bar.evaluate(el => ({
       wide: el.clientWidth,
@@ -1543,15 +1548,18 @@ test('Build shop schedules opens its shop in Schedules, with its planner, and it
     });
     assert.deepEqual(await page.evaluate(() => [route, page, (q('#secSchedules .sch-item.on') || {dataset: {}}).dataset.schedPick]),
       ['staffing/schedules', 'staffing', KEY], 'the shop the task names is picked');
-    // The planner itself, the one the shop's own page carries, under its own id.
-    assert.equal(await page.locator('#schDetail #schRoster [data-plan]').count() > 0, true);
-    assert.equal(await page.locator('#schDetail #sp-roster').count(), 0);
+    // The planner itself: the one place it is drawn.
+    assert.equal(await page.locator('#schDetail #sp-roster [data-plan]').count() > 0, true);
     await page.evaluate(() => q('#schDetail [data-sched-site]').click());
     await page.waitForFunction(() => !$('pageCompany').hidden);
     const where = await page.evaluate(() => ({route,
       page: [...document.querySelectorAll('.page')].filter(p => !p.hidden).map(p => p.id)}));
     assert.deepEqual(where.page, ['pageCompany']);
     assert.equal(where.route, 'staffing/schedules', "the shop's page stands under Staffing › Schedules");
+    // The shop's page summarises its week and links back to the planner; it
+    // draws no second planner.
+    assert.equal(await page.locator('#sitePanel #sp-roster').count(), 0);
+    assert.equal(await page.locator('#sitePanel #sp-sched [data-site-go="staffing/schedules"]').count(), 1);
   } finally { await page.close(); }
 });
 
@@ -1559,11 +1567,9 @@ test('the read-out answers a keyboard as well as a pointer', async () => {
   const page = await shop('full');
   try {
     await page.evaluate(() => {
-      /* The panel is drawn into a page the harness never opens, and nothing
-         inside a hidden page can take focus. drawChart() is stubbed for the
-         same reason as in the landing test: no history to draw. */
-      drawChart = () => {};
-      showPage('company');
+      /* Nothing inside a hidden page can take focus: the planner's own page,
+         Staffing › Schedules, is opened. */
+      openRoute('staffing/schedules', {pick: D.businesses[0].key});
       wireSiteReads();
     });
     const tile = page.locator('#sp-roster .sp-ba > div[data-read]').first();
@@ -1866,7 +1872,7 @@ test('a new shop offers cover only or the demand test, and remembers the pick', 
     assert.match(hoursTile, new RegExp(`${staffedHours}`));
     assert.equal(await page.evaluate(k => localStorage.getItem('ba_dash_plan:roster-fixture:' + k), KEY), 'full');
     // The pick survives the next draw, and going back forgets it.
-    await page.evaluate(() => drawSite());
+    await page.evaluate(() => drawShop());
     assert.deepEqual(await pickText(page), [['Cover only', false], ['Full cover 24/7', true]]);
     await page.evaluate(() => q('#sp-roster [data-plan="demand"]').click());
     assert.deepEqual(await pickText(page), [['Cover only', true], ['Full cover 24/7', false]]);
@@ -1905,13 +1911,16 @@ test('Staffing › Schedules summarises the plan the shop shows, and follows a c
     assert.notEqual(demand, full, 'the two plans differ, so the row can tell them apart');
     await page.evaluate(() => { drawSchedules(); openRoute('staffing/schedules'); });
     assert.ok((await line()).startsWith(demand), await line());
-    // The plan is picked on the shop's own page; Schedules is drawn again on its next visit.
-    await page.evaluate(k => openSite(k), KEY);
+    // The plan is picked in the planner beside the list, and the list follows at once.
     await page.evaluate(() => q('#sp-roster [data-plan="full"]').click());
-    await page.evaluate(() => openRoute('staffing/schedules'));
     assert.ok((await line()).startsWith(full), `full cover: ${await line()}`);
-    await page.evaluate(k => { openSite(k); q('#sp-roster [data-plan="demand"]').click(); openRoute('staffing/schedules'); }, KEY);
+    assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.dataset.plan), 'full', 'the pick keeps the keyboard');
+    await page.evaluate(() => q('#sp-roster [data-plan="demand"]').click());
     assert.ok((await line()).startsWith(demand), `back to the demand plan: ${await line()}`);
+    // The business's own page summarises the same plan and links to it, without a planner of its own.
+    await page.evaluate(k => openSite(k), KEY);
+    assert.equal(await page.locator('#sitePanel #sp-roster').count(), 0);
+    assert.ok((await page.locator('#sp-sched .sp-schedst').textContent()).startsWith(demand));
   } finally { await page.close(); }
 });
 
@@ -1938,7 +1947,7 @@ test('the pick works without storage of any kind', async () => {
     await page.evaluate(() => q('#sp-roster [data-plan="full"]').click());
     assert.equal(await page.locator('#sp-roster').count(), 1);
     assert.deepEqual(await pickText(page), [['Cover only', false], ['Full cover 24/7', true]]);
-    await page.evaluate(() => drawSite());
+    await page.evaluate(() => drawShop());
     assert.deepEqual(await pickText(page), [['Cover only', false], ['Full cover 24/7', true]]);
   } finally { await page.close(); }
 });
@@ -1950,10 +1959,10 @@ test('the pick belongs to one company: another character on the same map starts 
     assert.deepEqual(await pickText(page), [['Cover only', false], ['Full cover 24/7', true]]);
     // Every character plays the same map, so the same address is another
     // company's shop there.
-    await page.evaluate(() => { D.meta.character = 'someone-else'; drawSite(); });
+    await page.evaluate(() => { D.meta.character = 'someone-else'; drawShop(); });
     assert.deepEqual(await pickText(page), [['Cover only', true], ['Full cover 24/7', false]]);
     assert.equal(await page.evaluate(k => localStorage.getItem('ba_dash_plan:someone-else:' + k), KEY), null);
-    await page.evaluate(() => { D.meta.character = 'roster-fixture'; drawSite(); });
+    await page.evaluate(() => { D.meta.character = 'roster-fixture'; drawShop(); });
     assert.deepEqual(await pickText(page), [['Cover only', false], ['Full cover 24/7', true]]);
   } finally { await page.close(); }
 });

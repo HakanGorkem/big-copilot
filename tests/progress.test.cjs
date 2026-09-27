@@ -26,6 +26,16 @@ before(async () => {
 });
 after(async () => { await browser?.close(); });
 
+/* The progress store's record ids as one tab reads them, sorted; and a wait
+   until a tab's storage holds `has` and none of `not` (another tab's write
+   reaches it a moment later). */
+const PG_STORE = 'ba_progress_v1:r8-fixture';
+const pgStored = p => p.evaluate(k => Object.keys((JSON.parse(localStorage.getItem(k)) || {recs: {}}).recs).sort(), PG_STORE);
+const pgSees = (p, has, not = []) => p.waitForFunction(([k, has, not]) => {
+  const r = (JSON.parse(localStorage.getItem(k)) || {recs: {}}).recs;
+  return has.every(i => i in r) && not.every(i => !(i in r));
+}, [PG_STORE, has, not]);
+
 /* A page with storage on a real origin: `seed` is written before the board
    takes its data (a store from an older board), `refuse` makes every write to
    storage throw, as a full quota does. */
@@ -477,7 +487,9 @@ test('Changes counts what the Overview counts, lists only import records, and co
   // A write the game confirmed, and a hire found elsewhere: records with no row.
   await page.evaluate(() => {
     pgRecord({id: 'imports|hub#1|milk|weekly|2100', family: 'imports', target: {depot: 'hub#1', slug: 'milk'}, expect: {contracts: [], inGame: 2100}, rowKeys: [], label: 'Milk'});
+    // Judged, as pgEvaluate() judges it: the page's own change until its next save.
     pgStore().recs['imports|hub#1|milk|weekly|2100'].state = 'confirmed';
+    pgStore().memo.mine.add('imports|hub#1|milk|weekly|2100');
     pgRecord({id: 'hire|1', family: 'hire', target: {sites: ['shop#3']}, expect: {people: [{id: 'X', site: 'shop#3'}], hired: 1, moved: 0, skipped: 0}, rowKeys: [], label: '1 hired'});
     pgStore().recs['hire|1'].state = 'changed';
     sbStamp++; drawSupplyStrip(); drawChangesView(); wireAll();
@@ -524,18 +536,23 @@ test('two tabs of one company: a board in one keeps the other\'s records, and an
   for(const p of [a, b]) await p.evaluate(d => { takeData(d); }, fixture());
   const rec = id => ({id, family: 'imports', target: {depot: 'hub#1', slug: id}, expect: {contracts: [], inGame: 1}, rowKeys: [], label: id});
   await b.evaluate(r => pgRecord(r), rec('from-b'));
+  /* A write in one tab reaches another tab's storage a moment later (the
+     browser passes it between processes): each step waits until the tab
+     about to act sees the other's write, as two tabs used by one player do. */
+  await pgSees(a, ['from-b']);
   await a.evaluate(r => pgRecord(r), rec('from-a'));
-  const stored = () => a.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('ba_progress_v1:r8-fixture')).recs).sort());
+  await pgSees(b, ['from-a', 'from-b']);
   // Tab B's next board saves its count: tab A's record stays.
   await b.evaluate(() => takeData(JSON.parse(JSON.stringify(D))));
-  assert.deepEqual(await stored(), ['from-a', 'from-b']);
+  assert.deepEqual(await pgStored(b), ['from-a', 'from-b']);
   // Tab A's undo takes its record away; tab B's next board does not bring it back.
   await a.evaluate(() => pgDrop(['from-a']));
+  await pgSees(b, ['from-b'], ['from-a']);
   await b.evaluate(() => { takeData(JSON.parse(JSON.stringify(D))); pgRecord({id: 'b2', family: 'imports', target: {depot: 'hub#1', slug: 'b2'}, expect: {contracts: [], inGame: 1}, rowKeys: [], label: 'b2'}); });
-  assert.deepEqual(await stored(), ['b2', 'from-b']);
+  assert.deepEqual(await pgStored(b), ['b2', 'from-b']);
   // The count is the higher of the two tabs'.
   const n = await Promise.all([a, b].map(p => p.evaluate(() => pgStore().memo.n)));
-  assert.equal(await a.evaluate(() => JSON.parse(localStorage.getItem('ba_progress_v1:r8-fixture')).n), Math.max(...n));
+  assert.equal(await b.evaluate(() => JSON.parse(localStorage.getItem('ba_progress_v1:r8-fixture')).n), Math.max(...n));
 });
 
 /* Day 47 as the installed game's recipes make it (the review's): Beer eats 50
@@ -604,18 +621,85 @@ test('two tabs that both hold a record: an undo in one is not written back by th
   await a.evaluate(d => { takeData(d); pgRecord({id: 'X', family: 'imports', target: {depot: 'hub#1', slug: 'flour'}, expect: {contracts: [], inGame: 1}, rowKeys: [], label: 'X'}); }, fixture());
   // Tab B opens after the write: it holds X as loaded.
   const b = await open();
+  await pgSees(b, ['X']);
   await b.evaluate(d => { takeData(d); }, fixture());
   assert.equal(await b.evaluate(() => 'X' in pgStore().recs), true);
-  const stored = () => a.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('ba_progress_v1:r8-fixture')).recs));
+  const stored = () => pgStored(b);
   // Tab A undoes it.
   await a.evaluate(() => pgDrop(['X']));
-  assert.deepEqual(await stored(), []);
+  assert.deepEqual(await pgStored(a), []);
+  await pgSees(b, [], ['X']);
   // Tab B's next board keeps it undone, and drops it from its own copy too.
   await b.evaluate(() => takeData(JSON.parse(JSON.stringify(D))));
   assert.deepEqual(await stored(), []);
   assert.equal(await b.evaluate(() => 'X' in pgStore().recs), false);
   // A record B judges on a later board is B's own and is kept, over what A stored.
   await a.evaluate(() => pgRecord({id: 'Y', family: 'schedule', target: {site: 'shop#3'}, expect: {print: 'p'}, rowKeys: [], label: 'Y'}));
+  await pgSees(b, ['Y']);
   await b.evaluate(() => { pgMemo.clear(); pgStore(); pgStore().recs.Y.state = 'confirmed'; pgStore().memo.mine.add('Y'); pgSave(); });
-  assert.equal(await a.evaluate(() => JSON.parse(localStorage.getItem('ba_progress_v1:r8-fixture')).recs.Y.state), 'confirmed');
+  assert.equal(await b.evaluate(() => JSON.parse(localStorage.getItem('ba_progress_v1:r8-fixture')).recs.Y.state), 'confirmed');
+});
+
+// --- chunk 3: carried from chunk 2's round-4 review --------------------------
+
+/* Two tabs of one company over the same origin: `later(h)` is the board the
+   game gives h hours on, shop#3's week changed (so a schedule record is
+   judged, and judged Not confirmed). */
+async function twoTabs(t){
+  const context = await browser.newContext({viewport: {width: 1280, height: 900}});
+  t.after(() => context.close());
+  await context.route('https://**', r => r.abort());
+  await context.route('http://progress.test/**', r => {
+    const rel = decodeURIComponent(new URL(r.request().url()).pathname.slice(1));
+    if(!rel) return r.fulfill({contentType: 'text/html', body: html});
+    const f = path.join(root, 'web', rel);
+    return fs.existsSync(f) && fs.statSync(f).isFile() ? r.fulfill({path: f}) : r.fulfill({status: 404, body: ''});
+  });
+  return async () => { const p = await context.newPage(); await p.goto('http://progress.test/'); return p; };
+}
+const laterBoard = h => page => page.evaluate(h => {
+  const d = JSON.parse(JSON.stringify(D));
+  d.meta.hour = (d.meta.hour || 0) + h;
+  d.businesses.forEach(b => { if(b.key === 'shop#3') b.shiftPrint = 'now'; });
+  takeData(d); pgEvaluate();
+}, h);
+const SCHED_X = {id: 'X', family: 'schedule', target: {site: 'shop#3'}, expect: {print: 'never-matches'}, rowKeys: [], label: 'X'};
+
+test('two tabs: an undo in one stands even after the other has judged the record', async t => {
+  const open = await twoTabs(t);
+  const a = await open();
+  await a.evaluate(() => localStorage.clear());
+  await a.evaluate(([d, rec]) => { takeData(d); pgEvaluate(); pgRecord(rec); }, [fixture(), SCHED_X]);
+  const b = await open();
+  await pgSees(b, ['X']);
+  await b.evaluate(d => { takeData(d); pgEvaluate(); }, fixture());
+  await laterBoard(1)(b);
+  assert.equal(await b.evaluate(() => pgStore().recs.X.state), 'changed', 'tab B judged the record');
+  await pgSees(a, ['X']);
+  await a.evaluate(() => pgDrop(['X']));
+  await pgSees(b, [], ['X']);
+  await laterBoard(2)(b);
+  assert.deepEqual(await pgStored(b), [], 'the undo stands');
+  assert.equal(await b.evaluate(() => 'X' in pgStore().recs), false, 'and tab B lets it go');
+});
+
+test('two tabs: a clear in one stands even after the other has judged the records', async t => {
+  const open = await twoTabs(t);
+  const a = await open();
+  await a.evaluate(() => localStorage.clear());
+  await a.evaluate(([d, rec]) => { takeData(d); pgEvaluate(); pgRecord(rec); }, [fixture(), SCHED_X]);
+  const b = await open();
+  await pgSees(b, ['X']);
+  await b.evaluate(d => { takeData(d); pgEvaluate(); }, fixture());
+  await laterBoard(1)(a);
+  await laterBoard(1)(b);
+  await b.evaluate(() => pgClearSettled());
+  await pgSees(a, [], ['X']);
+  await laterBoard(2)(a);
+  assert.deepEqual(await pgStored(a), [], 'the clear stands');
+  // A record made in a tab after that is its own and is kept.
+  await a.evaluate(rec => pgRecord({...rec, id: 'Z'}), SCHED_X);
+  await pgSees(b, ['Z']);
+  await laterBoard(3)(b);
+  assert.deepEqual(await pgStored(b), ['Z']);
 });

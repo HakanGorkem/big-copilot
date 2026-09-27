@@ -1010,7 +1010,7 @@ test('a factory fills each machine square by the week it is rostered', async () 
     // The read-out names the machine and the hours behind the fill.
     await page.hover(`#sp-lines .sp-line[data-line="${slugTok('wine')}"] .sp-m`);
     assert.match(await page.locator('#sp-lines .sp-readout').innerText(),
-      /Machine 3 · 144 of 168 h rostered: nobody on it on Sundays/);
+      /Machine 3 · 144 of 168 h staffed: nobody on it on Sundays/);
   } finally { await page.close(); }
 });
 

@@ -832,6 +832,35 @@ export rather than counter sales.
 The week-on-week column is blank for a site open under two weeks, and for a chain where
 any of its earners is. A comparison that spans a shop's opening measures the opening.
 
+## Businesses: finances, prices and standards
+
+Three readings the redesign's chunk 3 gives their own place. None is a forecast or a
+recommendation.
+
+- **Company finances** (Businesses › Results). *Cash on hand* is the save's cash. Under it, what
+  the cash did over the days the board has watched it (`cashFlow`: the first and last cash of
+  that window) against the profit the books earned over the same days; the difference is money
+  that went into set-up and stock (buying a truck, filling a new warehouse) or, the other way,
+  more than the books show. *Owed on loans* is the loans' remaining balance, with their interest
+  and repayment a day, which sit among the company costs outside sites. *History since* is the
+  first finished day the save's own books hold, and how far back the board's cash history
+  reaches; the web page keeps it in the browser (Preferences › History), the Python version in
+  `market_history.json`.
+- **Products & prices** (Businesses › Products & prices). For one shop or office: *your price*
+  is the price set in the game (`configuredPrice`, "Not set" where none is); the *lowest market
+  price* is what the save shows for the item in the business's own neighbourhood (the market
+  reconstruction the Game guide's Prices in your save uses, your own shops included; a supplier
+  event can withhold it, and it says so); the *average sold price* is the line's takings over its
+  units sold, over the last seven days. "Above the lowest" and "below the lowest" compare the
+  first two and nothing more: the board has no pricing model.
+- **Standards** (Businesses › Standards). Each shop and office in one table, the lowest
+  satisfaction first: the game's overall satisfaction against the 80 line it marks good at; a
+  shop's promotion (foot traffic plus marketing, at most 100); one lamp per amenity the type asks
+  about, found, missing, or not scored yet (the game scores a shop once customers have walked it);
+  and the roles with no uniform, or no uniform locker. The uniform write (game link) sits in that
+  cell, with its progress: Applied once the game answers, Confirmed once a later board shows no
+  gap for those roles (`docs/ui-progress-postconditions.md`).
+
 ## The business detail
 
 One site at a time, and none until you ask: a site opens from its row in the Portfolio,

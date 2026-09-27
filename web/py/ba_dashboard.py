@@ -15015,11 +15015,12 @@ html:has(dialog:modal){overflow:hidden}
 /* goods flow: the diagram as a view of the tab */
 #pageSupply .sb-flowbox{margin-top:8px;border-radius:10px;background:var(--surface);border:1px solid var(--rule-soft);padding:14px 20px 12px}
 #pageSupply .sb-flowbox svg{width:100%;display:block}
-#pageSupply .sb-flowbox.sb-flow-scroll{overflow-x:auto}
-#pageSupply .sb-flowbox.sb-flow-scroll svg{max-width:none}
-#pageSupply .sb-flowbox.sb-flow-more-r{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent)}
-#pageSupply .sb-flowbox.sb-flow-more-l{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to left,#000 calc(100% - 56px),transparent)}
-#pageSupply .sb-flowbox.sb-flow-more-l.sb-flow-more-r{-webkit-mask-image:linear-gradient(to right,transparent,#000 56px,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to right,transparent,#000 56px,#000 calc(100% - 56px),transparent)}
+/* The picture scrolls inside its own strip, so the legend under it stays put. */
+#pageSupply .sb-flowscroll.sb-flow-scroll{overflow-x:auto}
+#pageSupply .sb-flowscroll.sb-flow-scroll svg{max-width:none}
+#pageSupply .sb-flowscroll.sb-flow-more-r{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent)}
+#pageSupply .sb-flowscroll.sb-flow-more-l{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to left,#000 calc(100% - 56px),transparent)}
+#pageSupply .sb-flowscroll.sb-flow-more-l.sb-flow-more-r{-webkit-mask-image:linear-gradient(to right,transparent,#000 56px,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to right,transparent,#000 56px,#000 calc(100% - 56px),transparent)}
 #pageSupply .sb-flowleg{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;font:500 11px/1 "IBM Plex Mono",monospace;color:var(--ink-3)}
 #pageSupply .sb-flowleg span{display:inline-flex;align-items:center;gap:7px}
 #pageSupply .sb-flowleg i{width:9px;height:9px;border-radius:50%;display:inline-block}
@@ -15374,6 +15375,13 @@ td .ing b{font-family:"IBM Plex Mono",monospace;font-weight:500;color:var(--ink)
 .bullet{width:40px;height:40px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font:600 12px/1 "IBM Plex Mono",monospace;transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
 .sitehead:hover .bullet{transform:rotate(-12deg) scale(1.08)}
 .sitehead h2{margin:0;font-size:22px;font-weight:600;letter-spacing:-.02em}
+#sitePanel .sp-acts{margin-left:auto;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+#sitePanel .sp-acts .nx-btn svg{stroke:var(--accent)}
+#sitePanel .sp-schedrow{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:14px 16px;border-radius:12px;background:var(--surface);border:1px solid var(--rule-soft)}
+#sitePanel .sp-schedst{font-size:13.5px;color:var(--ink)}
+#sitePanel .sp-schedf{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--warn)}
+#sitePanel .sp-schedf svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8}
+#sitePanel .bz-sp{flex:1}
 .sitehead .sub{font-size:13px}
 .sstats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:22px}
 .sstat{padding:14px 16px;border-radius:10px;background:var(--surface);border:1px solid var(--rule-soft)}
@@ -16503,6 +16511,34 @@ body.nx-arrived .ss-crumbs .ss-crumb.from{display:none}
 /* the utilities menu (··· and, on a phone, Map & more): hung off <body> */
 .nx-menu{position:fixed;z-index:61;min-width:230px;padding:6px;border-radius:12px;background:var(--surface);border:1px solid var(--rule);box-shadow:0 20px 60px #0007}
 .nx-menu[hidden]{display:none}
+/* Preferences and Help & feedback: sheets over the board (pxOpen()); px- is
+   the sheets'. Under the popovers they open (60), over the board. */
+.px-scrim{position:fixed;inset:0;z-index:54;background:color-mix(in srgb,var(--ground) 55%,transparent);backdrop-filter:blur(2px)}
+.px-scrim[hidden],.px-sheet[hidden]{display:none}
+.px-sheet{position:fixed;z-index:55;top:0;right:0;bottom:0;width:min(760px,100vw);overflow-y:auto;background:var(--ground);border-left:1px solid var(--rule);box-shadow:-30px 0 80px #0006;animation:px-in .28s cubic-bezier(.2,.9,.3,1)}
+@keyframes px-in{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.px-sheet{animation:none}}
+.px-head{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 28px;background:var(--ground);border-bottom:1px solid var(--rule)}
+.px-head h2{margin:0;font-size:26px;font-weight:600;letter-spacing:-.02em;outline:none}
+.px-body{padding:6px 28px 40px}
+.px-row{display:grid;grid-template-columns:200px minmax(0,1fr);gap:10px 28px;padding:20px 0;border-bottom:1px solid var(--rule-soft)}
+.px-row.px-lit{background:linear-gradient(90deg,var(--accent-soft),transparent 70%);box-shadow:inset 3px 0 0 var(--accent);padding-left:12px}
+.px-l h3{margin:0 0 4px;font-size:15px;font-weight:600}
+.px-l p{margin:0;font-size:12.5px;line-height:1.45;color:var(--ink-2)}
+.px-c{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-width:0}
+.px-note{margin:0;font-size:12.5px;line-height:1.5;color:var(--ink-2);max-width:520px}
+.px-state{font-size:12.5px;color:var(--ink-2)}
+.px-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.px-acts.px-wrap .nx-btn{white-space:normal;text-align:left}
+.px-segs{display:inline-flex;padding:3px;border-radius:10px;border:1px solid var(--rule);background:var(--surface)}
+.px-seg{min-height:32px;padding:0 14px;border:0;border-radius:7px;background:none;color:var(--ink-2);font:500 13px/1 Archivo,sans-serif;cursor:pointer}
+.px-seg[aria-pressed="true"]{background:var(--ink);color:var(--ground)}
+.px-seg:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.px-code{margin:0;max-width:100%;overflow-x:auto;padding:12px 14px;border-radius:10px;border:1px solid var(--rule-soft);background:var(--surface);font:400 12px/1.7 "IBM Plex Mono",monospace;color:var(--ink-2);white-space:pre}
+.px-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.px-sheet .fv-diff{position:static}
+body.px-on{overflow:hidden}
+@media (max-width:640px){.px-row{grid-template-columns:minmax(0,1fr)}.px-head,.px-body{padding-left:18px;padding-right:18px}}
 .nx-menu .lab{display:block;padding:10px 10px 4px;font:500 10px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
 .nx-menu a,.nx-menu button{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:0 10px;border-radius:8px;border:0;background:none;color:var(--ink);font:500 13.5px/1.2 Archivo,sans-serif;text-align:left;text-decoration:none;cursor:pointer}
 .nx-menu a:hover,.nx-menu button:hover,.nx-menu a:focus-visible,.nx-menu button:focus-visible{background:var(--raised);outline:none}
@@ -16898,6 +16934,80 @@ button.nx-card{appearance:none}
 .nx-row .ac{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .nx-part{margin:22px 0 8px;font:500 10.5px/1.2 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
 .nx-part:first-child{margin-top:4px}
+/* Businesses' own views (chunk 3): bz- is Businesses. */
+#pageMap .fx-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin:24px 0 12px}
+#pageMap .fx-head:empty{display:none}
+#pageMap .fx-head h2{margin:0;font-size:24px;font-weight:600;letter-spacing:-.02em}
+#pageMap .fx-head .quiet{font-size:13px}
+#pageMap .fx-ctx{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0 0}
+#pageMap .fx-ctx[hidden]{display:none}
+#pageMap .fx-card{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:12px;border:1px solid var(--rule-soft);background:var(--surface);color:inherit;text-decoration:none;min-width:0}
+#pageMap .fx-card:hover{border-color:var(--rule)}
+#pageMap .fx-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#pageMap .fx-card svg{width:17px;height:17px;flex:none;margin-top:1px;stroke:var(--accent);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+#pageMap .fx-card b{display:block;font-size:14px;font-weight:600;overflow-wrap:anywhere}
+#pageMap .fx-card small{display:block;margin-top:4px;font-size:12.5px;color:var(--ink-2);line-height:1.35}
+@media (max-width:760px){#pageMap .fx-ctx{grid-template-columns:minmax(0,1fr)}}
+#pageCompany .bz-h{margin:28px 0 8px;font-size:17px;font-weight:600;letter-spacing:-.01em}
+#pageCompany .bz-none{margin:14px 0 0}
+#pageCompany .bz-legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:0 0 10px;font-size:12px;color:var(--ink-2)}
+#pageCompany .bz-legend > span{display:inline-flex;align-items:center;gap:7px}
+.sp-lampb.bz-sm{width:26px;height:26px;flex:none}
+.sp-lampb.bz-sm svg{width:14px;height:14px}
+.sp-lampb.bz-sm.miss::after{left:3px;right:3px}
+#pageCompany .bz-t{width:100%;border-collapse:collapse;font-size:13px}
+#pageCompany .bz-t th{padding:8px 10px;text-align:right;font:500 10px/1.2 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);border-bottom:1px solid var(--rule);white-space:nowrap}
+#pageCompany .bz-t td{padding:10px;text-align:right;border-bottom:1px solid var(--rule-soft);vertical-align:middle}
+#pageCompany .bz-t th.l,#pageCompany .bz-t td.l{text-align:left}
+#pageCompany .bz-t td .sub{display:block;margin-top:3px;font-size:11.5px;color:var(--ink-3)}
+#pageCompany .bz-t tr.lit td{background:var(--accent-soft)}
+#pageCompany .bz-nm{display:inline-flex;align-items:center;gap:8px;font-weight:600;min-width:0}
+#pageCompany .bz-nm a{color:inherit;text-decoration:none;overflow-wrap:anywhere}
+#pageCompany .bz-nm a:hover{text-decoration:underline}
+#pageCompany .bz-q{color:var(--ink-3);font-size:12.5px}
+#pageCompany .bz-v{font:500 12.5px/1 "IBM Plex Mono",monospace}
+#pageCompany .bz-v.bad{color:var(--neg)}#pageCompany .bz-v.low{color:var(--warn)}#pageCompany .bz-v.ok{color:var(--accent)}
+#pageCompany .bz-sat{white-space:nowrap}
+#pageCompany .bz-bar{position:relative;display:inline-block;width:120px;height:6px;margin-right:10px;border-radius:3px;background:var(--raised);vertical-align:middle}
+#pageCompany .bz-bar i{position:absolute;left:0;top:0;bottom:0;width:var(--v);border-radius:3px;background:var(--accent)}
+#pageCompany .bz-bar.low i{background:var(--warn)}#pageCompany .bz-bar.bad i{background:var(--neg)}
+#pageCompany .bz-bar u{position:absolute;left:80%;top:-3px;bottom:-3px;border-left:1.5px solid var(--ink-2)}
+#pageCompany .bz-lamps{display:inline-flex;gap:5px;flex-wrap:wrap}
+#pageCompany .bz-unibox{display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
+#pageCompany .bz-unibox .gw-btn{margin:0}
+#pageCompany .bz-warn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--warn)}
+#pageCompany .bz-fins{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--rule-soft);border-radius:12px;background:var(--surface);overflow:hidden}
+#pageCompany .bz-fin{display:flex;flex-direction:column;gap:6px;padding:16px 18px;min-width:0}
+#pageCompany .bz-fin + .bz-fin{border-left:1px solid var(--rule-soft)}
+#pageCompany .bz-fin .lab{font:500 10.5px/1 "IBM Plex Mono",monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+#pageCompany .bz-fin .v{font:500 22px/1.1 "IBM Plex Mono",monospace;color:var(--ink)}
+#pageCompany .bz-fin .v.warn{color:var(--warn)}
+#pageCompany .bz-fin .sub{font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+@media (max-width:900px){#pageCompany .bz-fins{grid-template-columns:minmax(0,1fr)}#pageCompany .bz-fin + .bz-fin{border-left:0;border-top:1px solid var(--rule-soft)}}
+#pageCompany .bz-miles .bz-mile{display:grid;grid-template-columns:22px minmax(0,1fr) minmax(80px,220px) 90px;align-items:center;gap:12px}
+#pageCompany .bz-mbar{position:relative;height:6px;border-radius:3px;background:var(--raised)}
+#pageCompany .bz-mbar.none{background:none}
+#pageCompany .bz-mbar i{position:absolute;left:0;top:0;bottom:0;width:var(--v);border-radius:3px;background:var(--accent)}
+#pageCompany .bz-miles .c{text-align:right;margin-left:0}
+@media (max-width:600px){#pageCompany .bz-miles .bz-mile{grid-template-columns:22px minmax(0,1fr) 70px}#pageCompany .bz-mbar{grid-column:2/-1;grid-row:2}}
+#pageCompany .bz-chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 22px}
+#pageCompany .bz-lab{margin-right:6px;font:500 10.5px/1 "IBM Plex Mono",monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+#pageCompany .bz-chip{display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:0 12px 0 6px;border-radius:9px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);font:500 13px/1.2 Archivo,sans-serif;cursor:pointer;max-width:100%}
+#pageCompany .bz-chip span:last-child{overflow-wrap:anywhere;text-align:left}
+#pageCompany .bz-chip:hover{border-color:var(--ink-3)}
+#pageCompany .bz-chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+#pageCompany .bz-chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#pageCompany .bz-phead{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 10px}
+#pageCompany .bz-phead h2{margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em}
+#pageCompany .bz-sp{flex:1}
+#pageCompany .bz-tag{padding:3px 7px;border-radius:4px;background:var(--raised);font:500 10px/1 "IBM Plex Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+#pageCompany .bz-tag.save{background:var(--accent-soft);color:var(--accent)}
+#pageCompany .bz-cmp{display:inline-block;padding:3px 7px;border-radius:4px;background:var(--raised);font:500 11px/1.2 "IBM Plex Mono",monospace;color:var(--ink-2);white-space:nowrap}
+#pageCompany .bz-cmp.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent)}
+#pageCompany .bz-foot{margin:10px 0 0;font-size:12.5px;color:var(--ink-3);max-width:900px}
+#pageCompany .bz-prices td,#pageCompany .bz-prices th{font-variant-numeric:tabular-nums}
+#pageCompany .bz-prices td:not(.l){font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+#pageCompany .bz-warn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 @media (max-width:760px){
   .nx-row{grid-template-columns:minmax(0,1fr);gap:6px}
   .nx-row .ac{justify-content:flex-start}
@@ -17293,7 +17403,7 @@ dialog.hs-sheet::backdrop{background:#000;opacity:.45}
     <section class="sec rv sb-view" id="secDeliveries" data-sub="deliveries"></section>
     <section class="sec rv sb-view" id="secProduction" data-sub="production"></section>
     <section class="sec rv sb-view" id="secFlow" data-sub="flow"></section>
-    <div id="sbFlowHome" hidden><div class="sb-flowbox" id="sbFlowBox"><svg class="flow" id="flow"></svg><div class="sb-fc" id="flowChain" hidden></div>
+    <div id="sbFlowHome" hidden><div class="sb-flowbox" id="sbFlowBox"><div class="sb-flowscroll" id="sbFlowScroll"><svg class="flow" id="flow"></svg></div><div class="sb-fc" id="flowChain" hidden></div>
       <div class="sb-flowleg"><span><u></u><span data-tt="sb.flow.leg.weekly">weekly import</span></span><span><u class="d"></u><span data-tt="sb.flow.leg.morning">morning round</span></span><span><i style="background:var(--neg)"></i><span data-tt="sb.flow.leg.short">short or no plan</span></span><span><i style="background:var(--warn)"></i><span data-tt="sb.flow.leg.watch">worth watching</span></span><span class="sb-fc-leg-click" data-tt="sb.flow.leg.follow">Click a site to follow its goods</span><span class="sb-fc-leg-tap" data-tt="sb.flow.leg.tap">Tap a site to follow its goods. Tap a group to list its shops.</span></div></div></div>
   </div>
 
@@ -17340,6 +17450,10 @@ dialog.hs-sheet::backdrop{background:#000;opacity:.45}
       <div id="dailyBox"></div>
     </section>
 
+    <!-- Company finances: cash beside profit, loans, and how far back the
+         board's history reaches (drawFinance()). -->
+    <section class="sec rv" id="secFinance" data-sub="results"></section>
+
     <!-- Standards: the portfolio's Operations comparison under the subjects it
          answers for (drawStandards()); the portfolio below it is the same
          section Results shows. -->
@@ -17360,7 +17474,11 @@ dialog.hs-sheet::backdrop{background:#000;opacity:.45}
   </div>
 
   <div class="page" id="pageMap" hidden>
+    <div class="fx-head" id="mapHead"></div>
     <div id="cityMapPage"></div>
+    <!-- Find a location's ways on (drawFinderCtx()): the type's demand, its
+         setup guide, and Plan a factory. -->
+    <nav class="fx-ctx" id="finderCtx" hidden aria-label="Next from Find a location" data-tt-aria-label="map.ctx.label"></nav>
   </div>
 
   <!-- The wiki: the game's own help, read without a save. wiki.js takes this
@@ -18501,7 +18619,7 @@ function drawWeekday(series, tools){
   const peaks = tt("co.wd.peaks", "Peaks {hi} {hiPts} · lowest {lo} {loPts}", {hi: `<b>${coDay(hi.day)}</b>`,
     hiPts: pts(hi.index - 100), lo: `<b>${coDay(lo.day)}</b>`, loPts: pts(lo.index - 100)});
   const span = Math.round(((D.rhythm && D.rhythm.recent && D.rhythm.recent.days) || 28) / 7);
-  $("dailyHead").innerHTML = sechead(tt("co.daily.title", "Daily result"), {
+  $("dailyHead").innerHTML = sechead(tt("co.daily.title2", "Company results"), {
     why: tt("co.wd.why", {one: "Each weekday against a normal day, from the company's last {n} week of daily results. Point at a weekday for its figure.",
       other: "Each weekday against a normal day, from the company's last {n} weeks of daily results. Point at a weekday for its figure."}, {n: span}),
     aside: `<span class="seg" id="chartTools"></span>`,
@@ -18596,7 +18714,7 @@ function flowLayout(){
 
 function drawFlow(){
   const g = D.supply.graph;
-  const svg = $("flow"), chain = $("flowChain"), box = svg.parentElement;
+  const svg = $("flow"), chain = $("flowChain"), box = $("sbFlowBox");
   flowWatch();
   /* A pick outlives a re-render; one that names a node this save no longer
      has is dropped, so nothing is dimmed and the detail shows the prompt. */
@@ -18614,7 +18732,7 @@ function drawFlow(){
   box.classList.toggle("sb-fc-focus", !empty && narrow && !!flowPickId);
   box.classList.toggle("sb-fc-wide", box.getBoundingClientRect().width >= 600);
   svg.style.display = flowChainDrawn ? "none" : "";
-  if(flowChainDrawn){ flowWide = false; flowDims = null; box.classList.remove("sb-flow-scroll", "sb-flow-more-l", "sb-flow-more-r"); }
+  if(flowChainDrawn){ flowWide = false; flowDims = null; const sc = $("sbFlowScroll"); if(sc) sc.classList.remove("sb-flow-scroll", "sb-flow-more-l", "sb-flow-more-r"); }
   if(chain) chain.hidden = !flowChainDrawn;
   if(flowChainDrawn){
     svg.innerHTML = "";
@@ -18690,42 +18808,49 @@ function drawFlow(){
    is drawn to fit. */
 const FLOW_MIN_SCALE = 0.8;
 let flowWide = false, flowDims = null;
+/* Where the reader left the picture scrolled, and the site it was last
+   scrolled to: a redraw (a live refresh, a view shown again) puts the picture
+   back where it was, and only a newly followed site moves it. */
+let flowScrollX = 0, flowScrolledFor = null;
 function flowRoom(){
-  const box = $("sbFlowBox");
-  if(!box) return 0;
-  const cs = getComputedStyle(box);
-  return box.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  const sc = $("sbFlowScroll");
+  return sc ? sc.clientWidth : 0;
 }
 function flowFit(){
-  const svg = $("flow"), box = $("sbFlowBox");
-  if(!svg || !box || !flowDims || flowChainDrawn) return;
+  const svg = $("flow"), sc = $("sbFlowScroll");
+  if(!svg || !sc || !flowDims || flowChainDrawn) return;
   const {width, height} = flowDims, room = flowRoom();
   const scale = room > 0 ? Math.min(1, room / width) : 1;
   flowWide = scale < FLOW_MIN_SCALE;
-  box.classList.toggle("sb-flow-scroll", flowWide);
+  sc.classList.toggle("sb-flow-scroll", flowWide);
   svg.style.width = flowWide ? `${width}px` : "100%";
   svg.style.height = `${Math.round(height * (flowWide ? 1 : scale))}px`;
-  if(flowWide) flowScrollToPick(); else box.scrollLeft = 0;
+  if(flowWide){
+    if(flowPickId && flowPickId !== flowScrolledFor) flowScrollToPick();
+    else sc.scrollLeft = flowScrollX;
+    flowScrolledFor = flowPickId;
+  } else if(room > 0){ sc.scrollLeft = 0; flowScrollX = 0; }
   flowEdges();
 }
 /* The followed site in view, where the picture scrolls. */
 function flowScrollToPick(){
-  const box = $("sbFlowBox"), svg = $("flow");
-  if(!flowWide || !box || !svg || !flowPickId) return;
+  const sc = $("sbFlowScroll"), svg = $("flow");
+  if(!flowWide || !sc || !svg || !flowPickId) return;
   const node = q(`.node[data-id="${CSS.escape(flowPickId)}"] rect`, svg);
   if(!node) return;
-  const x = Number(node.getAttribute("x")) + NODE_W / 2 + svg.getBoundingClientRect().left - box.getBoundingClientRect().left + box.scrollLeft;
-  box.scrollLeft = Math.max(0, x - box.clientWidth / 2);
+  const x = Number(node.getAttribute("x")) + NODE_W / 2 + svg.getBoundingClientRect().left - sc.getBoundingClientRect().left + sc.scrollLeft;
+  sc.scrollLeft = Math.max(0, x - sc.clientWidth / 2);
+  flowScrollX = sc.scrollLeft;
   flowEdges();
 }
 /* Which edges the picture goes on past: faded there (flowWatch() keeps it
-   as the box scrolls). */
+   as the strip scrolls). */
 function flowEdges(){
-  const box = $("sbFlowBox");
-  if(!box) return;
-  const more = flowWide && box.scrollWidth - box.clientWidth > 1;
-  box.classList.toggle("sb-flow-more-r", more && box.scrollLeft < box.scrollWidth - box.clientWidth - 1);
-  box.classList.toggle("sb-flow-more-l", more && box.scrollLeft > 1);
+  const sc = $("sbFlowScroll");
+  if(!sc) return;
+  const more = flowWide && sc.scrollWidth - sc.clientWidth > 1;
+  sc.classList.toggle("sb-flow-more-r", more && sc.scrollLeft < sc.scrollWidth - sc.clientWidth - 1);
+  sc.classList.toggle("sb-flow-more-l", more && sc.scrollLeft > 1);
 }
 
 /* --- the chain on a narrow screen (#148) ----------------------------------
@@ -18778,7 +18903,9 @@ function flowWatch(){
     if(narrow){ box.classList.toggle("sb-fc-wide", w >= 600); flowChainPipes(); }
   });
   flowObs.observe(box);
-  box.addEventListener("scroll", () => flowEdges(), {passive: true});
+  const sc = $("sbFlowScroll");
+  /* The reader's own scroll is kept; a strip waiting at home measures 0. */
+  if(sc) sc.addEventListener("scroll", () => { if(flowWide && sc.clientWidth) flowScrollX = sc.scrollLeft; flowEdges(); }, {passive: true});
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if(flowChainDrawn) flowChainPipes(); });
 }
 const flowHasPipes = g => !!((g && g.links) || []).length;
@@ -20359,11 +20486,12 @@ function ovAtFactory(a){
 }
 /* Where a site's staffing is on its page: a shop's Staffing always, an
    office's where the office default plans it (spOfficeRoster()), else its
-   Crew, which every staffed site draws. */
+   Crew, which every staffed site draws. The planner itself is on Staffing ›
+   Schedules; a business's page carries its summary (spSchedSummary()). */
 function nxStaffInto(b){
-  if(!b || b.status !== "office") return "#sp-roster";
+  if(!b || b.status !== "office") return "#sp-sched";
   const row = typeof gwOfficeRow === "function" ? gwOfficeRow(b.key) : null;
-  return row && (row.shifts || []).length ? "#sp-roster" : "#sp-crew";
+  return row && (row.shifts || []).length ? "#sp-sched" : "#sp-crew";
 }
 function ovActLabel(act){
   switch(act){
@@ -20652,6 +20780,11 @@ function ovDetails(a, b, fr){
 /* A finding's mark, where its change has one: Marked by you, Applied or
    Confirmed, so the reader who comes back sees what they did. */
 function ovStatePill(a, b){
+  /* A uniform finding: the shop's uniform write, where there was one. */
+  if(a.group === "uniform" && b && typeof pgUniformState === "function"){
+    const u = pgUniformState(b.key);
+    return u ? ` <span class="ov-pg">${pgPill(u.state, u.rec)}</span>` : "";
+  }
   const slug = (a.ev || {}).slug;
   if(!b || !slug || typeof pgStateAt !== "function") return "";
   const st = pgStateAt(b.key, slug);
@@ -20951,7 +21084,7 @@ function drawChart(){
      left standing. */
   if(!n){
     chartRows = [];
-    $("dailyHead").innerHTML = sechead(tt("co.daily.title", "Daily result"));
+    $("dailyHead").innerHTML = sechead(tt("co.daily.title2", "Company results"));
     $("dailyBox").innerHTML = `<p class="quiet" style="margin:0">${
       tt("co.daily.empty", "No finished day in this save yet; the chart starts tomorrow")}</p>`;
     return;
@@ -20960,7 +21093,7 @@ function drawChart(){
   /* Daily profit swings by a million between a weekend and a Tuesday purely
      because that is when the week's goods are paid for. The rolling line is the
      one that says whether trading moved. */
-  $("dailyHead").innerHTML = sechead(tt("co.daily.title", "Daily result"), {
+  $("dailyHead").innerHTML = sechead(tt("co.daily.title2", "Company results"), {
     why: tt("co.daily.why", "Daily profit follows the purchase calendar, so the 7-day line is the trend. Day {first} to {last}. Click a legend chip to add or drop a line.",
       {first: first.day, last: last.day}),
     aside: `<span class="seg" id="chartTools"></span>`,
@@ -23468,8 +23601,8 @@ function spMachineRead(slot, gap){
   const hours = gap ? gap.hours : SP_STAFF_HOURS;
   const p = {slot: spEsc(slot), hours, of: SP_STAFF_HOURS, off: gap && gap.off ? spEsc(gap.off) : ""};
   return Number.isFinite(hours)
-    ? p.off ? tt("sp.mach.read.off", "Machine {slot} · <b>{hours} of {of} h</b> rostered: nobody on it {off}", p)
-      : tt("sp.mach.read", "Machine {slot} · <b>{hours} of {of} h</b> rostered", p)
+    ? p.off ? tt("sp.mach.read.off2", "Machine {slot} · <b>{hours} of {of} h</b> staffed: nobody on it {off}", p)
+      : tt("sp.mach.read2", "Machine {slot} · <b>{hours} of {of} h</b> staffed", p)
     : p.off ? tt("sp.mach.unknown.off", "Machine {slot} · hours <b>not known</b>: nobody on it {off}", p)
       : tt("sp.mach.unknown", "Machine {slot} · hours <b>not known</b>", p);
 }
@@ -23490,7 +23623,7 @@ function spLinesRead(site){
       worst = {l, g, slot: Number.isFinite(g.slot) ? g.slot : (l.slots || [])[k] ?? k + 1};
   }));
   if(worst) return tt("sp.lines.least", "Least staffed · <b>{item}</b> · {read}", {item: spEsc(worst.l.item), read: spMachineRead(worst.slot, worst.g)});
-  return (site.lines || []).length ? tt("sp.lines.all", "Every machine is rostered all <b>{n} h</b> of the week", {n: SP_STAFF_HOURS}) : "&nbsp;";
+  return (site.lines || []).length ? tt("sp.lines.all2", "Every machine is staffed all <b>{n} h</b> of the week", {n: SP_STAFF_HOURS}) : "&nbsp;";
 }
 /* The Inputs block's read-out before a row is pointed at: the input whose
    fact is worst, by how soon it stops the line. */
@@ -24160,6 +24293,7 @@ function drawSite(){
     <div class="sitehead rv">
       ${b.code ? `<span class="bullet">${spEsc(b.code)}</span>` : ""}
       <div><h2>${spEsc(baseName(b))}${mapButton(b.key,b.name)}${headMarks}</h2><span class="sub">${sub}${depot ? mapButton(depot.key,depot.name) : ""}</span></div>
+      ${spActs(b, kind)}
     </div>
     ${spFinds(finds, b, kind)}
     ${spBody || `
@@ -24212,7 +24346,7 @@ function drawSite(){
     </section>` : ""}
     ${/* Only a shop is planned: an office bills hours rather than serving a
           queue, and a depot, a factory and a home have no row at all. */""}
-    ${kind === "retail" ? spRosterBlock(b) : office ? spOfficeRoster(b) : ""}
+    ${sp ? spSchedSummary(b) : ""}
     <div class="duo sec" style="grid-template-columns:1fr 2fr">
       <section class="rv" data-block="crew" id="sp-crew">
         ${sechead(tt("sp.crew.title", "Crew"), {icon: spAny ? "crew" : null, why: roleTip || null, quiet: crewQuiet})}
@@ -24259,6 +24393,33 @@ function drawSite(){
     sel.onchange = () => nameLine(sel.dataset.rid, sel.value || null);
   });
   wireSiteReads(); wireSiteFinds(); wireSiteChips(); wireSiteLines(); wireRoster(); wireTips(); wireReveal();
+}
+
+/* A shop's or an office's week, summarised on its own page: the plan's
+   state and its progress, the staffing findings it answers, and the way to
+   the one planner, on Staffing › Schedules with this business picked. The
+   planner is not drawn twice (docs/ui-structure-proposal.md, Business pages). */
+function spSchedSummary(b){
+  const finds = [...alertLines(), ...(alertMinor().rows || [])].filter(a => (a.group === "idlestaff" || a.group === "staff") && alertSite(a) === b);
+  const pg = typeof schedProgress === "function" ? schedProgress(b) : null;
+  const state = typeof schedStatus === "function" ? schedStatus(b) : "";
+  return `<section class="sec rv sp-sched" data-block="sched" id="sp-sched">
+    ${sechead(tt("sp.sched.title", "Schedule"), {icon: "roster", quiet: b.status === "office" ? tt("sp.sched.quiet.office", "planned from the office default") : tt("sp.sched.quiet", "planned from its own customers")})}
+    <div class="sp-schedrow"><span class="sp-schedst">${spEsc(state)}</span>${pg ? pgPill(pg.state, pg.rec) : ""}${finds.length
+      ? `<span class="sp-schedf">${spIcon("alert")}${tt("sp.sched.finds", {one: "{n} staffing finding", other: "{n} staffing findings"}, {n: finds.length})}</span>` : ""}<span class="bz-sp"></span>
+      <button type="button" class="nx-btn pri" data-site-go="staffing/schedules" data-site-key="${attr(b.key)}">${tt("sp.sched.open", "Open its week in Staffing › Schedules")}${icon("go")}</button></div>
+  </section>`;
+}
+/* The ways from a business's page to the planners that change it, each with
+   this business picked: its week, its deliveries, its prices; a depot's
+   imports; a factory's lines and hours. */
+function spActs(b, kind){
+  const go = (route, label, ic) => `<button type="button" class="nx-btn sm" data-site-go="${route}" data-site-key="${attr(b.key)}">${spIcon(ic)}<span>${label}</span></button>`;
+  const acts = kind === "retail" ? [go("staffing/schedules", tt("sp.act.schedule", "Schedule"), "roster"), go("supply/deliveries", tt("sp.act.deliveries", "Deliveries"), "truck"), go("businesses/prices", tt("sp.act.prices", "Prices"), "tag")]
+    : kind === "office" ? [go("staffing/schedules", tt("sp.act.schedule", "Schedule"), "roster"), go("businesses/prices", tt("sp.act.fees", "Fees"), "tag")]
+    : kind === "depot" ? [go("supply/imports", tt("sp.act.imports", "Imports"), "crate"), go("supply/deliveries", tt("sp.act.deliveries", "Deliveries"), "truck")]
+    : kind === "factory" ? [go("supply/production", tt("sp.act.production", "Production"), "gear")] : [];
+  return acts.length ? `<div class="sp-acts" role="group" aria-label="${attr(tt("sp.act.label", "Plan this business"))}">${acts.join("")}</div>` : "";
 }
 
 /* The site cell of the redesign's tables: the hood pill, the short name, and
@@ -24767,7 +24928,7 @@ function pgStore(){
       const saved = JSON.parse(localStorage.getItem(PG_KEY + who));
       if(saved && saved.v === 1 && saved.recs && typeof saved.recs === "object"){ recs = saved.recs; n = Number(saved.n) || 0; }
     }catch(e){}
-    pgMemo.set(who, {recs, n, gone: new Set(), mine: new Set()});
+    pgMemo.set(who, {recs, n, gone: new Set(), mine: new Set(), synced: new Set(Object.keys(recs))});
   }
   const m = pgMemo.get(who);
   return {who, recs: m.recs, memo: m};
@@ -24786,10 +24947,13 @@ function pgSaved(who){
 }
 /* Written over what is stored, not in place of it. What is stored stands,
    less what this page took away (`gone`: an undo, a clear, an expiry), with
-   this page's own records over it (`mine`: made or judged here since it
-   loaded). A record this page only loaded that is no longer stored was taken
-   away in another tab, and goes here too. The page's copy then follows the
-   store, and the count is the higher of the two. */
+   what this page changed since its last save over it (`mine`: made or judged
+   here). A record that was stored when this page last read or wrote the
+   store (`synced`) and is stored no longer was taken away in another tab (an
+   undo, a clear): it goes here too, even where this page has judged it since,
+   so the other tab's removal stands. A record made here is never taken for
+   one. The page's copy then follows the store, and the count is the higher
+   of the two. */
 function pgSave(){
   const {who, recs, memo} = pgStore();
   if(!who) return;
@@ -24800,10 +24964,14 @@ function pgSave(){
     memo.n = Math.max(memo.n, Number(saved.n) || 0);
     Object.entries(saved.recs).forEach(([id, rec]) => { if(!memo.gone.has(id)) all[id] = rec; });
   } else Object.entries(recs).forEach(([id, rec]) => { all[id] = rec; });
-  memo.mine.forEach(id => { if(recs[id]) all[id] = recs[id]; });
+  memo.mine.forEach(id => { if(recs[id] && (!saved || id in saved.recs || !memo.synced.has(id))) all[id] = recs[id]; });
   Object.keys(recs).forEach(id => { if(!(id in all)) delete recs[id]; });
   Object.assign(recs, all);
-  try{ localStorage.setItem(PG_KEY + who, JSON.stringify({v: 1, n: memo.n, recs: all})); }catch(e){}
+  try{
+    localStorage.setItem(PG_KEY + who, JSON.stringify({v: 1, n: memo.n, recs: all}));
+    memo.synced = new Set(Object.keys(all));
+    memo.mine.clear();
+  }catch(e){}
 }
 /* A board taken in for this company (takeData()): one more on its count,
    saved where the company has records here or in another tab. */
@@ -24823,7 +24991,7 @@ function pgClockNow(){
    and the rows it answers; it is Applied until a later board judges it. */
 function pgRecord(rec){
   const {recs, memo} = pgStore();
-  memo.gone.delete(rec.id); memo.mine.add(rec.id);
+  memo.gone.delete(rec.id); memo.mine.add(rec.id); memo.synced.delete(rec.id);
   recs[rec.id] = Object.assign({}, rec, {state: "applied", at: Date.now(), seq: memo.n, load: PG_LOAD, clock: pgClockNow()});
   pgSave();
   if(typeof sbStamp !== "undefined") sbStamp++;
@@ -24860,6 +25028,16 @@ const PG_CHECK = {
     if(seen.some(p => at.get(p.id) !== p.site)) return {state: "changed", seen: seen.length, of: want.length};
     if(seen.length === want.length) return {state: "confirmed", seen: seen.length, of: want.length};
     return {state: seen.length ? "partly" : "unseen", seen: seen.length, of: want.length};
+  },
+  /* Every role the write dressed has left the shop's uniform gaps. A board
+     that does not list the gaps says nothing; a shop gone from the save, or
+     a role back among the gaps, is Not confirmed. */
+  uniform(rec){
+    const b = (D.businesses || []).find(x => x.key === rec.target.site);
+    if(!b) return {state: "changed"};
+    if(!Array.isArray(b.uniformGapSkills)) return null;
+    const open = (rec.expect.skills || []).filter(s => b.uniformGapSkills.includes(s));
+    return open.length ? {state: "changed", open: open.length} : {state: "confirmed"};
   },
 };
 /* Where each person works, as far as this board says: every planned site's
@@ -24993,6 +25171,41 @@ function pgHireDone(body, answer){
   pgRecord({id: `hire|${Date.now()}`, family: "hire", target: {sites: [...new Set(people.map(p => p.site))]},
     expect: {people, hired: hired.size, moved: moved.size, skipped}, rowKeys: [],
     label: tt("sb.pg.hire.label", "{h} hired, {m} moved", {h: hired.size, m: moved.size})});
+}
+/* Uniforms: one record a shop the game dressed, with the roles (skills) the
+   answer says it set. A refused shop, or one with nothing to set, has none. */
+function pgUniformDone(answer){
+  const ids = [];
+  ((answer || {}).rows || []).forEach(r => {
+    const set = (r && !r.error && r.set || []).slice().sort();
+    if(!set.length) return;
+    const key = gwKeyOf(r.address), b = (D.businesses || []).find(x => x.key === key);
+    const id = `uniform|${key}|${set.join(",")}`;
+    pgRecord({id, family: "uniform", target: {site: key}, expect: {skills: set, preset: r.presetName || null}, rowKeys: [],
+      label: b ? shortName(b) : key});
+    ids.push(id);
+  });
+  if(ids.length) pgUniformStale();
+  return ids;
+}
+/* A shop's newest uniform record, and its state as a pill says it. */
+const pgUniformAt = key => typeof pgOfFamily === "function" ? pgOfFamily("uniform").find(r => r.target && r.target.site === key) || null : null;
+function pgUniformState(key){
+  const rec = pgUniformAt(key);
+  if(!rec) return null;
+  return {state: rec.state === "confirmed" ? "confirmed" : rec.state === "changed" ? "changed" : "applied", rec};
+}
+/* The pages that show a shop's uniforms say the new state when next drawn:
+   Standards, the business's own page and the Overview's uniform findings. */
+function pgUniformStale(){
+  if(typeof PAGE_DRAWS === "undefined" || !hasData()) return;
+  PAGE_DRAWS.forEach(row => { if(row[0] === "company/standards" || row[0] === "today") pageStale.add(row); });
+  if(typeof page === "undefined") return;
+  if(page === "company"){
+    if(sub.company === "standards" && typeof drawStandards === "function") drawStandards();
+    if(siteOpen && typeof drawSite === "function") drawSite();
+  } else if(page === "today" && typeof drawAlerts === "function") drawAlerts();
+  if(typeof wireAll === "function") wireAll();
 }
 /* An undo takes its write's records back: nothing is left to confirm. */
 function pgDrop(ids){
@@ -27743,7 +27956,7 @@ function drawProducts(){
     ? `<a class="link" href="#" id="productsToggle" aria-expanded="${showAllProducts}">${
         showAllProducts ? tt("co.prod.top", "top {n} only", {n: TOP}) : tt("co.prod.all", "all {n}", {n: all.length})}</a>`
     : `<span class="quiet">${tt("co.prod.all", "all {n}", {n: all.length})}</span>`;
-  $("secProducts").innerHTML = sechead(tt("co.prod.title", "Products"), {
+  $("secProducts").innerHTML = sechead(tt("co.prod.title2", "Sales across the company"), {
     why: tt("co.prod.why", "Revenue and units are a day's, averaged over the last seven days and summed over every store that sells the line; units a week is the last seven days, and stores is how many carry it.")
       + " " + (showPeak
         ? (weekRange
@@ -29142,8 +29355,8 @@ function bindStaff(){
   on("click", `${page} [data-hr-roster]`, (el, e) => {
     e.preventDefault();
     /* Staffing › Schedules, on the site: its week, and its write. */
-    openRoute("staffing/schedules", {pick: el.dataset.hrRoster, arrival: routeCarry("staffing/schedules"), into: "#schRoster"});
-    const block = $("schRoster");
+    openRoute("staffing/schedules", {pick: el.dataset.hrRoster, arrival: routeCarry("staffing/schedules"), into: "#sp-roster"});
+    const block = $("sp-roster");
     if(block){ block.classList.remove("sp-arrived"); void block.offsetWidth; block.classList.add("sp-arrived"); }
   });
   on("click", "[data-hs-dem-open]", el => {
@@ -29531,29 +29744,35 @@ function drawPayroll(){
    now (the footer's at 1500 px and under), see fvDiffChip(). */
 function drawGoals(){
   const g = D.goals;
-  /* The checklist is the design's: every business type run, the story rivals
-     taken over, the personal goals, the diplomas -- each "n / total", the box
-     filled only when complete. Personal goals have no stored total, so show
-     the completed count with an unfilled box. Goods made, tax paid and the
-     buildings owned are running totals below the checklist: owning all 885
-     buildings is not a goal anybody plays for. */
+  /* The career's goals as the game counts them, each "n / total" with a bar,
+     filled and ticked only when complete. Personal goals have no stored
+     total, so they show the completed count without a bar. Goods made, tax
+     paid and the buildings owned are running totals, not goals: owning all
+     885 buildings is not a goal anybody plays for. */
   const count = n => num(n || 0);
-  const ofAll = (label, n, total) => total > 0 ? [[label, n >= total, `${count(n)} / ${count(total)}`]] : [];
-  const goals = tt("co.goals.personal", "Personal goals done");
+  const ofAll = (label, n, total, icon) => total > 0 ? [{label, n: n || 0, total, icon}] : [];
   const miles = [
-    ...ofAll(tt("co.goals.types", "Every business type run"), g.typesRun, g.typesTotal),
-    ...ofAll(tt("co.goals.rivals", "Rivals taken over"), g.rivalsDefeated, g.rivalsTotal),
-    ...(g.goalsTotal > 0 ? ofAll(goals, g.goalsDone ?? g.completed, g.goalsTotal)
-      : [[goals, false, tt("co.goals.done", "{n:,} done", {n: g.goalsDone ?? g.completed ?? 0})]]),
-    ...ofAll(tt("co.goals.diplomas", "Diplomas earned"), g.diplomas, g.diplomasTotal),
+    ...ofAll(tt("co.goals.types", "Every business type run"), g.typesRun, g.typesTotal, "company"),
+    ...ofAll(tt("co.goals.rivals", "Rivals taken over"), g.rivalsDefeated, g.rivalsTotal, "people"),
+    ...(g.goalsTotal > 0 ? ofAll(tt("co.goals.personal", "Personal goals done"), g.goalsDone ?? g.completed, g.goalsTotal, "flag")
+      : [{label: tt("co.goals.personal", "Personal goals done"), n: g.goalsDone ?? g.completed ?? 0, total: null, icon: "flag"}]),
+    ...ofAll(tt("co.goals.diplomas", "Diplomas earned"), g.diplomas, g.diplomasTotal, "list"),
   ];
-  $("secGoals").innerHTML = sechead(tt("co.goals.title", "Milestones"), {quiet: tt("co.goals.quiet", "career totals")})
-    + `<div class="miles">${miles.map(([label, done, text]) =>
-      `<div class="mile${done ? " done" : ""}"><span class="box">${icon("tick")}</span>${
-        label}<span class="c">${text}</span></div>`).join("")}</div>`
-    + `<p class="quiet">${tt("co.goals.goods", "{n:,} goods produced", {n: g.goodsProduced || 0})} · ${
-      tt("co.goals.tax", "{w:$c} in tax paid", {w: g.taxesPaid || 0})} · ${
-      tt("co.goals.buildings", {one: "{n} building owned", other: "{n} buildings owned"}, {n: g.buildingsOwned || 0})}</p>`;
+  const bar = m => {
+    const done = m.total && m.n >= m.total;
+    const pct = m.total ? Math.max(0, Math.min(100, m.n / m.total * 100)) : 0;
+    return `<div class="mile bz-mile${done ? " done" : ""}"><span class="box">${icon("tick")}</span><span class="bz-ml">${m.label}</span>${
+      m.total ? `<span class="bz-mbar" role="img" aria-label="${attr(tt("co.goals.of", "{n} of {total}", {n: count(m.n), total: count(m.total)}))}"><i style="--v:${pct.toFixed(1)}%"></i></span>` : `<span class="bz-mbar none"></span>`}<span class="c">${
+      m.total ? `${count(m.n)} / ${count(m.total)}` : tt("co.goals.done", "{n:,} done", {n: m.n})}</span></div>`;
+  };
+  const tile = (lab, v, sub) => `<div class="bz-fin"><span class="lab">${lab}</span><span class="v">${v}</span>${sub ? `<span class="sub">${sub}</span>` : ""}</div>`;
+  $("secGoals").innerHTML = sechead(tt("co.goals.title2", "Career goals"), {quiet: tt("co.goals.quiet2", "as the game counts them")})
+    + `<div class="miles bz-miles">${miles.map(bar).join("")}</div>`
+    + `<h3 class="bz-h">${tt("co.goals.totals", "Career totals")}</h3><div class="bz-fins">${
+      tile(tt("co.goals.goods.lab", "Goods produced"), count(g.goodsProduced), "")}${
+      tile(tt("co.goals.tax.lab", "Taxes paid"), fmt(g.taxesPaid || 0), tt("co.goals.tax.sub", "booked in the company costs, day by day"))}${
+      tile(tt("co.goals.buildings.lab", "Buildings owned"), count(g.buildingsOwned),
+        `<a class="link" href="#map" data-ov-route="map">${tt("co.goals.buildings.map", "on the City map")}</a>`)}</div>`;
 }
 
 /* The difficulty, as one chip and a popover with every setting that differs
@@ -29884,9 +30103,7 @@ const STD_SUBJECTS = [
 function drawStandards(){
   const host = $("secStandards");
   if(!host || !hasData()) return;
-  host.innerHTML = `<div class="sechead"><h2>${tt("co.std.title", "Standards")}</h2><span class="quiet">${
-    tt("co.std.sub", "What customers find at each business. A subject opens the first business that needs it; the comparison below has them all.")}</span></div>`
-    + `<div class="nx-lead">${STD_SUBJECTS.map(sj => {
+  const cards = `<div class="nx-lead">${STD_SUBJECTS.map(sj => {
       const rows = nxFindings(sj.kinds), sites = nxSites(rows);
       const names = todayList(sites.slice(0, 3).map(b => spEsc(shortName(b))));
       const more = sites.length > 3 ? tt("co.std.more", "{names} and {n} more", {names, n: sites.length - 3}) : names;
@@ -29895,24 +30112,175 @@ function drawStandards(){
           ? tt("co.std.at", {one: "{n} finding at {sites}", other: "{n} findings at {sites}"}, {n: rows.length, sites: more})
           : tt("co.std.none", "Nothing flagged")}</small></button>`;
     }).join("")}</div>`;
+  host.innerHTML = `<div class="sechead"><h2>${tt("co.std.title", "Standards")}</h2><span class="quiet">${
+    tt("co.std.sub2", "What customers find at each business: satisfaction, promotion, amenities and uniforms. A business opens on its own evidence.")}</span></div>`
+    + cards + stdTable();
+}
+/* The comparison: one row a shop or office, the lowest satisfaction first
+   and the ones not scored yet last. Each reading is the business's own
+   (satisfaction, promotion, the amenity lamps, the uniform gaps); a lamp is
+   found, missing or not known yet, never guessed. The uniform write is the
+   one supported by the game link, with its progress beside it. */
+const STD_AMENITIES = ["bathroom", "toiletprivacy", "sink", "music", "interior"];
+const STD_KINDS = ["satisfaction", "promotion", "uniform", "bathroom", "toiletprivacy", "sink", "music", "interior"];
+function stdTable(){
+  const sites = D.businesses.filter(b => b.status === "retail" || b.status === "office");
+  if(!sites.length) return `<p class="quiet bz-none">${tt("co.std.nosites", "No shop or office yet: standards are what customers find at one.")}</p>`;
+  const score = b => b.revenue && Number.isFinite(b.satisfaction && b.satisfaction.overall) ? b.satisfaction.overall : null;
+  const order = sites.slice().sort((a, z) => (a.status === "office") - (z.status === "office")
+    || (score(a) === null) - (score(z) === null) || (score(a) ?? 0) - (score(z) ?? 0));
+  const finds = nxFindings(STD_KINDS);
+  const lamp = (b, slug) => {
+    const label = SP_AMENITY_WORD[slug];
+    const state = !b.revenue ? "unk" : b.amenities[slug] ? "ok" : "miss";
+    const words = state === "unk" ? tt("co.std.lamp.unk", "{what}: not scored yet", {what: label})
+      : state === "ok" ? tt("co.std.lamp.ok", "{what}: found", {what: label}) : tt("co.std.lamp.miss", "{what}: missing", {what: label});
+    return `<span class="sp-lampb bz-sm ${state} ${slug}" role="img" aria-label="${attr(words)}" data-tip="${attr(words)}">${spIcon(SP_AMENITY_ICON[slug])}</span>`;
+  };
+  const row = b => {
+    const unknown = score(b) === null;
+    const v = score(b);
+    const band = unknown ? "unk" : spBand(v);
+    const sat = unknown ? `<span class="bz-q">${tt("co.std.unscored", "not scored yet")}</span>`
+      : `<span class="bz-bar ${band}" aria-hidden="true"><i style="--v:${Math.max(0, Math.min(100, v))}%"></i><u></u></span><b class="bz-v ${band}">${num(v)}%</b>`;
+    const promo = b.status !== "retail" ? `<span class="bz-q">—</span>` : !b.customers ? `<span class="bz-q">—</span>`
+      : `<b class="bz-v${b.promotion >= 100 ? " ok" : ""}">${num(Math.min(100, b.promotion))}%</b>`;
+    const asked = b.status === "retail" && b.amenities ? STD_AMENITIES.filter(sl => b.amenities[sl] !== undefined) : [];
+    const lamps = b.status !== "retail" ? `<span class="bz-q">${tt("co.std.office.lamps", "offices are not asked")}</span>`
+      : asked.length ? `<span class="bz-lamps">${asked.map(sl => lamp(b, sl)).join("")}</span>` : `<span class="bz-q">—</span>`;
+    const gaps = b.uniformGaps || [];
+    const u = typeof pgUniformState === "function" ? pgUniformState(b.key) : null;
+    const pill = u ? pgPill(u.state, u.rec) : "";
+    const uni = b.status !== "retail" ? `<span class="bz-q">—</span>`
+      : b.missingUniformLocker ? `<span class="bz-warn">${spIcon("locker")}${tt("co.std.uni.locker", "no uniform locker")}</span>`
+      : gaps.length ? `<span class="bz-warn">${spIcon("shirt")}${tt("co.std.uni.gaps", {one: "{n} role without a uniform", other: "{n} roles without a uniform"}, {n: gaps.length})}</span>${
+        (b.uniformGapSkills || []).length ? gwUniformButtons(b, false) : ""}${pill}`
+      : `<span class="bz-q">${tt("co.std.uni.set", "set")}</span>${pill}`;
+    const mine = finds.filter(a => alertSite(a) === b);
+    return `<tr data-std-row="${attr(b.key)}"><td class="l"><span class="bz-nm">${hoodHtml(b)}<a href="${attr(siteHref(b.key))}" data-route-open data-std-site="${attr(b.key)}">${spEsc(shortName(b))}</a></span><span class="sub">${
+      spEsc(b.type || "")}${mine.length ? ` · ${tt("co.std.fixes", {one: "{n} finding", other: "{n} findings"}, {n: mine.length})}` : ""}</span></td>
+      <td class="l bz-sat">${sat}</td><td>${promo}</td><td class="l">${lamps}</td><td class="l bz-uni"><span class="bz-unibox">${uni}</span></td></tr>`;
+  };
+  const legend = `<p class="bz-legend"><span><span class="sp-lampb bz-sm ok" aria-hidden="true"></span>${tt("co.std.leg.found", "found")}</span><span><span class="sp-lampb bz-sm miss" aria-hidden="true"></span>${
+    tt("co.std.leg.missing", "missing")}</span><span><span class="sp-lampb bz-sm unk" aria-hidden="true"></span>${tt("co.std.leg.unk", "not scored yet: the game scores a shop once customers have walked it")}</span></p>`;
+  return `<h3 class="bz-h">${tt("co.std.compare", "Business by business")}</h3>${legend}<div class="scrollx"><table class="bz-t bz-std">
+    <thead><tr><th class="l">${tt("co.col.business", "Business")}</th><th class="l">${tt("co.std.col.sat", "Satisfaction · line at 80%")}</th><th>${tt("co.col.promotion", "Promotion")}</th><th class="l">${
+      tt("co.std.col.amenities", "Amenities")}</th><th class="l">${tt("co.std.col.uniforms", "Uniforms")}</th></tr></thead>
+    <tbody>${order.map(row).join("")}</tbody></table></div>`;
 }
 
-/* Businesses › Products & prices: a shop's own shelves and prices, and the
-   game's price guides beside the company's sales below. */
+/* Businesses › Results › Company finances: cash is not profit. What the cash
+   did over the days the board has watched it, against the profit the books
+   earned over the same days; what is owed on loans and what they cost a day
+   (inside the company costs outside sites); and how far back each history
+   reaches, since a trend needs one. Nothing here is a forecast. */
+function drawFinance(){
+  const host = $("secFinance");
+  if(!host || !hasData()) return;
+  const k = D.kpi || {}, cf = D.cashFlow, loans = D.loans || [];
+  const sign = n => n >= 0 ? "+" : "−";
+  const cashSub = cf
+    ? (cf.reinvested >= 0
+      ? tt("co.fin.cash.spent", {one: "{sign}{change:$} over {n} day, while the books earned {profit:$}: {spent:$} went into set-up and stock",
+          other: "{sign}{change:$} over {n} days, while the books earned {profit:$}: {spent:$} went into set-up and stock"},
+          {n: cf.days, sign: sign(cf.cashChange), change: Math.abs(cf.cashChange), profit: cf.profit, spent: cf.reinvested})
+      : tt("co.fin.cash.over", {one: "{sign}{change:$} over {n} day, while the books earned {profit:$}: {over:$} more came in than the books show",
+          other: "{sign}{change:$} over {n} days, while the books earned {profit:$}: {over:$} more came in than the books show"},
+          {n: cf.days, sign: sign(cf.cashChange), change: Math.abs(cf.cashChange), profit: cf.profit, over: -cf.reinvested}))
+    : tt("co.fin.cash.none", "No cash history yet: it starts building with this save, so the next one can say what the cash did.");
+  const interest = loans.reduce((t, l) => t + (Number(l.dailyInterest) || 0), 0);
+  const pays = loans.reduce((t, l) => t + (Number(l.dailyPayment) || 0), 0);
+  const owedSub = loans.length
+    ? tt("co.fin.owed.sub", {one: "{n} loan · {interest:$} a day interest, {pays:$} a day repaid, both among the company costs outside sites",
+        other: "{n} loans · {interest:$} a day interest, {pays:$} a day repaid, both among the company costs outside sites"},
+        {n: loans.length, interest, pays})
+    : tt("co.fin.owed.none", "No loans in this save.");
+  const first = (D.daily || [])[0];
+  const web = !!$("forgetHistory");
+  const histV = first ? tt("co.fin.hist.v", "day {d}", {d: first.day}) : "—";
+  const histSub = [
+    first ? tt("co.fin.hist.daily", {one: "Daily results: {n} day, from the save's own books", other: "Daily results: {n} days, from the save's own books"}, {n: D.daily.length})
+      : tt("co.fin.hist.nodaily", "No finished day in this save yet"),
+    cf ? tt("co.fin.hist.cash", "cash watched from day {d}", {d: cf.fromDay}) : "",
+    web ? tt("co.fin.hist.web", "kept in this browser: Preferences › History")
+      : tt("co.fin.hist.cli", "kept beside the board, in market_history.json"),
+  ].filter(Boolean).join(" · ");
+  const tile = (lab, v, sub, cls = "") => `<div class="bz-fin"><span class="lab">${lab}</span><span class="v${cls ? " " + cls : ""}">${v}</span><span class="sub">${sub}</span></div>`;
+  host.innerHTML = `<div class="sechead"><h2>${tt("co.fin.title", "Company finances")}</h2><span class="quiet">${tt("co.fin.quiet", "cash is not profit")}</span></div>
+    <div class="bz-fins">${tile(tt("co.fin.cash", "Cash on hand"), fmt(k.cash || 0), cashSub)}${
+      tile(tt("co.fin.owed", "Owed on loans"), loans.length ? fmt(k.debt || 0) : "—", owedSub, k.debt > 0 ? "warn" : "")}${
+      tile(tt("co.fin.hist", "History since"), histV, histSub)}</div>
+    <p class="bz-foot">${tt("co.fin.payroll", "Wages in detail: {link}.", {link: `<a class="link" href="#staffing/payroll" data-ov-route="staffing/payroll">${
+      tt("nav.path", "{area} › {view}", {area: tt("nav.area.staffing", "Staffing"), view: tt("nav.view.payroll", "Payroll")})}</a>`})}${
+      web ? ` ${tt("co.fin.prefs", "History controls: {link}.", {link: `<a class="link" href="#" data-open-prefs="history">${tt("nav.more.prefs2", "Preferences")}</a>`})}` : ""}</p>`;
+}
+
+/* Businesses › Products & prices: pick a shop (or an office, for its fees),
+   and its prices stand beside the market's: the price set on the shelf, the
+   lowest price the save shows for the item in the shop's neighbourhood, and
+   what the shelf sold at. Comparisons, never a recommended price: the board
+   has no pricing model. The company's sales follow (drawProducts()). The shop
+   on screen is kept on the history entry (nxPrice). */
+let bzPriceLit = null;
+const bzPriceSites = () => D.businesses.filter(b => b.status === "retail" || b.status === "office");
+function bzPriceKeep(){
+  if(typeof page === "undefined" || page !== "company" || siteOpen) return;
+  try{ history.replaceState({...(history.state || {}), nxPrice: {pick: bzPriceLit}}, "", location.hash); }catch(e){}
+}
 function drawPriceShops(){
   const host = $("secPrices");
   if(!host || !hasData()) return;
-  const shops = D.businesses.filter(b => b.status === "retail");
-  const types = typeof ssOwnTypes === "function" && typeof wikiTypeHref === "function" ? ssOwnTypes() : [];
-  host.innerHTML = `<div class="sechead"><h2>${tt("co.prices.title", "Prices at a shop")}</h2><span class="quiet">${
-    tt("co.prices.sub", "A shop's shelves and the prices set on them. The guides set your prices beside the game's reference; the board has no pricing model.")}</span></div>`
-    + (shops.length ? `<div class="nx-lead">${shops.map(b => `<button type="button" class="nx-card" data-price-site="${attr(b.key)}"><b>${spIcon("tag")}${hoodHtml(b)}<span>${
-      spEsc(shortName(b))}</span></b><small>${spEsc(b.type || "")}</small></button>`).join("")}</div>`
-      : `<p class="quiet">${tt("co.prices.none", "No shop yet: prices are set on a shop's shelves.")}</p>`)
-    + (types.length ? `<p class="nx-part">${tt("co.prices.guides", "Price guides")}</p><div class="nx-lead">${types.map(t =>
-      `<button type="button" class="nx-card" data-price-guide="${attr(t.slug)}"><b>${spIcon("list")}<span>${spEsc(t.type)}</span></b><small>${
-        tt("co.prices.guide", "Prices in your save against the game's")}</small></button>`).join("")}</div>` : "");
+  const sites = bzPriceSites();
+  if(!sites.length){
+    host.innerHTML = `<div class="sechead"><h2>${tt("co.prices.title2", "Prices")}</h2></div><p class="quiet">${tt("co.prices.none", "No shop yet: prices are set on a shop's shelves.")}</p>`;
+    return;
+  }
+  if(!sites.some(b => b.key === bzPriceLit)){
+    /* The first shop the company's sales lead with, else the first shop. */
+    const busy = sites.filter(b => b.status === "retail").sort((a, z) => (z.revenue || 0) - (a.revenue || 0))[0];
+    bzPriceLit = (busy || sites[0]).key;
+  }
+  const b = sites.find(x => x.key === bzPriceLit);
+  const chips = `<div class="bz-chips" role="group" aria-label="${attr(tt("co.prices.at", "Prices at"))}"><span class="bz-lab" aria-hidden="true">${tt("co.prices.at", "Prices at")}</span>${
+    sites.map(x => `<button type="button" class="bz-chip" data-price-pick="${attr(x.key)}" aria-pressed="${x.key === bzPriceLit}">${hoodHtml(x)}<span>${spEsc(shortName(x))}</span></button>`).join("")}</div>`;
+  host.innerHTML = chips + bzPriceTable(b);
 }
+/* One business's prices against the market's lowest in its neighbourhood. */
+function bzPriceTable(b){
+  const office = b.status === "office";
+  const market = new Map(((D.market || {}).rows || []).map(r => [r.slug, r]));
+  const lines = (b.lines || []).filter(l => spShelfListed(b, l) && l.slug !== PAPER_BAG)
+    .sort((a, z) => (z.revenue || 0) - (a.revenue || 0));
+  const hood = b.neighbourhood ? hoodName(b.neighbourhood) : "";
+  const money2 = n => Number.isFinite(n) && n >= 0 ? `$${num(n, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : null;
+  const row = l => {
+    const set = "configuredPrice" in l ? l.configuredPrice : l.price;
+    const mine = money2(set) && set > 0 ? money2(set) : null;
+    const cell = ((market.get(l.slug) || {}).cells || []).find(c => c && c.hood === b.neighbourhood);
+    const low = cell ? money2(cell.marketPrice) : null;
+    const sold = l.rate > 0 && l.revenue ? l.revenue / l.rate : null;
+    const cmp = !mine ? `<span class="bz-cmp warn">${tt("co.prices.cmp.none", "no price")}</span>`
+      : low === null ? ""
+      : Math.abs(set - cell.marketPrice) < 0.005 ? `<span class="bz-cmp">${tt("co.prices.cmp.same", "at the lowest")}</span>`
+      : set > cell.marketPrice ? `<span class="bz-cmp">${tt("co.prices.cmp.above", "above the lowest")}</span>`
+      : `<span class="bz-cmp">${tt("co.prices.cmp.below", "below the lowest")}</span>`;
+    return `<tr><td class="l"><b>${spEsc(l.item)}</b></td><td>${mine || `<span class="bz-q">${tt("wiki.prices.notSet", "Not set")}</span>`}</td>
+      <td>${low !== null ? low : `<span class="bz-q">${spEsc(wikiUnavailableWord())}</span>${cell && cell.marketPriceNote ? `<span class="sub">${spEsc(cell.marketPriceNote)}</span>` : ""}`}</td>
+      <td>${sold !== null ? money2(sold) : "—"}</td><td>${num(l.soldPerDay || 0)}</td><td class="l">${cmp}</td></tr>`;
+  };
+  const guide = typeof wikiTypeHref === "function" && b.typeSlug && wikiTypeHref(b.typeSlug, "prices")
+    ? `<a class="link" href="${attr(wikiTypeHref(b.typeSlug, "prices"))}" data-price-guide="${attr(b.typeSlug)}">${tt("co.prices.guide.link", "{type} guide › Prices in your save", {type: spEsc(b.type || "")})}</a>` : "";
+  return `<div class="bz-phead"><h2>${tt("co.prices.at.name", "Prices at {name}", {name: spEsc(shortName(b))})}</h2><span class="bz-tag save">${tt("co.prices.tag.save", "your save")}</span><span class="bz-tag">${
+    tt("co.prices.tag.market", "market reconstruction")}</span><span class="bz-sp"></span>${guide}<button type="button" class="nx-btn sm" data-price-site="${attr(b.key)}">${
+    office ? tt("co.prices.fees.page", "Its fees, on its page") : tt("co.prices.page", "Its shelves, on its page")}${icon("go")}</button></div>`
+    + (lines.length ? `<div class="scrollx"><table class="bz-t bz-prices"><thead><tr><th class="l">${office ? tt("sp.fees.col.fee", "Fee") : tt("co.prod.col.product", "Product")}</th><th>${
+      tt("co.prices.col.yours", "Your price")}</th><th>${hood ? tt("co.prices.col.low.hood", "Lowest market price · {hood}", {hood: spEsc(hood)}) : tt("co.prices.col.low", "Lowest market price")}</th><th>${
+      tt("co.prices.col.sold", "Average sold price")}</th><th>${tt("co.prices.col.sells", "Sells / day")}</th><th></th></tr></thead><tbody>${lines.map(row).join("")}</tbody></table></div>`
+      : `<p class="quiet">${office ? tt("sp.fees.none", "Nothing billed here yet.") : tt("sp.shelf.none", "Nothing stocked here.")}</p>`)
+    + `<p class="bz-foot">${tt("co.prices.foot", "Comparisons, not recommended prices. Your price is the one set in the game; the lowest market price is what this save shows for the item in the neighbourhood, your own shops included; the average sold price is the line's takings over its units sold, the last seven days.")}</p>`;
+}
+/* The wiki's word for a market price the save does not carry. */
+const wikiUnavailableWord = () => tt("wiki.prices.unavailable", "Unavailable");
 
 /* Staffing › Schedules: every shop and office with the state of its plan in a
    list, and the chosen one's scheduling beside it -- the same planner a
@@ -29937,7 +30305,7 @@ function schedStatus(b){
     return o && (o.shifts || []).length && o.computers
       ? tt("co.sched.office.plan", {one: "Office default: {s} of {n} computer staffed", other: "Office default: {s} of {n} computers staffed"},
         {n: o.computers, s: o.staffedComputers || 0})
-      : tt("co.sched.office", "Office: its staff and computers are on its page");
+      : tt("co.sched.office.idle", "Office: the office default plans nothing here yet");
   }
   const base = plans.get(b.key);
   if(!base) return tt("co.sched.none", "No plan yet");
@@ -29995,7 +30363,7 @@ function drawSchedules(){
   let detail = `<p class="quiet">${tt("co.sched.noSites", "No shop or office yet.")}</p>`;
   if(b){
     const block = b.status === "office" ? spOfficeRoster(b) : spRosterBlock(b);
-    const body = block ? block.replace('id="sp-roster"', 'id="schRoster"')
+    const body = block ? block
       : `<div class="sch-empty">${spIcon("crew")}<p>${tt("co.sched.office.none", "The office default plans nothing here: its staff and computers are on its page.")}</p></div>`;
     /* The evidence a staffing finding stands on is the business's own
        customer hours: named here, one link away. */
@@ -30424,7 +30792,15 @@ const ROUTES = {
   "businesses/results": {host: ["company", "results"], enter(){ if(typeof view !== "undefined" && routeStdWas !== null){
     if(view === "ops") view = routeStdWas;
     routeStdWas = null; sortKey = null; if(hasData()) drawPortfolio(); } }},
-  "businesses/prices": {host: ["company", "products"]},
+  /* The shop whose prices are on screen: a task's or the reader's, kept on
+     the history entry (nxPrice), so Back, Forward and a reload give it back. */
+  "businesses/prices": {host: ["company", "products"], after(o){
+    if(typeof drawPriceShops !== "function" || !hasData()) return;
+    const kept = o.historyMode && o.historyMode !== "push" ? (routeState().nxPrice || {}).pick : null;
+    if(o.pick || kept) bzPriceLit = o.pick || kept;
+    drawPriceShops(); bzPriceKeep();
+    if(typeof wireAll === "function") wireAll();
+  }},
   /* The portfolio's Operations comparison is the Standards view's body. */
   "businesses/standards": {host: ["company", "standards"], enter(){ if(typeof view !== "undefined" && view !== "ops"){
     routeStdWas = view; view = "ops"; sortKey = null; if(hasData()) drawPortfolio(); } }},
@@ -30444,22 +30820,33 @@ const ROUTES = {
     schedPick(o.pick || kept || schedLit);
     schedKeep();
     if(typeof wireAll === "function") wireAll();
-    if(o.into === "#schRoster" && typeof settleScroll === "function") settleScroll($("schRoster") || $("schDetail"));
+    if(o.into === "#sp-roster" && typeof settleScroll === "function") settleScroll($("sp-roster") || $("schDetail"));
   }},
   "staffing/needs": {host: ["staffing", "needs"]},
   "staffing/payroll": {host: ["staffing", "payroll"]},
-  "expansion/demand": {host: ["growth", "market"]},
+  /* Back from Find a location (or a reload) comes back to the cell that
+     asked, kept on the entry (nxDem): its row ringed and the cell focused. */
+  "expansion/demand": {host: ["growth", "market"], after(o){
+    const kept = o.historyMode && o.historyMode !== "push" ? routeState().nxDem : null;
+    if(kept && typeof demArrive === "function" && hasData()) demArrive(kept);
+  }},
   /* The finder is a mode of the City map's page (web/map.js). */
   /* A task or a Demand cell asks a question (a preset); Back, Forward, a
      reload or the area's own row come back to the finder as it was left. */
   "expansion/finder": {host: ["map"], after(o){
     if(typeof premises !== "function" || !premises()) return;
     if(o.preset && typeof openFinder === "function") openFinder(o.preset, !!o.focus);
-    else if(typeof showFinder === "function") showFinder(o.historyMode || "push"); }},
+    else if(typeof showFinder === "function") showFinder(o.historyMode || "push");
+    if(typeof cityMapPage !== "undefined" && cityMapPage) cityMapPage.ready.then(() => drawFinderCtx()); }},
   "expansion/factory": {host: ["growth", "plan"]},
   /* The map as the reader left it: with the finder on, that is Find a
      location, and the address says so (routeFor()). */
-  "map": {host: ["map"], after(){ routeSync(); }},
+  /* The City map is the plain map: reached with the finder on (the
+     masthead, Back from Find a location) it switches the finder off. Find a
+     location is its own route, and Back moves between the two. */
+  "map": {host: ["map"], after(){
+    if(routeFinderOn()){ cityMapPage.fs.on = false; cityMapPage.deselect(); cityMapPage.saveFinder(); cityMapPage.update(); }
+    routeSync(); if(typeof drawFinderCtx === "function") drawFinderCtx(); }},
   "wiki": {host: ["wiki"]},
 };
 /* The route a host page and view shows when nothing more precise was asked
@@ -30647,7 +31034,7 @@ function routeCarry(id){
    heard. */
 const PAGE_DRAWS = [
   ["today", () => drawKpis()], ["today", () => drawAlerts()], ["today", () => drawTools()],
-  ["company/results", () => drawChart()], ["company/results company/standards", () => drawPortfolio()],
+  ["company/results", () => drawChart()], ["company/results", () => drawFinance()], ["company/results company/standards", () => drawPortfolio()],
   ["company/standards", () => drawStandards()],
   ["company/results", () => drawSitePicker()], ["", () => drawSite()],
   ["today supply/changes supply/imports supply/deliveries supply/production supply/flow", () => drawSupplyStrip()],
@@ -31214,6 +31601,9 @@ function siteLinkClick(e){
   /* The crumb row's own links (its way back to another site's page) are the
      crumb's: wireSiteCrumbs() makes that one the browser's Back. */
   if(a.closest(".ss-crumbs") && a.dataset.ss) return;
+  /* A name that opens its page under its own route (Standards' comparison,
+     the prices' shop list) is its view's to open. */
+  if(a.hasAttribute && a.hasAttribute("data-route-open")) return;
   if(e.button > 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
   const key = siteBySlug(a.getAttribute("href").slice(6));
   if(key === null) return;
@@ -32363,6 +32753,18 @@ const SS_VIEWS = [
    live(){ const debt = (D.loans || []).reduce((s, l) => s + (l.remaining || 0), 0);
      return debt ? {p: tt("nav.search.cash.owed", "Overview · {w} owed on loans", {w: compact(debt)})} : {}; },
    go(){ openRoute("overview"); ssRing(q('#kpis [data-kpi="cash"]')); }},
+  {id: "finances", get t(){ return tt("nav.search.finances.title", "Company finances"); },
+   get p(){ return tt("nav.search.finances.line", "Businesses › Results · cash, loans, history"); }, ic: "coin",
+   syn: ["cash flow", "cash vs profit", "loans", "loan", "interest", "debt", "history", "set-up costs"],
+   go(){ openRoute("businesses/results", {into: "#secFinance"}); }},
+  {id: "prefs", get t(){ return tt("nav.more.prefs2", "Preferences"); },
+   get p(){ return tt("nav.search.prefs.line", "Theme, language, game text, history, checks"); }, ic: "tune",
+   syn: ["settings", "theme", "dark mode", "light mode", "language", "forget history", "preferences"],
+   go(){ ssClose(false); pxOpen("prefs", $("navMore")); }},
+  {id: "help", get t(){ return tt("nav.more.help", "Help & feedback"); },
+   get p(){ return tt("nav.search.help.line", "Ask, report a bug, vote on features"); }, ic: "wiki",
+   syn: ["help", "feedback", "bug", "report", "discord", "vote", "support"],
+   go(){ ssClose(false); pxOpen("help", $("navMore")); }},
   {id: "daily", get t(){ return tt("nav.search.daily.title", "Daily result"); },
    get p(){ return tt("nav.search.daily.line", "Businesses › Results"); }, ic: "profit", syn: ["profit", "revenue", "chart", "income", "why did profit move"],
    go: () => reveal("secDaily")},
@@ -33345,6 +33747,20 @@ const wireAdapters = once(() => {
     routeOpenSite(btn.dataset.site, sj.block, "businesses/standards");
   });
   on("click", "[data-price-site]", (btn, e) => { e.preventDefault(); routeOpenSite(btn.dataset.priceSite, "#sp-shelves", "businesses/prices"); });
+  on("click", "[data-price-pick]", (btn, e) => {
+    e.preventDefault();
+    bzPriceLit = btn.dataset.pricePick;
+    drawPriceShops(); bzPriceKeep(); wireAll();
+    const again = q(`[data-price-pick="${CSS.escape(bzPriceLit)}"]`);
+    if(again) again.focus({preventScroll: true});
+  });
+  /* A business in Standards' comparison opens on its own Satisfaction block,
+     under Standards. A modified click is the browser's (a new tab). */
+  on("click", "[data-std-site]", (a, e) => {
+    if(e.button > 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    e.preventDefault(); e.stopPropagation();
+    routeOpenSite(a.dataset.stdSite, "#sp-standards", "businesses/standards");
+  }, true);
   on("click", "[data-price-guide]", (btn, e) => { e.preventDefault(); ssPrices(btn.dataset.priceGuide); });
   on("click", "[data-sched-pick]", (btn, e) => {
     e.preventDefault();
@@ -33370,6 +33786,28 @@ const wireAdapters = once(() => {
     routeOpenSite(btn.dataset.schedOpen, nxStaffInto(b), "staffing/schedules");
   });
   on("click", "[data-need-hire]", (a, e) => { e.preventDefault(); settleScroll($("secStaff")); });
+  on("click", "#finderCtx [data-fx]", (a, e) => {
+    if(e.button > 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    const fx = a.dataset.fx;
+    if(fx === "guide") return;  // a wiki link: the hash listener opens it
+    e.preventDefault();
+    if(fx === "factory"){ openRoute("expansion/factory", {arrival: routeCarry("expansion/factory")}); return; }
+    openRoute("expansion/demand", {arrival: routeCarry("expansion/demand")});
+    if(a.dataset.fxType) showGrowthRow(a.dataset.fxType);
+  });
+  /* A business's page to one of its planners, the business picked or in
+     scope, with the way back to the page. */
+  on("click", "[data-site-go]", (btn, e) => {
+    e.preventDefault();
+    const key = btn.dataset.siteKey, id = btn.dataset.siteGo;
+    const b = D.businesses.find(x => x.key === key);
+    if(!b) return;
+    const o = {arrival: {what: shortName(b), pos: "", back: "businesses/results", backLabel: shortName(b), depth: 1}};
+    if(id === "staffing/schedules" || id === "businesses/prices") o.pick = key;
+    const view = id.startsWith("supply/") ? id.split("/")[1] : null;
+    if(view && typeof sbScope !== "undefined"){ sbScope[view] = `site:${key}`; if(typeof sbMode !== "undefined") sbMode[view] = "all"; }
+    openRoute(id, o);
+  });
   on("click", "[data-prod-staff]", (btn, e) => { e.preventDefault(); openRoute("supply/production", {into: "#sbStaff"}); });
   on("click", "[data-need-open]", (btn, e) => {
     e.preventDefault();
@@ -33401,7 +33839,7 @@ function nxMenuItems(phone){
     + `<span class="lab" role="presentation">${tt("nav.more.utils", "Utilities")}</span>`
     + (hasData() ? item("search", svg(NX_MENU_ICON.search), tt("nav.more.search", "Search the board")) : "")
     + item("news", spIcon("list"), tt("nav.more.news", "What's new"))
-    + item("prefs", icon("tune"), tt("nav.more.prefs", "Preferences: theme and game names"))
+    + item("prefs", icon("tune"), tt("nav.more.prefs2", "Preferences"))
     + item("help", svg(NX_MENU_ICON.help), tt("nav.more.help", "Help & feedback"));
 }
 function nxMenuToggle(btn){
@@ -33425,7 +33863,7 @@ function nxMenuClose(focus){
   if(nxMenuFrom){ nxMenuFrom.setAttribute("aria-expanded", "false"); if(focus && nxMenuFrom.isConnected) nxMenuFrom.focus({preventScroll: true}); }
   nxMenuFrom = null;
 }
-function nxMenuDo(id){
+function nxMenuDo(id, from = null){
   if(id === "map" || id === "wiki"){ if(hasData()) openRoute(id); else if(window.BigCopilotBoard) window.BigCopilotBoard.browseWiki(); return; }
   if(id === "search"){ if(typeof ssOpen === "function") ssOpen(); return; }
   if(id === "news"){
@@ -33433,20 +33871,16 @@ function nxMenuDo(id){
     if(d && !d.open){ d.showModal(); featureDiscovery.visit("changelog"); d.scrollTop = 0; }
     return;
   }
-  /* The preferences and the help live in the footer for now: the menu takes
-     the reader there and hands the keyboard to the first control. */
-  const foot = q(".wrap > .sitefoot") || q(".sitefoot");
-  if(!foot) return;
-  const box = id === "prefs" ? foot.querySelector(".sf-theme") || foot : foot.querySelector(".sf-nav") || foot;
-  box.scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "center"});
-  const to = id === "prefs" ? box.querySelector('[data-theme-set][aria-pressed="true"], button') : box.querySelector("a");
-  if(to) to.focus({preventScroll: true});
+  /* Preferences and Help & feedback are sheets over the board (pxOpen()),
+     the keyboard going back to the menu's button when they close. */
+  if(id === "prefs" || id === "help") pxOpen(id, from || $("navMore"));
 }
 nxMenu.addEventListener("click", e => {
   const b = e.target.closest("[data-nx-item]");
   if(!b) return;
+  const from = nxMenuFrom;
   nxMenuClose(false);
-  nxMenuDo(b.dataset.nxItem);
+  nxMenuDo(b.dataset.nxItem, from);
 });
 nxMenu.addEventListener("keydown", e => {
   const items = $$("[data-nx-item]", nxMenu), i = items.indexOf(document.activeElement);
@@ -33465,6 +33899,175 @@ document.addEventListener("click", e => {
 });
 window.addEventListener("resize", () => nxMenuClose(false));
 
+/* --- Preferences and Help & feedback: two sheets over the board -------------
+   Opened from the masthead's utilities (··· and the phone's Map & more), and
+   from a link in context (Company finances' history). Each is a panel hung
+   off <body> beside a scrim, under the board's own popovers (z-index 55; the
+   language list, the checks panel and the difficulty popover are 60), so a
+   control in a sheet that opens one of them works as it does in the footer.
+   Nothing here is a setting of its own: each row reuses the control that
+   already exists -- the theme buttons (data-theme-set), a copy of the
+   footer's Language picker, the web page's game-text chip and Forget
+   history, the checks panel (data-kinds), the difficulty chip -- so a choice
+   made in a sheet is the same choice made anywhere else. Escape, the close
+   button and the scrim close it, and the keyboard goes back to the control
+   that opened it. */
+let pxWhich = null, pxFrom = null;
+const pxScrim = document.createElement("div");
+pxScrim.className = "px-scrim"; pxScrim.hidden = true;
+const pxSheet = document.createElement("div");
+pxSheet.className = "px-sheet"; pxSheet.id = "pxSheet"; pxSheet.hidden = true;
+pxSheet.setAttribute("role", "dialog"); pxSheet.setAttribute("aria-modal", "true");
+pxSheet.setAttribute("aria-labelledby", "pxTitle"); pxSheet.tabIndex = -1;
+document.body.append(pxScrim, pxSheet);
+/* A row is a div, not a section: sections skip their painting off screen
+   (content-visibility), which a sheet's rows must never do. */
+const pxRow = (id, title, lead, body) => `<div class="px-row" role="group" aria-labelledby="pxh-${id}" data-px="${id}"><div class="px-l"><h3 id="pxh-${id}">${title}</h3>${lead ? `<p>${lead}</p>` : ""}</div><div class="px-c">${body}</div></div>`;
+/* The theme in force: the attribute on <html>, or the system's. */
+const pxTheme = () => document.documentElement.getAttribute("data-theme") || "auto";
+function pxPrefsHtml(){
+  const theme = pxTheme();
+  const tb = (mode, label) => `<button type="button" class="px-seg" data-theme-set="${mode}" aria-pressed="${theme === mode}">${label}</button>`;
+  const appearance = pxRow("appearance", tt("nav.px.app.title", "Appearance"), tt("nav.px.app.lead", "Theme and motion."),
+    `<div class="px-segs" role="group" aria-label="${attr(tt("foot.theme.head", "Theme"))}">${tb("auto", tt("foot.theme.auto", "Match system"))}${tb("light", tt("foot.theme.light", "Light"))}${tb("dark", tt("foot.theme.dark", "Dark"))}</div>
+     <p class="px-note">${REDUCED ? tt("nav.px.motion.on", "Reduced motion is on, as your system asks: the sphere, the coins and the checklist's truck stand still, and nothing on the board needs them.")
+       : tt("nav.px.motion.off", "Motion follows your system. Ask it for reduced motion and the sphere, the coins and the checklist's truck stand still; nothing on the board needs them.")}</p>`);
+  const pick = q(".sitefoot .gn-pick") || q(".gn-pick");
+  const language = pxRow("language", tt("foot.lang.head", "Language"), tt("nav.px.lang.lead", "One choice: Big Copilot's own words and the game's names for items, business types and neighbourhoods."),
+    pick ? `<div class="px-gn" id="pxGn"></div><p class="px-note">${tt("nav.px.lang.names", "A language listed under game names only changes those names; the rest stays English.")}</p>`
+      : `<p class="px-note">${tt("nav.px.lang.cli", "This board was written by the Python version, in the language it was asked for. Run it with --lang and a language code (for example --lang de) for another.")}</p>`);
+  const chip = $("localeChip"), reset = $("localeReset");
+  const gametext = chip ? pxRow("gametext", tt("nav.px.text.title", "Game text"), tt("nav.px.text.lead", "Names, recipes and station capacities come with the page. A newer game's own en.json wins over them."),
+    `<p class="px-state">${spEsc(chip.textContent.trim())}</p><div class="px-acts"><button type="button" class="nx-btn sm" data-px-do="locale">${tt("nav.px.text.choose", "Choose en.json")}</button>${
+      reset && !reset.hidden ? `<button type="button" class="nx-btn sm ghost" data-px-do="localeReset">${spEsc(reset.textContent.trim())}</button>` : ""}</div>`) : "";
+  const forget = $("forgetHistory");
+  const history = pxRow("history", tt("nav.px.hist.title", "History"), tt("nav.px.hist.lead", "Trends and week-on-week figures need a history the save does not keep."),
+    forget ? `<p class="px-note">${tt("nav.px.hist.web", "Two weeks of demand and sixty days of cash are kept in this browser, per company. Forgetting them starts a fresh record; your saves are not touched.")}</p><div class="px-acts"><button type="button" class="nx-btn sm" data-px-do="forget">${tt("land.forget", "Forget history")}</button></div>`
+      : `<p class="px-note">${tt("nav.px.hist.cli", "The Python version keeps it in market_history.json beside the board. It can be rebuilt from older saves:")}</p><pre class="px-code">python ba_dashboard.py --backfill</pre>`);
+  const on = ALERT_GROUPS.filter(g => alertGroupPrefs[g.id] !== false).length;
+  const line = hasData() && D.kpi && Number.isFinite(D.kpi.materiality) ? fmt(D.kpi.materiality) : null;
+  const checks = pxRow("checks", tt("nav.px.checks.title", "Checks"), tt("nav.px.checks.lead", "Which findings reach Needs attention."),
+    `<div class="px-acts"><button type="button" class="nx-btn sm" data-kinds id="pxKinds">${icon("tune")}${tt("today.customize", "Customize checks")}</button><span class="px-state">${line
+      ? tt("nav.px.checks.count.line", "{on} of {n} on · {w} a day line", {on, n: ALERT_GROUPS.length, w: line}) : tt("nav.px.checks.count", "{on} of {n} on", {on, n: ALERT_GROUPS.length})}</span></div>`);
+  const h = hasData() && D.meta ? D.meta.houseRules : null;
+  const diff = hasData() && D.meta ? fvDiffChip(h, "prefs", D.meta.difficulty) : "";
+  const context = pxRow("context", tt("nav.px.ctx.title", "Game context"), tt("nav.px.ctx.lead", "What the numbers are played on."),
+    diff ? `<div class="px-acts">${diff}<span class="px-state">${tt("nav.px.ctx.diff", "Difficulty settings compared with the game's Normal preset")}</span></div>`
+      : `<p class="px-note">${tt("nav.px.ctx.none", "Open a save to see the difficulty it is played on.")}</p>`);
+  const cli = pxRow("cli", tt("nav.px.cli.title", "Local board"), tt("nav.px.cli.lead", "The Python version, on your own computer."),
+    `<pre class="px-code">python ba_dashboard.py --watch     ${tt("nav.px.cli.watch", "# follow the save folder")}\npython ba_dashboard.py --game      ${tt("nav.px.cli.game", "# read the running game")}\npython ba_dashboard.py --backfill  ${tt("nav.px.cli.backfill", "# rebuild history from old saves")}</pre>`);
+  return appearance + language + gametext + history + checks + context + cli;
+}
+function pxHelpHtml(){
+  const foot = q(".wrap > .sitefoot") || q(".sitefoot");
+  const out = sel => foot ? [...foot.querySelectorAll(sel)] : [];
+  /* A footer link's words, without its New badge or its icons. */
+  const words = a => { const c = a.cloneNode(true); c.querySelectorAll(".feature-new, svg, .sf-sr").forEach(x => x.remove()); return c.textContent.trim().replace(/\s+/g, " "); };
+  const link = a => a ? `<a class="nx-btn sm" href="${attr(a.getAttribute("href"))}" target="_blank" rel="noopener">${spEsc(words(a))}${icon("go")}</a>` : "";
+  const feedback = out("a[data-sf-feedback]")[0];
+  const vote = out("[data-vote-card]")[0];
+  const find = pxRow("find", tt("nav.px.help.find.title", "Can't find something?"), tt("nav.px.help.find.lead", "Tell us the task in your own words: it is how the names and the places on the board get better."),
+    `<div class="px-acts">${hasData() ? `<button type="button" class="nx-btn sm" data-px-do="search">${tt("nav.more.search", "Search the board")}</button>` : ""}${
+      $("menuBtn") ? `<button type="button" class="nx-btn sm" data-px-do="saves">${tt("land.help.summary", "Where is my save?")}</button>` : ""}${link(feedback)}</div>`);
+  const ballot = pxRow("ballot", tt("nav.px.help.vote.title", "Feature requests"), tt("nav.px.help.vote.lead", "Vote on what Big Copilot gets next."),
+    vote && !vote.hidden ? `<div class="px-acts"><button type="button" class="nx-btn sm" data-community-open aria-haspopup="dialog">${tt("foot.vote.cta", "Vote on features")}</button></div>`
+      : `<p class="px-note">${tt("nav.px.help.vote.off", "The ballot is on bigcopilot.com, where the board can reach the community server.")}</p>`);
+  const last = q("#changelogDialog .changelog-list > li");
+  const head = last ? last.querySelector("h3, h2, strong, b") || last : null;
+  const lastTitle = head ? head.textContent.trim().replace(/\s+/g, " ") : "";
+  const news = pxRow("news", tt("nav.more.news", "What's new"), lastTitle ? spEsc(lastTitle.length > 140 ? lastTitle.slice(0, 137) + "…" : lastTitle) : "",
+    `<div class="px-acts"><button type="button" class="nx-btn sm" data-changelog aria-haspopup="dialog">${tt("foot.changelog", "Changelog")}</button></div>`);
+  const links = out(".sf-nav a[href]").filter(a => !a.hasAttribute("data-sf-feedback")).map(link).join("")
+    + out(".sf-cards a.sf-cta").map(link).join("") + out(".sf-legal a[href]").map(link).join("");
+  const project = pxRow("project", tt("nav.px.help.project", "The project"), tt("nav.px.help.fanmade", "A fan-made companion for Big Ambitions, not affiliated with Hovgaard Games."),
+    `<div class="px-acts px-wrap">${links}</div>`);
+  return find + ballot + news + project;
+}
+function pxOpen(which, from = null, focusRow = null){
+  if(typeof nxMenuClose === "function") nxMenuClose(false);
+  pxWhich = which; pxFrom = from || document.activeElement;
+  const title = which === "help" ? tt("nav.more.help", "Help & feedback") : tt("nav.more.prefs2", "Preferences");
+  pxSheet.innerHTML = `<div class="px-head"><h2 id="pxTitle" tabindex="-1">${title}</h2><button type="button" class="ibtn px-x" data-px-close aria-label="${attr(tt("nav.dlg.close", "Close"))}">${gwSvg("close")}</button></div>`
+    + `<div class="px-body">${which === "help" ? pxHelpHtml() : pxPrefsHtml()}</div>`;
+  /* The Language row is the footer's own picker, copied: the same choice,
+     wired the same way. */
+  const slot = $("pxGn"), pick = q(".sitefoot .gn-pick") || q(".gn-pick");
+  if(slot && pick){
+    const copy = pick.cloneNode(true);
+    delete copy.dataset.gnWired;
+    const btn = copy.querySelector(".gn-btn");
+    if(btn){ btn.id = "pxGnBtn"; btn.setAttribute("aria-labelledby", "pxGnLab pxGnBtn"); btn.setAttribute("aria-expanded", "false"); }
+    slot.innerHTML = `<span class="px-sr" id="pxGnLab">${tt("foot.lang.head", "Language")}</span>`;
+    slot.appendChild(copy);
+    if(typeof wireGameNames === "function") wireGameNames();
+  }
+  pxScrim.hidden = false; pxSheet.hidden = false;
+  document.body.classList.add("px-on");
+  if(typeof wireTips === "function") wireTips();
+  const row = focusRow ? pxSheet.querySelector(`[data-px="${focusRow}"]`) : null;
+  if(row){
+    row.classList.add("px-lit"); row.scrollIntoView({block: "nearest"});
+    const b = row.querySelector("button, a");
+    if(b){ b.focus({preventScroll: true}); return; }
+  }
+  $("pxTitle").focus({preventScroll: true});
+}
+function pxClose(focus = true){
+  if(pxSheet.hidden) return;
+  if(typeof gnPopFor !== "undefined" && gnPopFor && pxSheet.contains(gnPopFor) && typeof gnClose === "function") gnClose(false);
+  pxSheet.hidden = true; pxScrim.hidden = true; pxWhich = null;
+  document.body.classList.remove("px-on");
+  /* The language copy leaves with the sheet. */
+  pxSheet.innerHTML = "";
+  if(focus && pxFrom && pxFrom.isConnected && pxFrom.focus) pxFrom.focus({preventScroll: true});
+  pxFrom = null;
+}
+pxScrim.addEventListener("click", () => pxClose(true));
+pxSheet.addEventListener("click", e => {
+  if(e.target.closest("[data-px-close]")){ pxClose(true); return; }
+  const b = e.target.closest("[data-px-do]");
+  if(!b) return;
+  const what = b.dataset.pxDo;
+  if(what === "locale"){ const c = $("localeChip"); if(c) c.click(); }
+  else if(what === "localeReset"){ const r = $("localeReset"); if(r) r.click(); pxOpen(pxWhich, pxFrom, "gametext"); }
+  else if(what === "forget"){ const f = $("forgetHistory"); if(f) f.click(); }
+  else if(what === "search"){ pxClose(false); if(typeof ssOpen === "function") ssOpen(); }
+  else if(what === "saves"){
+    /* The save-location help lives in the source menu on the web page. */
+    pxClose(false);
+    const menu = $("menuBtn");
+    if(menu && menu.getAttribute("aria-expanded") !== "true") menu.click();
+    const help = $("help");
+    if(help){ help.open = true; const s = help.querySelector("summary"); if(s) s.focus({preventScroll: true}); }
+  }
+});
+/* Escape closes the sheet, unless a popover the sheet opened is up: that one
+   closes first (each listens itself). Listened to in the capture phase, so
+   it asks before a popover's own listener has closed it. Tab stays inside
+   the sheet. */
+document.addEventListener("keydown", e => {
+  if(pxSheet.hidden) return;
+  const inPop = e.target && e.target.closest && e.target.closest("#gnPop, #alertPop, #fvDiffPop, dialog[open]");
+  if(e.key === "Escape" && !inPop){
+    const popOpen = (typeof gnPopFor !== "undefined" && gnPopFor) || (typeof kindsPop !== "undefined" && kindsPop && kindsPop.classList.contains("on"))
+      || (typeof fvDiffPop !== "undefined" && fvDiffPop && fvDiffPop.classList.contains("on"));
+    if(!popOpen){ e.preventDefault(); pxClose(true); }
+    return;
+  }
+  if(e.key !== "Tab" || inPop) return;
+  const all = [...pxSheet.querySelectorAll("a[href], button:not([disabled]), [tabindex]:not([tabindex='-1'])")].filter(x => x.getClientRects().length);
+  if(!all.length) return;
+  const first = all[0], last = all[all.length - 1];
+  if(e.shiftKey && (document.activeElement === first || !pxSheet.contains(document.activeElement))){ e.preventDefault(); last.focus(); }
+  else if(!e.shiftKey && (document.activeElement === last || !pxSheet.contains(document.activeElement))){ e.preventDefault(); first.focus(); }
+}, true);
+/* A link in context: Company finances' "Preferences" opens the History row. */
+document.addEventListener("click", e => {
+  const a = e.target.closest && e.target.closest("[data-open-prefs]");
+  if(!a) return;
+  e.preventDefault();
+  pxOpen("prefs", a, a.dataset.openPrefs || null);
+});
 /* severity dots filter the list; the dot on a row silences it ------------------ */
 const sevOff = new Set();
 function applySev(){
@@ -33638,7 +34241,14 @@ const wireHeat = once(() => {
      neighbourhood left standing; Enter and Space do what a click does. */
   on("click", ".heat .cell", c => {
     const go = finderPreset(c.dataset.slug, c.dataset.hood);
-    if(go) openFinder(go, true);
+    if(!go) return;
+    /* The cell's own question: its type and its neighbourhood go to the one
+       finder, and the way back returns to this cell (nxDem on Demand's
+       entry). */
+    const type = demTypeName(c.dataset.slug, c.dataset.hood);
+    demRemember({slug: c.dataset.slug, hood: c.dataset.hood, view: marketView});
+    openRoute("expansion/finder", {preset: go, focus: true, arrival: {what: tt("gr.arrive.cell", "Demand for {type} in {hood}",
+      {type, hood: hoodName(c.dataset.hood)}), pos: "", back: "expansion/demand", backLabel: tt("nav.view.demand", "Demand"), depth: 1}});
   });
   on("keydown", ".heat .cell[role=button]", (c, e) => {
     if(e.key !== "Enter" && e.key !== " ") return;
@@ -33659,6 +34269,61 @@ function finderPreset(slug, hood){
   if(!slug || !hood || !D.premises) return null;
   const cat = (D.premises.demand[hood] || []).find(d => d.slug === slug)?.category;
   return cat ? {cat, type: slug, hoods: [hood]} : null;
+}
+/* Find a location's ways on, under the map: the business type's demand by
+   neighbourhood (Demand, its row ringed), its setup guide in the Game guide,
+   and Plan a factory. With no type picked, the same three for every type. */
+function drawFinderCtx(){
+  const host = $("finderCtx");
+  if(!host) return;
+  const on = hasData() && route === "expansion/finder" && typeof cityMapPage !== "undefined" && !!cityMapPage && cityMapPage.finderOn();
+  /* The page's own heading: the City map, or Find a location on it. */
+  const head = $("mapHead");
+  if(head) head.innerHTML = on ? `<h2>${tt("nav.view.finder", "Find a location")}</h2><span class="quiet">${tt("map.head.finder", "Premises ranked for the business you want to open, with rent, deposit and floor plan.")}</span>`
+    : `<h2>${tt("nav.ref.map", "City map")}</h2><span class="quiet">${tt("map.head.map", "Your businesses, the buildings you own and the homes you rent, on the game's map.")}</span>`;
+  host.hidden = !on;
+  if(!on){ host.innerHTML = ""; return; }
+  const slug = cityMapPage.fs.type || "";
+  const name = slug ? (typeof gnLocal === "function" && gnLocal(slug)) || (typeof englishName === "function" && englishName(slug)) || "" : "";
+  const inGrid = !!slug && !!q(`#market .r[data-slug="${CSS.escape(slug)}"]`) || !!slug && ((D.market || {}).types || []).some(t => t.slug === slug);
+  const guide = slug && typeof wikiTypeHref === "function" ? wikiTypeHref(slug) : "";
+  const card = (attrs, ic, title, sub) => `<a class="fx-card" ${attrs}>${ICON[ic] ? icon(ic) : spIcon(ic)}<span><b>${title}</b><small>${sub}</small></span></a>`;
+  host.innerHTML = [
+    card(`href="#expansion/demand" data-fx="demand"${inGrid ? ` data-fx-type="${attr(slug)}"` : ""}`, "growth",
+      inGrid ? tt("map.ctx.demand.type", "{type} demand by neighbourhood", {type: spEsc(name)}) : tt("map.ctx.demand", "Market demand by business type"),
+      inGrid ? tt("map.ctx.demand.type.sub", "Back to Demand, with {type} ringed", {type: spEsc(name)}) : tt("map.ctx.demand.sub", "Every type's demand in each neighbourhood")),
+    card(guide ? `href="${attr(guide)}" data-fx="guide"` : `href="#wiki" data-fx="guide"`, "wiki",
+      guide ? tt("map.ctx.guide.type", "{type} setup guide", {type: spEsc(name)}) : tt("map.ctx.guide", "Business guides"),
+      tt("map.ctx.guide.sub", "Fixtures, suppliers and a setup checklist in the Game guide")),
+    card(`href="#expansion/factory" data-fx="factory"`, "gear", tt("nav.view.factory", "Plan a factory"),
+      tt("map.ctx.factory.sub", "Machines, ingredients and their costs, planned for full production")),
+  ].join("");
+}
+/* A cell's type as the grid names it. */
+function demTypeName(slug, hood){
+  const d = ((D.premises || {}).demand || {})[hood] || [];
+  const hit = d.find(x => x.slug === slug);
+  return hit && hit.type ? hit.type : (typeof gnLocal === "function" && gnLocal(slug)) || slug;
+}
+/* Demand's entry keeps the cell that opened the finder. */
+function demRemember(cell){
+  try{ history.replaceState({...(history.state || {}), nxDem: cell}, "", location.hash); }catch(e){}
+}
+/* Back on Demand: the view the cell was in, its row ringed, the cell focused. */
+function demArrive(cell){
+  if(!cell || !cell.slug) return;
+  if(cell.view && cell.view !== marketView && ["types", "mine", "new"].includes(cell.view)){
+    marketView = cell.view; showAllMarket = false; drawMarket(); wireAll();
+  }
+  const row = q(`#market .r[data-slug="${CSS.escape(cell.slug)}"]`);
+  const hit = q(`#market .cell[data-slug="${CSS.escape(cell.slug)}"][data-hood="${CSS.escape(cell.hood || "")}"]`);
+  const at = hit || row;
+  if(!at) return;
+  if(typeof settleScroll === "function") settleScroll(at); else at.scrollIntoView({block: "center"});
+  [row, hit].filter(Boolean).forEach(el => { el.classList.remove("mk-arrive"); void el.offsetWidth; el.classList.add("mk-arrive");
+    setTimeout(() => el.classList.remove("mk-arrive"), 2600); });
+  if(!at.hasAttribute("tabindex")) at.setAttribute("tabindex", "-1");
+  at.focus({preventScroll: true});
 }
 /* A cell that opens the finder is a button to the keyboard as well. */
 const cellGo = (slug, hood) => finderPreset(slug, hood) ? ` role="button" tabindex="0"` : "";
@@ -33975,11 +34640,18 @@ const wireRoster = once(() => {
     spPlanWrite(site(a), a.dataset.plan);
     const b = (D.businesses || []).find(x => x.key === site(a));
     if(!b) return;
+    /* On Staffing › Schedules the list beside the planner says the plan
+       picked, so the view is drawn again, the pick keeping the keyboard. */
+    if(s.closest("#schDetail") && typeof drawSchedules === "function"){
+      drawSchedules(); wireAll();
+      const back = q(`#sp-roster [data-plan="${a.dataset.plan}"]`);
+      if(back) back.focus();
+      return;
+    }
     const box = document.createElement("div");
     box.innerHTML = spRosterBlock(b).trim();
     const fresh = box.firstElementChild;
     fresh.classList.add("in");
-    /* The copy Staffing › Schedules shows keeps its own id. */
     fresh.id = s.id;
     s.replaceWith(fresh);
     const again = q(`[data-plan="${a.dataset.plan}"]`, fresh);
@@ -34251,8 +34923,13 @@ function gwUniforms(keys){
       gwSvg("skip")}${tt("sp.gw.uni.leave", "Leave it out")}</button>` : ""}</div>` : ""}</div>`;
   };
   const outRow = b => `<div class="gw-shop out"><div class="nm">${hoodHtml(b)}<span>${spEsc(shortName(b))}</span></div><span class="gw-minis"></span><span class="c">${tt("sp.gw.uni.out", "out")}</span></div>`;
+  /* The records this write made (docs/ui-progress-postconditions.md): Applied
+     from its answer, Confirmed by a later board; its undo takes them back. */
+  let written = [];
   gwConfirm({
     kind: "uniforms", icon: "shirt", againLabel: tt("sp.gw.uni.again", "Set again"),
+    onDone: answer => { written = pgUniformDone(answer); },
+    onUndo: () => { pgDrop(written); written = []; pgUniformStale(); },
     title: () => many ? tt("sp.gw.uni.title.many", "Set uniforms at {n} shops", {n: kept().length}) : tt("sp.gw.uni.title", "Set uniforms"),
     where: () => !many ? gwWhere(sites[0])
       : out.size ? `<span>${tt("sp.gw.uni.leftout", "{names} left out", {names: [...out].map(k => spEsc(shortName(sites.find(b => b.key === k)))).join(", ")})}</span>`
@@ -35875,6 +36552,9 @@ function wireAll(){
   wireTips(); wireTiles(); wireCards(); wireAdapters();
   wireSev(); wireFinds(); wireKinds();
   wireChart(); wirePortfolio(); wireSiteReads();
+  /* The planner's own handlers: Staffing › Schedules carries it, whether or
+     not a business's page has been drawn in this visit. */
+  wireRoster();
   wireFlow(); bindSupply();
   wireHeat(); wirePlan();
   wireReveal(); wireWrites(); wireStaff();

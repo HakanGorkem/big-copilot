@@ -1867,7 +1867,8 @@ async function followPrints(page, key, {undo = true} = {}) {
 const dryRunOf = (page, kind) => page.waitForRequest((req) => req.url().endsWith(`/write/${kind}`) && req.method() === 'POST'
   && JSON.parse(req.postData() || '{}').dryRun === true);
 async function roster(page, key, plan = 'demand') {
-  await page.evaluate(({key, plan}) => { spPlanWrite(key, plan); openSite(key); showPage('company'); }, {key, plan});
+  /* The one planner is Staffing › Schedules' (a business's page summarises it). */
+  await page.evaluate(({key, plan}) => { spPlanWrite(key, plan); openRoute('staffing/schedules', {pick: key}); }, {key, plan});
   return page.locator('#sp-roster');
 }
 

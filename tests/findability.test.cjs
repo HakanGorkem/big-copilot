@@ -202,7 +202,7 @@ test('a factory reads out the machine that makes nothing, else the least staffed
     needs: [FACTORY_SITE.needs[0]]}), facts: INPUT_FACTS}});
   try {
     assert.equal(await readOf(page, 'lines'),
-      'Least staffed · Bottle of Wine · Machine 3 · 144 of 168 h rostered: nobody on it on Sundays');
+      'Least staffed · Bottle of Wine · Machine 3 · 144 of 168 h staffed: nobody on it on Sundays');
     assert.equal(await readOf(page, 'inputs'), 'Every input arrives in step');
   } finally { await page.close(); }
   // Covered because Produce up to holds the wine back says so, not "in step".

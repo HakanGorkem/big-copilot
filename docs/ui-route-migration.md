@@ -2,7 +2,9 @@
 
 26 September 2026 · Established by chunk 1 of the [implementation plan](ui-implementation-plan.md),
 revised the same day for the merge of PR #121 (Staff hiring) and the chunk-1 correction pass, and
-on 27 September for chunk 2, which gives Supply and Staffing their final presentations.
+on 27 September for chunk 2, which gives Supply and Staffing their final presentations, and for
+chunk 3, which gives Businesses, Expansion, the City map and the Game guide theirs. Every route
+below now shows its final presentation.
 The route ids below are fixed. Chunks 2 and 3 replace what a route shows, never its id or its
 aliases. Code: `ROUTES`, `AREAS`, `REFS` and `HOST_ROUTES` in the board script
 (`ba_dashboard.py`, section "the shell's routes"), and `FINDING_ROUTES` beside `ALERT_LINKS`.
@@ -42,10 +44,10 @@ aliases. Code: `ROUTES`, `AREAS`, `REFS` and `HOST_ROUTES` in the board script
 | Route | Area › view | Interim target (chunk 1) | Scope, filter or row exposed | Final presentation |
 | --- | --- | --- | --- | --- |
 | `overview` | Overview | `today` host: `#kpis`, `#alertSection` (redrawn), `#secMoves` (All tools) | Needs attention first; critical rows expanded, 5 more, then "Show N more" | Chunk 1 (final) |
-| `businesses/results` | Businesses › Results | `company/results`: `secDaily`, `secPortfolio`, site pages `secDetail` | Portfolio P&L; a site's page when one is open | Chunk 3 |
-| `businesses/prices` | Businesses › Products & prices | `company/products`: new `secPrices` (a shop's shelves, price guides) and `secProducts` | Each shop opens its own page on `#sp-shelves`; each owned type opens its guide's prices | Chunk 3 |
-| `businesses/standards` | Businesses › Standards | `company/standards`: new `secStandards` (four subjects), then `secPortfolio` in Operations | Portfolio switched to Operations; a subject opens the first business on its block | Chunk 3 |
-| `businesses/milestones` | Businesses › Milestones | `company/milestones`: `secGoals` | – | Chunk 3 |
+| `businesses/results` | Businesses › Results | `company/results`: `secDaily` (Company results: the chart, By weekday), `secFinance` (Company finances: cash beside profit, loans, how far back history reaches; `drawFinance()`), `secPortfolio` (by chain, company costs outside sites), site pages `secDetail` | Portfolio P&L; a site's page when one is open | Chunk 3 (final) |
+| `businesses/prices` | Businesses › Products & prices | `company/products`: `secPrices` (`drawPriceShops()`: a chip a shop or office, the picked one's prices beside the lowest market price in its neighbourhood and its average sold price, its guide's Prices in your save, its shelves on its page), then `secProducts` (Sales across the company) | The business on screen (`bzPriceLit`), kept on the history entry (`nxPrice`); a task's pick (`o.pick`) | Chunk 3 (final) |
+| `businesses/standards` | Businesses › Standards | `company/standards`: `secStandards` (the four subjects, then Business by business: `stdTable()`, satisfaction against the 80 line, promotion, amenity lamps, uniforms with the uniform write and its progress), then `secPortfolio` in Operations | A name opens its page on `#sp-standards` under this route; Results gets its own portfolio view back | Chunk 3 (final) |
+| `businesses/milestones` | Businesses › Milestones | `company/milestones`: `secGoals` (Career goals with bars, Career totals) | – | Chunk 3 (final) |
 | `supply/changes` | Supply › Changes | `secChanges` (`drawChangesView`): the one change checklist, grouped Imports, Deliveries, Production, with the truck's road, Copy remaining, the copied text's preview, Apply N import amounts (game link), Clear my marks and the basis | Each row's state: Marked by you, Applied · awaiting refresh, Confirmed ([postconditions](ui-progress-postconditions.md)) | Chunk 2 (final) |
 | `supply/imports` | Supply › Imports | `secImports` (`drawImportsView`): the reviewed line's card (recurring order and one-time catch-up apart, Why, manual steps, Copy, Preview in the game, the factory hours it is planned on), then every import line, depots' and factories' own | Scope; Needs a change / Everything; the reviewed line (`sbSel`); a finding lights its row and card (`sbLand`) | Chunk 2 (final) |
 | `supply/deliveries` | Supply › Deliveries | `secDeliveries` (`drawDeliveriesView`): by destination: shops' shelves and top-ups, second-tier warehouses (route-fed top-ups, wholesale, idle, not routed), factory inputs | Scope; Needs a change / Everything; a finding lights its row | Chunk 2 (final) |
@@ -54,12 +56,12 @@ aliases. Code: `ROUTES`, `AREAS`, `REFS` and `HOST_ROUTES` in the board script
 | `staffing/schedules` | Staffing › Schedules | `secSchedules` (`drawSchedules`): every shop and office in a list with its plan's state and progress, the chosen one's planner beside it (`#schDetail`: the same `spRosterBlock()` or `spOfficeRoster()`, and write, a business's page carries). An office's line counts the office default's staffed computers. Factories open Supply › Production on their scope | The business on screen (`schedLit`): a task's, a finding's, the search's or the reader's; kept on the history entry (`nxSch`) | Chunk 2 (final) |
 | `staffing/needs` | Staffing › Staff needs | `secNeeds`: Unmet demands (`#nxDemands`), each opening the crew that shows it, and the last hire or move made from here with its state; then `secStaff`, main's Staff page under "Whom to hire": open places by role, candidates, Mass and Quick hire, hire and move review and write (no undo), office plans, staff with no hours ("Write their week" opens Schedules on the site), and its short current-staff summary | – | Chunk 2 (final) |
 | `staffing/payroll` | Staffing › Payroll | `secPayroll` (`drawPayroll`): rate and booked tiles, roles, and the sites whose books part from their rates, each opening its crew | – | Chunk 2 (final) |
-| `expansion/demand` | Expansion › Demand | `growth/market`: `secMarket` | – | Chunk 3 |
-| `expansion/finder` | Expansion › Find a location | `map` host with the finder on. A task or a Demand cell asks a question (`openFinder(preset)`); Back, Forward, a reload and the area's row switch it on as the reader left it (`showFinder()`). The finder's switch moves the page between this route and `map`, address and lit place included (`routeFor()`) | Finder filters and saved searches as before; the picked building rides on the history entry (`nxPick`), the source of truth: a new visit takes the pick on screen; Back, Forward and a reload show that entry's own pick where the results still hold it, and no pick where it has none or its building has left them | Chunk 3 |
-| `expansion/factory` | Expansion › Plan a factory | `growth/plan`: `secPlan`, `secIngredients` | – | Chunk 3 |
-| `map` | City map (reference) | `map` host, with the finder off. The switch lasts the session, so City map reached with the finder left on is Find a location, and its address says so | Finder as the reader left it | Chunk 3 |
-| `wiki` | Game guide (reference) | `wiki` host; `#wiki/<page>` is still the wiki's own route | – | Chunk 3 |
-| `#site/<slug>` | a business's page | `company/results` + `secDetail` | Under the route that opened it (`nxRoute`) | Chunk 3 |
+| `expansion/demand` | Expansion › Demand | `growth/market`: `secMarket` (market changes, By type / What I sell / Not yet) | A cell asks the finder its own question and is kept on Demand's entry (`nxDem`): Back or a reload rings its row and focuses the cell (`demArrive()`) | Chunk 3 (final) |
+| `expansion/finder` | Expansion › Find a location | `map` host with the finder on, headed Find a location (`#mapHead`), its ways on under it (`#finderCtx`: the type's demand, its setup guide, Plan a factory). A task or a Demand cell asks a question (`openFinder(preset)`), the cell with an arrival that names its type and neighbourhood; the finder's switch on the City map is a new visit | Each visit keeps its own filters (`nxFs`, written by `saveFinder()`) and its picked building (`nxPick`): Back, Forward and a reload show the entry's own, so two cells' questions keep their own answers; a new visit keeps the filters on screen | Chunk 3 (final) |
+| `expansion/factory` | Expansion › Plan a factory | `growth/plan`: `secPlan`, `secIngredients` | – | Chunk 3 (final) |
+| `map` | City map (reference) | `map` host, always with the finder off, headed City map. Reached with the finder on (the masthead, Back from Find a location) it switches the finder off; the finder's switch opens Find a location as a new visit, and Back comes back here | – | Chunk 3 (final) |
+| `wiki` | Game guide (reference) | `wiki` host; `#wiki/<page>` is still the wiki's own route; opens with no save | – | Chunk 3 (final) |
+| `#site/<slug>` | a business's page | `company/results` + `secDetail`: its findings, tiles, satisfaction, promotion, customers by hour, a Schedule summary (`spSchedSummary()`; the planner itself is Staffing › Schedules'), crew, shelves or fees, profit, its week; a depot's stock and feeds, a factory's lines and inputs. Its head carries the ways to its planners (`spActs()`): Schedule, Deliveries and Prices for a shop; Schedule and Fees for an office; Imports and Deliveries for a depot; Production for a factory, each with the business picked or in scope and the page as the way back | Under the route that opened it (`nxRoute`) | Chunk 3 (final) |
 
 ## Old addresses that still land
 
@@ -98,8 +100,7 @@ a route it already remembers.
 
 The action button names the fix. The route is the final home from
 [the structure proposal](ui-structure-proposal.md#7-every-finding-still-has-a-destination). The
-landing is `ALERT_LINKS` / `ALERT_EVIDENCE`; since chunk 2 the Supply and Staffing landings are
-final, the Businesses ones still interim.
+landing is `ALERT_LINKS` / `ALERT_EVIDENCE`; every landing is final since chunk 3.
 
 | Kind (`group`) | Action | Route | Landing |
 | --- | --- | --- | --- |
@@ -112,12 +113,12 @@ final, the Businesses ones still interim.
 | `staff` at a shop or office | Review schedule | `staffing/schedules` | Schedules with the business picked, its planner beside the list and the finding named above it |
 | `idlestaff` | Review schedule | `staffing/schedules` | Schedules with the business picked; its customer hours one link away, on its page |
 | `satisfaction` | Review satisfaction | `businesses/standards` | its page, standards block |
-| `promotion` | Review promotion | `businesses/standards` | the portfolio in Operations, on Standards (`reveal()` takes the route's view when the section is on it); Results gets back the portfolio view it had |
-| `uniform` | Review uniforms | `businesses/standards` | its page, standards block; game-link uniform write in the row unchanged |
+| `promotion` | Review promotion | `businesses/standards` | Standards: the subjects, the business-by-business comparison and the portfolio in Operations (`reveal()` takes the route's view when the section is on it); Results gets back the portfolio view it had |
+| `uniform` | Review uniforms | `businesses/standards` | its page, standards block; the game-link uniform write in the row and on Standards, its progress pill beside the finding (chunk 3) |
 | `bathroom`, `toiletprivacy`, `sink`, `music`, `interior` | Review amenities | `businesses/standards` | its page, standards block, the amenity lit |
 | `jobdemand` | Resolve staff demand | `staffing/needs` | its page, crew block |
 | `companydemand` | Resolve staff demand | `staffing/needs` | the site that shows it most (`ALERT_SITE_PICK`), crew block; else Staff needs (`secNeeds`) |
-| `hype` | Review demand wave | `expansion/demand` | `secMarket` |
+| `hype` | Review demand wave | `expansion/demand` | `secMarket`, the wave among the market changes; the shop's page carries its exposure (`spHypeRow`) |
 | `unplanned`, `outruns` | Review delivery | `supply/deliveries` | Deliveries, the shelf's row, lit |
 | `topup` | Review delivery | `supply/deliveries` | Deliveries, the depot's row, lit (the depot's page still lights its stock row from its own findings) |
 | `wholesale` | Review delivery | `supply/deliveries` | Deliveries, the shop's or depot's row, lit |
@@ -169,7 +170,7 @@ presentation.
 | H03 | Mass hire and Quick hire | `staffing/needs` | as H01 | `secStaff`: Mass hire over the plans, the Quick hire form (`hqModel()`) |
 | H04 | Hire and move preview, confirm, refusal, partial result, re-read; no undo | `staffing/needs` | as H01 | `dialog.hr-wide` over `secStaff`, `/write/hire` (`docs/game-link-api.md`) |
 | H05 | Staff with no hours | `staffing/needs`; a business's page, crew block | as H01; a staff finding | `secStaff`; `#sp-crew` |
-| H06 | Office planning and additive schedule writes | `staffing/schedules` | Schedules › an office's Open staffing; `staff` findings at an office | the office's page, `#sp-roster` (`spOfficeRoster()`), and the multi-site write |
+| H06 | Office planning and additive schedule writes | `staffing/schedules` | Schedules › an office; `staff` findings at an office; the office's page, Schedule | Staffing › Schedules, `#sp-roster` (`spOfficeRoster()`; since chunk 3 the one place it is drawn), and the multi-site write |
 | H07 | Factory and source-site effects of hire requests | `staffing/needs`, then `supply/production` | the hire review names the sites it changes; Schedules › Factories › Open Production | `secStaff` review; `drawFactoryStaffing()` on Supply › Production |
 
 ## Adding a route
@@ -179,3 +180,18 @@ shows it by default, `routeViewLabel()`, and this table. A new host section stil
 [Registries](architecture.md#registries). `tests/navigation.test.cjs` and
 `tests/shell_routes.test.cjs` hold the tables to each other; `tests/staff_hire.test.cjs` opens
 the hiring page on its route.
+
+## Chunk 3 (27 September 2026)
+
+- **One planner.** A business's own page no longer draws the schedule planner. It carries a
+  summary (`#sp-sched`: the plan's state and progress, its staffing findings) and "Open its week in
+  Staffing › Schedules", which opens Schedules with the business picked. The planner keeps its id,
+  `#sp-roster`, on Schedules (`#schDetail`); `#schRoster` is gone. A staff finding's landing on a
+  site's page (`nxStaffInto()`) is `#sp-sched`, else `#sp-crew`.
+- **City map against Find a location.** `#map` is always the plain map; the finder is only
+  `expansion/finder`. The finder's switch opens the other route as a new visit, so Back undoes it.
+- **Per-visit state:** the finder's filters (`nxFs`) beside its pick (`nxPick`); Demand's cell on
+  its own entry (`nxDem`); the prices' business (`nxPrice`).
+- **Utilities.** Preferences and Help & feedback are sheets over the board (`pxOpen()`), from ···
+  (and Map & more on a phone), no longer a scroll to the footer. Company finances links to
+  Preferences' History row (`data-open-prefs`).
