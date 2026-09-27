@@ -114,10 +114,13 @@ test('a promotion finding lands on Businesses › Standards, and Results gets it
 
 test('a shop opened from Products & prices stays under it: two shops, Back, Forward and a reload', async t => {
   const page = await board(t, {hash: '#businesses/prices'});
-  const shops = await page.$$eval('#secPrices [data-price-site]', b => b.map(x => x.dataset.priceSite));
+  const shops = await page.$$eval('#secPrices [data-price-pick]', b => b.map(x => x.dataset.pricePick));
   assert.ok(shops.length >= 2, 'the fixture runs two shops');
   for (const key of shops.slice(0, 2)) {
     await page.evaluate(() => openRoute('businesses/prices'));
+    // Its prices beside the market's, then its shelves on its own page.
+    await page.locator(`#secPrices [data-price-pick="${key}"]`).click();
+    assert.equal(await page.locator(`#secPrices [data-price-pick="${key}"]`).getAttribute('aria-pressed'), 'true');
     await page.locator(`#secPrices [data-price-site="${key}"]`).click();
     await page.waitForFunction(() => siteOpen && !!document.querySelector('#sp-shelves'));
     const w = await where(page);
@@ -175,7 +178,7 @@ test('a staff finding lands on the staffing of its kind: a factory\'s Production
     return {atFactory, route: (() => { D.supply = null; const r = findingRoute({group: 'staff', site: factory.name, siteKey: factory.key}).route; D.supply = supply; return r; })(),
       office: nxStaffInto(office), shop: nxStaffInto(shop)};
   });
-  assert.deepEqual(got, {atFactory: true, route: 'supply/production', office: '#sp-crew', shop: '#sp-roster'});
+  assert.deepEqual(got, {atFactory: true, route: 'supply/production', office: '#sp-crew', shop: '#sp-sched'});
 });
 
 // --- Find a location keeps its filters ---------------------------------------------------
@@ -382,11 +385,12 @@ test('the finder switch moves the page between City map and Expansion › Find a
     view: 'expansion/finder', on: true});
   await page.locator('#cityMapPage [data-f="tog"]').click();
   assert.deepEqual(await lit(), {route: 'map', hash: '#map', area: null, ref: 'map', view: null, on: false});
-  // Switched on and left on, the City map is Find a location: its address says so.
+  // Switched on and left on, the City map from the masthead is still the
+  // City map (chunk 3: the finder is its own route, and Back moves between them).
   await page.locator('#cityMapPage [data-f="tog"]').click();
   await page.evaluate(() => openRoute('overview'));
   await page.locator('#navRefs a[data-id="map"]').click();
-  assert.equal((await lit()).route, 'expansion/finder');
+  assert.deepEqual(await lit(), {route: 'map', hash: '#map', area: null, ref: 'map', view: null, on: false});
 });
 
 test('"Whom should I hire?" lands on Staff needs\' hiring block, with the way back to where it was asked', async t => {

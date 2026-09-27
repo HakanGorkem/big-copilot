@@ -138,7 +138,7 @@ test('a shop row carries its own way into Plan a chain; an office row has none, 
     });
     const plans = () => page.$$eval('#market .r', rs => rs.map(r => r.querySelector('.mk-plan')?.dataset.plan || null));
     assert.deepEqual(await plans(), ['ba:businesstype_cinema', 'ba:businesstype_supermarket', null, null]);
-    assert.equal(await page.locator('#market .r[data-r="0"] small').innerText(), '1 product · Setup guide › · Plan a chain ›');
+    assert.equal(await page.locator('#market .r[data-r="0"] small').innerText(), '1 product · Setup guide › · Plan a factory ›');
     // Nothing is drawn under the grid.
     assert.equal(await page.locator('#cellDetail').count(), 0);
     await page.locator('#market .r[data-r="1"] .mk-plan').click();
@@ -155,7 +155,7 @@ test('a shop row carries its own way into Plan a chain; an office row has none, 
     await page.evaluate(() => { marketView = 'mine'; drawMarket(); });
     assert.deepEqual(await plans(), [null, 'ba:businesstype_supermarket']);
     assert.equal(await page.locator('#market .r[data-r="0"] small').innerText(), 'you sell it');
-    assert.equal(await page.locator('#market .r[data-r="1"] small').innerText(), 'you sell it · Plan a chain ›');
+    assert.equal(await page.locator('#market .r[data-r="1"] small').innerText(), 'you sell it · Plan a factory ›');
   } finally { await page.close(); }
 });
 

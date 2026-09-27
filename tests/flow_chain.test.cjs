@@ -448,7 +448,7 @@ test('a live refresh keeps the site followed and the open group, and lays the pi
    inside the box at full size, the followed site in view and the edge where
    it goes on faded. */
 const measure = page => page.evaluate(() => {
-  const svg = document.getElementById('flow'), box = document.getElementById('sbFlowBox');
+  const svg = document.getElementById('flow'), box = document.getElementById('sbFlowBox'), sc = document.getElementById('sbFlowScroll');
   const s = svg.getBoundingClientRect(), b = box.getBoundingClientRect();
   const heads = [...svg.querySelectorAll('text.col')];
   const bottom = Math.max(...[...svg.querySelectorAll('.node rect')].map(r => r.getBoundingClientRect().bottom));
@@ -457,7 +457,7 @@ const measure = page => page.evaluate(() => {
     headGap: heads[0].getBoundingClientRect().top - s.top, bottomGap: s.bottom - bottom,
     lastHeadRight: heads[heads.length - 1].getBoundingClientRect().right, boxRight: b.right,
     font: parseFloat(getComputedStyle(text).fontSize) * svg.getScreenCTM().a,
-    scrolls: box.scrollWidth > box.clientWidth, fade: box.classList.contains('sb-flow-more-r'),
+    scrolls: sc.scrollWidth > sc.clientWidth, fade: sc.classList.contains('sb-flow-more-r'),
     page: document.documentElement.scrollWidth - document.documentElement.clientWidth};
 });
 /* The chain with a second factory tier: importer, depot, factory, depot, factory, shops. */
@@ -495,11 +495,11 @@ test('a six-stage chain past the floor keeps its names at full size and scrolls 
   assert.equal(m.fade, true, 'the right edge says the picture goes on');
   assert.ok(m.page <= 0, 'the page itself does not');
   // Scrolled to its end, the fade moves to the left edge.
-  await page.evaluate(() => { const b = document.getElementById('sbFlowBox'); b.scrollLeft = b.scrollWidth; b.dispatchEvent(new Event('scroll')); });
-  assert.deepEqual(await page.evaluate(() => ['sb-flow-more-l', 'sb-flow-more-r'].map(c => document.getElementById('sbFlowBox').classList.contains(c))), [true, false]);
+  await page.evaluate(() => { const b = document.getElementById('sbFlowScroll'); b.scrollLeft = b.scrollWidth; b.dispatchEvent(new Event('scroll')); });
+  assert.deepEqual(await page.evaluate(() => ['sb-flow-more-l', 'sb-flow-more-r'].map(c => document.getElementById('sbFlowScroll').classList.contains(c))), [true, false]);
   // A box grown past the floor shrinks it to fit again, with no scroll and no fade.
   await page.setViewportSize({width: 1900, height: 1000});
-  await page.waitForFunction(() => !document.getElementById('sbFlowBox').classList.contains('sb-flow-scroll'));
+  await page.waitForFunction(() => !document.getElementById('sbFlowScroll').classList.contains('sb-flow-scroll'));
   const w = await measure(page);
   assert.equal(await page.evaluate(() => document.getElementById('flow').style.width), '100%');
   assert.ok(w.scale >= 0.8 && w.lastHeadRight <= w.boxRight && w.bottomGap < 30 && !w.fade, JSON.stringify(w));
@@ -509,10 +509,35 @@ test('following a shop on a chain that scrolls brings the shop into view', async
   const page = await board(t, sixStages(), 1280);
   await page.evaluate(() => { flowPickId = 'shop#4'; drawFlowView(); drawFlow(); applyFlow(); });
   const got = await page.evaluate(() => {
-    const box = document.getElementById('sbFlowBox').getBoundingClientRect();
+    const box = document.getElementById('sbFlowScroll').getBoundingClientRect();
     const r = document.querySelector('#flow .node[data-id="shop#4"] rect').getBoundingClientRect();
-    return {left: r.left, right: r.right, boxLeft: box.left, boxRight: box.right, scrolled: document.getElementById('sbFlowBox').scrollLeft};
+    return {left: r.left, right: r.right, boxLeft: box.left, boxRight: box.right, scrolled: document.getElementById('sbFlowScroll').scrollLeft};
   });
   assert.ok(got.scrolled > 0, 'the box scrolled');
   assert.ok(got.left >= got.boxLeft && got.right <= got.boxRight, JSON.stringify(got));
+});
+
+/* Carried from chunk 2's review: a live refresh redraws Goods flow, and the
+   picture stays scrolled where the reader left it (only a newly followed site
+   moves it); the legend sits outside the scrolled strip, so it stays in view. */
+test('a redraw keeps the picture scrolled where the reader left it, and the legend stays in view', async t => {
+  const page = await board(t, sixStages(), 1280);
+  const at = () => page.evaluate(() => {
+    const sc = document.getElementById('sbFlowScroll'), box = document.getElementById('sbFlowBox').getBoundingClientRect();
+    const leg = document.querySelector('#sbFlowBox .sb-flowleg').getBoundingClientRect();
+    return {x: sc.scrollLeft, legIn: leg.left >= box.left - 1 && leg.left < box.right};
+  });
+  await page.evaluate(() => { const sc = document.getElementById('sbFlowScroll'); sc.scrollLeft = 300; sc.dispatchEvent(new Event('scroll')); });
+  assert.equal((await at()).x, 300);
+  assert.equal((await at()).legIn, true, 'the legend does not scroll away');
+  // The refresh: the view and the picture drawn again from the same numbers.
+  await page.evaluate(() => { D = JSON.parse(JSON.stringify(D)); drawFlowView(); drawFlow(); });
+  assert.equal((await at()).x, 300, 'the picture is where it was');
+  // Following the same site again after a redraw does not snap it either.
+  await page.evaluate(() => { flowPickId = 'shop#4'; drawFlowView(); drawFlow(); });
+  const followed = (await at()).x;
+  assert.notEqual(followed, 300, 'a newly followed site is brought into view');
+  await page.evaluate(() => { const sc = document.getElementById('sbFlowScroll'); sc.scrollLeft = 40; sc.dispatchEvent(new Event('scroll')); });
+  await page.evaluate(() => { drawFlowView(); drawFlow(); });
+  assert.equal((await at()).x, 40, 'the same followed site leaves the reader\'s scroll alone');
 });

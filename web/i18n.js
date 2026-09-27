@@ -15,10 +15,15 @@
 
 /* A local page built with `--lang de` carries its table: {lang, table}. */
 const TT_EMBED = /*__UI_TABLE__*/null;
+/* Whether this is the site's page (render(site=True)), whose footer offers a
+   Language and keeps the choice under TT_KEY. The board script's GN_KEY is
+   the same key: one choice sets the page's words and the game's names. */
+const TT_SITE = /*__TT_SITE__*/false;
+const TT_KEY = "ba_dash_names";
 /* The languages Big Copilot's own text comes in, English first. */
-const TT_LANGS = ["en", "de"];
+const TT_LANGS = ["en", "de", "pt", "fr", "es", "ru"];
 /* Numbers follow the UI language: English is always en-US. */
-const TT_NUM_LOCALES = {en: "en-US", de: "de-DE"};
+const TT_NUM_LOCALES = {en: "en-US", de: "de-DE", pt: "pt-BR", fr: "fr-FR", es: "es-ES", ru: "ru-RU"};
 /* A placeholder: {name} or {name:spec}; single braces, as SUMMARIES writes them. */
 const TT_SPEC = /\{(\w+)(?::([^{}]+))?\}/g;
 /* A game name inside a sentence (tok() in Python), for a page without the
@@ -35,7 +40,8 @@ const TT_SELECTOR = "[data-tt]," + TT_ATTRS.map(([a]) => `[${a}]`).join(",");
 /* The longest the landing stays hidden while a table loads. */
 const TT_WAIT_MS = 400;
 
-let ttLang = "en", ttTable = null, ttSeq = 0;
+/* ttWant: the language on screen or on its way (setUiLang()). */
+let ttLang = "en", ttTable = null, ttSeq = 0, ttWant = "en";
 const ttListeners = [];
 const ttRules = new Map();
 const ttOrig = typeof WeakMap === "function" ? new WeakMap() : new Map();
@@ -249,32 +255,48 @@ function ttSetTable(lang, table){
      "$1.234" never stands beside an English sentence (as cli_ui_table()). */
   ttTable = ttLang !== "en" && table && typeof table === "object" && Object.keys(table).length ? table : null;
   if(!ttTable) ttLang = "en";
+  ttWant = ttLang;
   setUiLocale(ttLang);
   ttWhenDom(() => tApply());
   ttListeners.slice().forEach(fn => { try{ fn(ttLang); }catch(e){ console.error(e); } });
 }
-/* A language's table, fetched beside the page with the build stamp. */
+/* A language's table, fetched once beside the page with the build stamp (a
+   failed fetch is tried again next time). */
+const ttTables = new Map();
 function ttLoad(lang){
+  if(ttTables.has(lang)) return ttTables.get(lang);
   const v = encodeURIComponent((typeof window !== "undefined" && window.LEDGER_BUILD) || "");
-  return fetch(`i18n/${encodeURIComponent(lang)}.json${v ? `?v=${v}` : ""}`)
+  const got = fetch(`i18n/${encodeURIComponent(lang)}.json${v ? `?v=${v}` : ""}`)
     .then(r => { if(!r.ok) throw new Error(`i18n/${lang}.json: ${r.status}`); return r.json(); });
+  ttTables.set(lang, got);
+  got.catch(() => ttTables.delete(lang));
+  return got;
 }
 /* Switch the UI language. A table that will not load leaves the page as it
    was and resolves false. */
 async function setUiLang(lang){
   if(!ttKnown(lang)) lang = "en";
   const seq = ++ttSeq;
+  ttWant = lang;
   let table = null;
   if(lang !== "en"){
-    try{ table = await ttLoad(lang); }catch(e){ return false; }
+    try{ table = await ttLoad(lang); }catch(e){ if(seq === ttSeq) ttWant = ttLang; return false; }
   }
   if(seq !== ttSeq) return false;
   ttSetTable(lang, table);
   return true;
 }
-/* At load: a table the page carries, or the ?ui=de developer switch, which
-   is not remembered. While a table loads the page stays hidden, for at most
-   TT_WAIT_MS, so it does not paint in English first. */
+/* The language kept from the footer's picker on an earlier visit, on the
+   site's page only; "" for none or a storage that will not answer. */
+function ttStored(){
+  if(!TT_SITE) return "";
+  try{ return localStorage.getItem(TT_KEY) || ""; }catch(e){ return ""; }
+}
+/* At load: a table the page carries; else the ?ui=de switch, which is not
+   remembered and wins over the footer's choice; else that choice, where it is
+   a language Big Copilot's own text comes in (one that changes only the game's
+   names leaves the page English). While a table loads the page stays hidden,
+   for at most TT_WAIT_MS, so it does not paint in English first. */
 (function ttBoot(){
   if(typeof document === "undefined" || typeof location === "undefined") return;
   let want = null;
@@ -283,6 +305,7 @@ async function setUiLang(lang){
     ttSetTable(TT_EMBED.lang, TT_EMBED.table);
     return;
   }
+  if(!want) want = ttStored();
   if(!want || want === "en" || !ttKnown(want)) return;
   const html = document.documentElement;
   html.classList.add("tt-wait");

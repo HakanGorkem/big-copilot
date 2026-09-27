@@ -153,7 +153,7 @@ test('each machine says its rostered hours and the hours nobody is on it, escape
     await factory(page);
     const reads = await page.$$eval(`${LINES} .sp-m`, ms => ms.map(m => m.dataset.read));
     assert.equal(reads.length, 4);
-    assert.match(reads[0], /^Machine 7 · <b>84 of 168 h<\/b> rostered: nobody on it Mon 12-24/);
+    assert.match(reads[0], /^Machine 7 · <b>84 of 168 h<\/b> staffed: nobody on it Mon 12-24/);
     await page.evaluate(() => {
       D.supply.factories.sites[0].lines[0].gaps[0].off = '<img src=x onerror="alert(1)">';
       sbStamp++; drawSupplyStrip(); drawProductionView();

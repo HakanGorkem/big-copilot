@@ -141,6 +141,19 @@ class SiteFieldTests(unittest.TestCase):
             crew=CREW)
         self.assertEqual(b["notTrading"], ["shelves", "plan"])
 
+    def test_a_ticket_is_issued_and_never_a_bare_shelf(self):
+        # Issue #159: a fresh cinema selling only tickets needs no stock and no
+        # delivery plan; with popcorn priced and empty it is popcorn that asks.
+        cinema, ticket, popcorn = ("ba:businesstype_cinema", "ba:itemname_cinematicket",
+                                   "ba:itemname_popcorn")
+        b, alerts = self.silent(btype=cinema, prices=[(ticket, 12.0)], crew=CREW)
+        self.assertEqual(b["notTrading"], [])
+        self.assertIn("staffed and priced", alerts["lines"][0]["text"])
+        self.assertTrue(next(l for l in b["lines"] if l["slug"] == ticket)["issued"])
+        b, _ = self.silent(btype=cinema, prices=[(ticket, 12.0), (popcorn, 4.0)], crew=CREW)
+        self.assertEqual(b["notTrading"], ["stock", "plan"])
+        self.assertNotIn("issued", next(l for l in b["lines"] if l["slug"] == popcorn))
+
     def test_a_planned_ready_site_has_read_everything_and_failed_nothing(self):
         # Staffed, priced, stocked and on a plan, but no trading day booked yet:
         # the finding stands and the list of failed checks is empty.

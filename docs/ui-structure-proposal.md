@@ -1,6 +1,6 @@
 # Big Copilot: proposed structure and feature migration
 
-26 September 2026 · Design brief, not implemented behavior.
+26 September 2026 · Design brief. Section 12 (27 September 2026) records what the implemented board does with each capability and finding.
 
 This is the current recommendation following the UI/UX audit and Peter's two clarifications: most users do not use Search, and **Needs attention is the product's main selling point and belongs at the top**. It supersedes the earlier task-first conversation sketch. Nothing is approved for removal.
 
@@ -419,3 +419,150 @@ Review against these conditions:
 - Existing deep links and static/wiki access have a migration destination; a moved feature is not called retired.
 - Light/dark, keyboard, touch, reduced motion, longer translated labels, missing history and older game/mod data have designed states.
 - The result still looks and feels like Big Copilot, including its deliberate playfulness.
+
+## 12. Coverage at the end of the migration (chunk 3, 27 September 2026)
+
+Every capability of the ledger above, and every finding kind, with the destination it has in the
+implemented board and the evidence that it works there. **Destination** is where the reader finds
+it now (a route, and the block on it). **Evidence** names the automated test that exercises it
+(`tests/…`), or "kept" where the chunk left the code and its existing tests unchanged. **Change**
+records an intentional behavior change; "–" is none. Nothing is retired. Agent tests show that a
+route and its state work; they are not proof that players find it (see the chunk-3 handoff,
+"Not verified").
+
+### Entry and discovery
+
+| ID | Destination | Evidence | Change |
+| --- | --- | --- | --- |
+| E01 | Web landing: Choose the folder, drop | kept; `tests/save_location.test.cjs`, `tests/resume.test.cjs` | – |
+| E02 | Web landing: one save file | kept; `tests/resume.test.cjs` | – |
+| E03 | Web landing and source menu: Link to the game | kept; `tests/game_link.test.cjs` | – |
+| E04 | Masthead company name → source menu (save picker) | kept; `tests/save_location.test.cjs` | – |
+| E05 | Source strip: remembered source, Choose the folder again | kept; `tests/resume.test.cjs` | – |
+| E06 | Masthead live dot, source strip Update | kept; `tests/calm_refresh.test.cjs` | – |
+| E07 | Landing "Where is my save?"; source menu help; Help & feedback › Where is my save? (web) | `tests/save_location.test.cjs`; Help sheet: `tests/businesses_expansion.test.cjs` | Help & feedback opens the source menu's save help |
+| E08 | Game guide with no save (`#wiki`, landing Browse the wiki) | kept; `tests/wiki*.test.cjs` | – |
+| E09 | Preferences › Language (the footer's picker, copied) and › Game text (web) | Preferences sheet: `tests/businesses_expansion.test.cjs`; picker: `tests/i18n_*.test.cjs` | one Language choice (main's), reachable in Preferences |
+| E10 | Preferences › History: Forget history (web), market_history.json and --backfill (CLI); Company finances › History since | `tests/businesses_expansion.test.cjs` (finances, sheet rows) | – |
+| E11 | Masthead five areas, City map, Game guide; local row | `tests/navigation.test.cjs`, `tests/shell_routes.test.cjs` | – (chunk 1) |
+| E12 | `#site/<slug>`, crumbs, site picker, Back/Forward, `nxRoute` | `tests/shell_routes.test.cjs`, `tests/findability.test.cjs`, `tests/businesses_expansion.test.cjs` | a business's page leads to its planners and back (`spActs()`) |
+| E13 | Masthead Search, ··· › Search the board, Help › Search | `tests/search.test.cjs` | – |
+| E14 | `/`, Ctrl+K; map's own buttons | `tests/search.test.cjs`, `tests/map.test.cjs` | – |
+| E15 | Overview › All tools (the seven questions stay the palette's empty state) | `tests/today_layout.test.cjs`, `tests/search.test.cjs` | – (chunk 1) |
+| E16 | Overview › All tools | `tests/today_layout.test.cjs` | – (chunk 1) |
+| E17 | New badges; news strip; ··· › What's new; Help › What's new | `tests/news.test.cjs`, `tests/release.test.cjs` | – |
+| E18 | Difficulty chip (masthead ≥1501 px, footer), Preferences › Game context | `tests/milestones.test.cjs`, `tests/fold_views.test.cjs` | also in Preferences |
+
+### Company and dashboard
+
+| ID | Destination | Evidence | Change |
+| --- | --- | --- | --- |
+| C01 | Overview company strip | `tests/today_layout.test.cjs` | – (chunk 1) |
+| C02 | Businesses › Results › Company finances (`secFinance`): cash on hand and what it did against profit, loans and their daily cost, history since | `tests/businesses_expansion.test.cjs` | new block; the Overview cash tile's note is kept |
+| C03 | Overview › Needs attention | `tests/shell_routes.test.cjs`, `tests/today_layout.test.cjs` | – (chunk 1) |
+| C04 | Needs attention › Customize checks; Preferences › Checks | `tests/today_layout.test.cjs`; `tests/businesses_expansion.test.cjs` | also in Preferences |
+| C05 | Businesses › Results › Company results chart (30 days, All, series) | kept; `tests/layout.test.cjs`, `tests/calm_refresh.test.cjs` | heading "Company results" |
+| C06 | Company results › By weekday, with the sites' comparison | kept; `tests/test_weekday_window.py`, `tests/map.test.cjs` | – |
+| C07 | Results › Portfolio (by chain, sortable, site drill-down) | kept; `tests/findability.test.cjs`, `tests/hostile_names.test.cjs` | – |
+| C08 | Businesses › Standards: subjects, Business by business (`stdTable()`), portfolio in Operations | `tests/businesses_expansion.test.cjs`, `tests/shell_routes.test.cjs` | new comparison table |
+| C09 | Results › Portfolio › Company costs outside sites | kept; `tests/layout.test.cjs` | – |
+| C10 | Products & prices › Sales across the company (top / all) | kept; `tests/businesses_expansion.test.cjs` (heading) | heading renamed |
+| C11 | Sales across the company › Peaks column and notes | kept | – |
+| C12 | Staffing › Payroll; linked from Company finances | `tests/businesses_expansion.test.cjs`, chunk 2's Payroll tests | link from Results |
+| C13 | Businesses › Milestones › Career goals | `tests/milestones.test.cjs`, `tests/businesses_expansion.test.cjs` | bars instead of a checklist |
+| C14 | Milestones › Career totals (goods, taxes, buildings, a link to the City map) | same | tiles |
+
+### Supply (chunk 2, kept)
+
+| ID | Destination | Evidence | Change |
+| --- | --- | --- | --- |
+| S01–S26 | Supply › Changes, Imports, Deliveries, Production, Goods flow, as chunk 2 left them | `tests/progress.test.cjs`, `tests/import_*.test.cjs`, `tests/flow_chain.test.cjs`, `tests/order_checklist.test.cjs`, `tests/game_link_write.test.cjs` | S21: a redraw keeps the picture's sideways scroll, the legend stays in view (`tests/flow_chain.test.cjs`) |
+
+### Business detail and staffing
+
+| ID | Destination | Evidence | Change |
+| --- | --- | --- | --- |
+| B01 | A business's page: head, trading lamp and checks, its findings, tiles; the ways to its planners | `tests/site_panel.test.cjs`, `tests/businesses_expansion.test.cjs` | header actions (`spActs()`) |
+| B02 | Page › Profit chart, cost bar, Its week | kept; `tests/site_panel.test.cjs` | – |
+| B03 | Page › Satisfaction (lamps, locker, uniforms); Standards comparison | `tests/site_panel.test.cjs`, `tests/businesses_expansion.test.cjs` | – |
+| B04 | Page › Promotion (with the wave); Standards; Demand's market changes | kept; `tests/site_panel.test.cjs` | – |
+| B05 | Page › Customers by hour, ceilings; building capacity neutral | kept; `tests/site_panel.test.cjs` | – |
+| B06–B11 | Staffing › Schedules (the one planner) and Staff needs | `tests/roster.test.cjs` (migrated to Schedules), `tests/game_link_write.test.cjs`, `tests/staff_hire.test.cjs` | the business's page carries a summary (`#sp-sched`) and a link, not a second planner |
+| B12 | Page › Crew (people, roles, demands, quit warnings) | kept; `tests/site_panel.test.cjs`, `tests/job_demands.test.cjs` | – |
+| B13 | Standards › Uniforms (the write), page › Satisfaction, the finding; progress Applied / Confirmed / Not confirmed | `tests/businesses_expansion.test.cjs`, `tests/game_link_write.test.cjs` | uniform progress records (`docs/ui-progress-postconditions.md`) |
+| B14 | Page › Shelves or Fees; Products & prices at the business | `tests/site_panel.test.cjs`, `tests/businesses_expansion.test.cjs`, `tests/shell_routes.test.cjs` | prices compared on Products & prices |
+| B15 | Depot page › Stock, Feeds, Crew; Imports and Deliveries from its head | kept; `tests/site_panel.test.cjs` | header actions |
+| B16 | Factory page › Lines, Inputs, Crew; Production from its head | kept; `tests/site_panel.test.cjs` | "staffed", not "rostered" |
+| B17 | City map › a home's card → its page (`spHomePanel()`) | kept; `tests/map.test.cjs` | – |
+| H01–H07 | Staffing › Staff needs, Schedules (offices), Production, as chunk 2 left them | `tests/staff_hire.test.cjs` (office writes now opened on Schedules) | H06: the office planner is drawn on Schedules only |
+
+### Growth
+
+| ID | Destination | Evidence | Change |
+| --- | --- | --- | --- |
+| G01 | Expansion › Demand › By type (offices in their band) | kept; `tests/test_market_offices.py`, `tests/finder.test.cjs` | – |
+| G02 | Demand › What I sell, Not yet | kept | – |
+| G03 | Demand › market changes chips | kept | – |
+| G04 | A Demand cell → Find a location, its type and neighbourhood, an arrival naming them; Back to the cell | `tests/businesses_expansion.test.cjs`, `tests/finder.test.cjs` | through `openRoute()` with an arrival; the cell kept on Demand's entry |
+| G05 | Expansion › Plan a factory | kept; `tests/test_plan_orders.py`, `tests/test_plan_regressions.py` | – |
+| G06 | Plan a factory › Ingredients | kept | – |
+
+### Map and premises
+
+| ID | Destination | Evidence | Change |
+| --- | --- | --- | --- |
+| M01 | City map (always the plain map), heading, layers, search | `tests/map.test.cjs`, `tests/businesses_expansion.test.cjs` | `#map` switches the finder off |
+| M02 | Map buttons and the location dialog | kept; `tests/map.test.cjs` | – |
+| M03 | Expansion › Find a location | `tests/finder.test.cjs`, `tests/businesses_expansion.test.cjs` | the switch is a visit of its own |
+| M04 | Finder › Show: to rent, to take over, for sale | kept; `tests/finder.test.cjs` | – |
+| M05 | Finder › Kind, Type, Where, Size, Capacity, Traffic | kept; `tests/finder.test.cjs` | filters kept per visit (`nxFs`) |
+| M06 | Finder › Layout, the card's floor plan | kept; `tests/finder.test.cjs`, `tests/test_floor_plans.py` | – |
+| M07 | Finder › Saved | kept; `tests/finder.test.cjs` | – |
+| M08 | Finder card › rent and deposit estimates, ownership | kept; `tests/finder.test.cjs` | – |
+
+### Wiki and knowledge
+
+| ID | Destination | Evidence | Change |
+| --- | --- | --- | --- |
+| W01 | Game guide › categories, search | kept; `tests/wiki*.test.cjs` | – |
+| W02 | Guide › business guides, setup checklists; Find a location's "setup guide" | kept; `tests/businesses_expansion.test.cjs` | linked from the finder |
+| W03 | Guide › products, fixtures, suppliers, recipes | kept | – |
+| W04 | Guide › Prices in your save; Products & prices links to it | kept; `tests/businesses_expansion.test.cjs` | – |
+| W05 | `/wiki/…` static pages, sitemap, robots | kept; `tests/test_wiki_pages.py` | – |
+
+### Preferences and community
+
+| ID | Destination | Evidence | Change |
+| --- | --- | --- | --- |
+| P01 | Preferences › Appearance (theme; motion follows the system); footer Theme | `tests/businesses_expansion.test.cjs` | a sheet |
+| P02 | Preferences › Language (web); footer Language | `tests/businesses_expansion.test.cjs`, `tests/i18n_*.test.cjs` | – |
+| P03 | ··· › What's new, Help › What's new, footer Changelog, New badges, update banner | `tests/businesses_expansion.test.cjs`, `tests/update.test.cjs` | – |
+| P04 | Help › Feature requests (web), footer vote card | `tests/businesses_expansion.test.cjs`; `npm run test:community` (unchanged files) | – |
+| P05 | Masthead live dot's online count (web) | kept; `tests/community-browser.test.cjs` | – |
+| P06 | Help › Bugs and feedback; footer | `tests/businesses_expansion.test.cjs` | – |
+| P07 | Help › The project; footer | `tests/businesses_expansion.test.cjs`, `tests/test_footer.py` | – |
+| P08 | Wordmark dot, sphere, coins | kept; `tests/search.test.cjs` (sphere) | – |
+
+### Local access
+
+| ID | Destination | Evidence | Change |
+| --- | --- | --- | --- |
+| L01 | `dashboard.html` from the CLI | every CLI-target Node test | – |
+| L02 | `--watch`, `--game`; Preferences › Local board | kept; `tests/test_watch_game.py` | named in Preferences |
+| L03 | `--backfill`; Preferences › History and › Local board | kept; `tests/test_cli_target.py`, `tests/test_history_store.py` | named in Preferences |
+
+### The 31 finding kinds
+
+Every kind's route is `FINDING_ROUTES` (`tests/shell_routes.test.cjs` asserts all 31 route to a
+real view, and `tests/alert_kinds.test.cjs` and `tests/navigation.test.cjs` hold the tables to
+each other). The landings of the ten Businesses and Expansion kinds are final since chunk 3:
+
+| Kind | Final landing | Evidence |
+| --- | --- | --- |
+| `notrading`, `loss`, `trend`, `atcap` | the business's page (tiles, profit, hours); its planners one click away in its head; building capacity stays a neutral reading | `tests/shell_routes.test.cjs`, `tests/site_panel.test.cjs` |
+| `vacant` | Results › Portfolio | `tests/findability.test.cjs` |
+| `satisfaction`, `bathroom`, `toiletprivacy`, `sink`, `music`, `interior` | the business's page, standards block, the amenity lit; Standards compares every business | `tests/site_panel.test.cjs`, `tests/businesses_expansion.test.cjs` |
+| `promotion` | Businesses › Standards | `tests/shell_routes.test.cjs` |
+| `uniform` | the page's standards block; the uniform write there and on Standards; its progress beside the finding | `tests/businesses_expansion.test.cjs` |
+| `hype` | Expansion › Demand, the wave among the market changes | `tests/alert_kinds.test.cjs` |
+| the other 17 (Supply, Staffing) | as chunk 2 left them | chunk 2's tests |
