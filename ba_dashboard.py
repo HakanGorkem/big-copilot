@@ -3896,15 +3896,17 @@ def _supply(
                 import_avg * 7 if routed
                 else sum(per_day * weekly[(start + ahead) % 7] for ahead in range(7))
             )
-            # A route whose share the log cannot measure (the draw is not the
-            # logged rounds) still feeds the depot while its senders hold the
-            # item: a factory used as a store tops the depot up from what it
-            # holds. With a week of the need on hand there, the import is not
-            # the whole supply, so its size is not judged; the shelf still is.
+            # A route whose share the log cannot measure (the draw is what the
+            # shops sell, not the logged rounds) still feeds the depot while its
+            # senders hold the item: a factory used as a store tops the depot up
+            # from what it holds. Each sender counts no more than its route can
+            # bring in a week, a round a day up to the target. With a week of
+            # the need behind the route, the import is not the whole supply, so
+            # its size is not judged; the shelf still is.
             unmeasured = (
-                not routed and basis != "shipped"
-                and sum(held.get(source, {}).get(item, 0)
-                        for source, _amount in route_targets.get((business["key"], item), ()))
+                not routed and basis == "sales"
+                and sum(min(held.get(source, {}).get(item, 0), 7 * amount)
+                        for source, amount in route_targets.get((business["key"], item), ()))
                 >= week_need > 0
             )
             # Last week's order against this week's is a change of mind, not a
@@ -4941,7 +4943,9 @@ def _supply_facts(ctx: dict) -> dict:
             p["young"] = "young"
         # A route the log cannot measure, from senders holding a week of the
         # need (_supply's heldUpstream): the import is not the whole supply.
-        upstream = bool(row and row.get("heldUpstream"))
+        # Only for a depot no factory line draws on: the row's week is the
+        # shops' sales, and a line's need would not be in it.
+        upstream = bool(row and row.get("heldUpstream")) and not lines_use
         short = []
         if entry and not paused and use and not upstream and _below(brought, use):
             short.append("order")
@@ -4952,7 +4956,7 @@ def _supply_facts(ctx: dict) -> dict:
             p["tight"] = "order"
         elif measured and row["coverFit"] == "tight":
             p["tight"] = "shortfall"
-        if covered:
+        if covered or (upstream and not short):
             p["covered"] = "route"
         set_to = None
         if not paused and need and not upstream and (_below(brought, need) if entry else p.get("noplan")):
