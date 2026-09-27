@@ -752,9 +752,10 @@ def import_draft(lang: str, draft: dict, model: str, english: dict | None = None
     forms = PLURALS.get(lang, ("one", "other"))
     kept, refused, good = [], {}, {}
     # A plural comes whole: every form the language has, from the draft or
-    # already translated (a changed English may leave one form to redo).
+    # already translated and current (a changed English may leave one form to redo).
     given = collections.defaultdict(set)
-    for k in [*draft, *table]:
+    current = [k for k in table if k not in st["stale"] and k not in st["mismatch"]]
+    for k in [*draft, *current]:
         if PLURAL_SUFFIX.search(k):
             given[_base_key(k)].add(PLURAL_SUFFIX.search(k).group(1))
     for k, text in sorted(draft.items()):
