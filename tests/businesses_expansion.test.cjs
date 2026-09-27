@@ -74,9 +74,10 @@ test('Results carries Company finances: cash beside profit, the loans and what t
   assert.match(tiles[2], /cash compared with day 40/);
   assert.doesNotMatch(tiles[2], /watched from/);
   assert.match(await page.locator('#dailyHead h2').innerText(), /Company results/);
-  // Wages in detail: the canonical Payroll, one click away.
-  await page.locator('#secFinance a[data-ov-route="staffing/payroll"]').click();
-  assert.equal((await where(page)).route, 'staffing/payroll');
+  // Where the history is kept is Preferences' to say, and Payroll is a tab of
+  // its own: no clause and no link repeat them here (declutter BV1, BV4).
+  assert.doesNotMatch(tiles[2], /market_history\.json|kept in this browser/);
+  assert.equal(await page.locator('#secFinance a[data-ov-route="staffing/payroll"]').count(), 0);
 });
 
 test('Standards compares every shop and office: satisfaction against the 80 line, promotion, amenity lamps, uniforms', async t => {
@@ -120,7 +121,11 @@ test('Products & prices: a shop picked shows its prices beside the market\'s low
   assert.equal(await picked(), k.gifts);
   const head = await page.$$eval('#secPrices .bz-prices th', ths => ths.map(th => th.textContent.trim()).filter(Boolean));
   assert.deepEqual(head.slice(0, 5), ['Product', 'Your price', 'Lowest market price · Lower Manhattan', 'Average sold price', 'Sells / day']);
-  assert.match(await page.locator('#secPrices .bz-foot').innerText(), /Comparisons, not recommended prices/);
+  // What each column holds is its header's tip; no foot paragraph restates them.
+  const tips = await page.$$eval('#secPrices .bz-prices th[data-tip]', ths => ths.map(th => th.dataset.tip));
+  assert.match(tips[1], /not a recommended price/);
+  assert.match(tips[2], /takings over its units sold/);
+  assert.equal(await page.locator('#secPrices .bz-foot').count(), 0);
   // The average sold price is the line's own (extraction's takings over
   // units), never rounded revenue over a rounded rate (round 1, Sol SHOULD):
   // one $10 sale in a week reads $10.00, a line that sold nothing reads none.
@@ -142,10 +147,14 @@ test('Products & prices: a shop picked shows its prices beside the market\'s low
       lines: shop.lines.map(l => ({...l, price: 50, configuredPrice: 50}))});
     bzPriceLit = 'ba:street_testoffice#2'; drawPriceShops();
     const head = [...document.querySelectorAll('#secPrices .bz-prices th')].map(th => th.textContent.trim()).filter(Boolean);
+    const tips = [...document.querySelectorAll('#secPrices .bz-prices th[data-tip]')].map(th => th.dataset.tip).join(' ');
     D.businesses.pop(); bzPriceLit = key; drawPriceShops(); wireAll();
-    return head;
+    return {head, tips};
   }, k.gifts);
-  assert.deepEqual([officeHead[0], officeHead[3], officeHead[4]], ['Fee', 'Average billed price', 'Hours billed / day']);
+  assert.deepEqual([officeHead.head[0], officeHead.head[3], officeHead.head[4]], ['Fee', 'Average billed price', 'Hours billed / day']);
+  // An office's columns explain billed hours, never units sold (the office footnote, final QA).
+  assert.match(officeHead.tips, /hours billed/);
+  assert.doesNotMatch(officeHead.tips, /units sold/);
   if(avg.other) assert.equal(avg.cells.find(c => c[0] === avg.other)[1], '—');
   // Sales across the company follow on the same view.
   assert.match(await page.locator('#secProducts .sechead h2').innerText(), /Sales across the company/);
@@ -158,12 +167,14 @@ test('Products & prices: a shop picked shows its prices beside the market\'s low
   assert.equal(await picked(), k.spirits, 'a reload keeps the shop on screen');
 });
 
-test('Plan a factory names itself so on its page and on Demand\'s rows; search knows Company results', async t => {
+test('Plan a factory names itself so on its page, Demand\'s rows leave it to its tab; search knows Company results', async t => {
   const page = await board(t, {hash: '#expansion/factory'});
-  assert.equal(await page.locator('#secPlan .sechead h2').first().innerText(), 'Plan a factory');
+  // The heading is the lit tab's name, kept for screen readers (declutter G9).
+  assert.equal(await page.locator('#secPlan .sechead h2').first().textContent(), 'Plan a factory');
+  assert.equal(await page.locator('#secPlan .sechead h2.nx-sr').count(), 1);
   await page.evaluate(() => openRoute('expansion/demand'));
-  const links = await page.$$eval('#market .mk-plan', as => as.map(a => a.textContent.trim()));
-  assert.ok(links.length && links.every(t => t === 'Plan a factory ›'), links.join());
+  // Plan a factory is the next tab: no row links it again (declutter E2).
+  assert.equal(await page.locator('#market .mk-plan').count(), 0);
   assert.equal(await page.evaluate(() => SS_VIEWS.find(v => v.id === 'daily').t), 'Company results');
 });
 
@@ -347,13 +358,13 @@ test('two Demand cells carry their own type and neighbourhood into the one finde
   assert.deepEqual([f.route, f.type, f.hoods], ['expansion/finder', GIFT, [LOW]]);
 });
 
-test('Find a location keeps a picked building through a detour, and its ways on name the type', async t => {
+test('Find a location keeps a picked building through a detour, and its strip leads back to Demand with the type ringed', async t => {
   const page = await board(t, {hash: '#expansion/demand'});
   await cell(page, 'ba:businesstype_liquorstore', 'ba:neighborhood_midtown').click();
   await page.waitForFunction(() => typeof cityMapPage !== 'undefined' && cityMapPage && cityMapPage.finderOn());
   await page.evaluate(() => cityMapPage.ready);
-  const cards = await page.$$eval('#finderCtx .fx-card b', bs => bs.map(b => b.textContent));
-  assert.deepEqual(cards, ['Liquor Store demand by neighbourhood', 'Liquor Store setup guide', 'Plan a factory']);
+  // No cards under the map repeat the tabs and the Game guide (declutter E4).
+  assert.equal(await page.locator('#finderCtx .fx-card').count(), 0);
   // Takeover shows the save's one rival: pick it, leave, come back.
   await page.evaluate(() => { cityMapPage.fs.show = 'takeover'; cityMapPage.fs.hoods = null; cityMapPage.saveFinder(); cityMapPage.update(); });
   const key = await page.evaluate(() => { const r = cityMapPage.rows()[0]; if(r) cityMapPage.select(r.key); return r ? r.key : null; });
@@ -361,19 +372,13 @@ test('Find a location keeps a picked building through a detour, and its ways on 
   await page.evaluate(() => openRoute('expansion/factory'));
   await back(page);
   await page.waitForFunction(k => cityMapPage.selected === k, key);
-  // The demand card goes back to Demand with the type's row ringed, and
-  // carries no strip whose way back would be Demand itself (round 1, S1).
-  await page.locator('#finderCtx [data-fx="demand"]').click();
-  assert.equal((await where(page)).route, 'expansion/demand');
-  assert.equal(await page.locator('#market .r.mk-arrive[data-slug="ba:businesstype_liquorstore"]').count(), 1);
-  assert.equal(await page.locator('#arrive').isVisible(), false, 'no arrival back to the page it is on');
-  // Browser Back: the finder, with the cell's own strip; its way back is Demand.
-  await back(page);
+  // The finder, with the cell's own strip; its way back is Demand, the type's row ringed.
   assert.equal((await where(page)).route, 'expansion/finder');
   assert.match(await page.locator('#arrive').innerText(), /Demand for Liquor Store in Midtown/);
   await page.locator('#arrive [data-nx="back"]').click();
   await page.waitForTimeout(250);
   assert.equal((await where(page)).route, 'expansion/demand', 'the strip leads back to Demand');
+  assert.equal(await page.locator('#market .r.mk-arrive[data-slug="ba:businesstype_liquorstore"]').count(), 1);
 });
 
 test('the City map is the plain map: the masthead switches the finder off, and the finder\'s switch is a visit Back undoes', async t => {
@@ -396,17 +401,16 @@ test('the City map is the plain map: the masthead switches the finder off, and t
 
 // --- the utilities -----------------------------------------------------------------------
 
-test('Preferences is a sheet: the theme, the checks panel over it, Escape in order, and the keyboard back on ···', async t => {
+test('Preferences is a sheet: the checks panel over it, Escape in order, and the keyboard back on ···; theme and language are the footer\'s', async t => {
   const page = await board(t);
   await page.locator('#navMore').click();
   await page.locator('#nxMenu [data-nx-item="prefs"]').click();
   assert.equal(await page.locator('#pxSheet').isVisible(), true);
   assert.equal(await page.evaluate(() => document.activeElement.id), 'pxTitle');
   const rows = await page.$$eval('#pxSheet .px-row', rs => rs.map(r => r.dataset.px));
-  assert.deepEqual(rows, ['appearance', 'language', ...(WEB ? ['gametext'] : []), 'history', 'checks', 'context', 'cli']);
-  await page.locator('#pxSheet [data-theme-set="light"]').click();
-  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-theme')), 'light');
-  assert.equal(await page.locator('#pxSheet [data-theme-set="light"]').getAttribute('aria-pressed'), 'true');
+  // Theme and language live in the footer only (declutter X5).
+  assert.deepEqual(rows, [...(WEB ? ['gametext'] : []), 'history', 'checks', 'context', 'cli']);
+  assert.equal(await page.locator('#pxSheet [data-theme-set], #pxSheet .gn-pick').count(), 0);
   // Customize checks opens the checks panel above the sheet.
   await page.locator('#pxKinds').click();
   assert.equal(await page.evaluate(() => kindsPop.classList.contains('on')), true);
@@ -418,6 +422,9 @@ test('Preferences is a sheet: the theme, the checks panel over it, Escape in ord
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#pxSheet').isVisible(), false);
   assert.equal(await page.evaluate(() => document.activeElement.id), 'navMore');
+  // The footer's theme switch is the one there is.
+  await page.locator('.sitefoot [data-theme-set="light"]').click();
+  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-theme')), 'light');
   // Company finances' history link opens the sheet on its History row, the
   // row itself focused, not Forget history (round 1, L1); a click says so there.
   await page.evaluate(() => openRoute('businesses/results'));
@@ -434,33 +441,26 @@ test('Preferences is a sheet: the theme, the checks panel over it, Escape in ord
 test('an open Preferences sheet is drawn again in a language picked, the keyboard where it was', async t => {
   const page = await board(t);
   await page.evaluate(() => pxOpen('prefs', document.getElementById('navMore')));
-  const head = () => page.locator('#pxSheet [data-px="appearance"] h3').innerText();
-  assert.equal(await head(), 'Appearance');
-  if(await page.locator('#pxSheet .gn-btn').count()){
-    // The web page: its own Language picker, the real switch.
-    await page.locator('#pxSheet .gn-btn').click();
-    await page.locator('#gnPop .gn-opt[data-value="de"]').click();
-    await page.waitForFunction(() => document.querySelector('#pxSheet [data-px="appearance"] h3').textContent === 'Darstellung');
-    assert.equal(await page.evaluate(() => document.activeElement.id), 'pxGnBtn', 'the keyboard stays on the picker');
-    assert.equal(await page.locator('#pxSheet [data-px="language"] h3').innerText(), 'Sprache');
-  } else {
-    // The CLI page has no picker (its language is --lang): the same listener, fed a table.
-    await page.evaluate(() => { document.querySelector('#pxSheet [data-px="checks"] button').focus(); ttSetTable('de', {'nav.px.app.title': 'Darstellung', 'foot.lang.head': 'Sprache'}); });
-    assert.equal(await head(), 'Darstellung');
-    assert.equal(await page.evaluate(() => document.activeElement.dataset.px), 'checks', 'the keyboard stays in its row');
-  }
+  const head = () => page.locator('#pxSheet [data-px="checks"] h3').innerText();
+  assert.equal(await head(), 'Checks');
+  // The language is picked in the footer; the sheet's listener is fed a table here.
+  await page.evaluate(() => { document.querySelector('#pxSheet [data-px="checks"] button').focus(); ttSetTable('de', {'nav.px.checks.title': 'Prüfungen'}); });
+  assert.equal(await head(), 'Prüfungen');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.px), 'checks', 'the keyboard stays in its row');
   assert.equal(await page.locator('#pxSheet').isVisible(), true);
 });
 
-test('Help & feedback is a sheet with the ways to ask, the changelog and the project\'s links', async t => {
+test('Help & feedback is a sheet with the way to ask; the changelog and the project\'s links are the footer\'s', async t => {
   const page = await board(t);
   await page.locator('#navMore').click();
   await page.locator('#nxMenu [data-nx-item="help"]').click();
   const text = await page.locator('#pxSheet').innerText();
   assert.match(text, /Can.t find something\?/);
   assert.match(text, /Bugs and feedback/);
-  assert.match(text, /Source code/);
-  assert.doesNotMatch(text, /NewSource|mod\s*New/, 'no New badge glued to a label');
-  await page.locator('#pxSheet [data-changelog]').click();
+  // The footer under the sheet, the masthead and the ··· menu carry the rest (declutter X6).
+  assert.doesNotMatch(text, /Source code|Search the board|Where is my save/);
+  assert.equal(await page.locator('#pxSheet [data-changelog]').count(), 0);
+  await page.keyboard.press('Escape');
+  await page.locator('.sitefoot [data-changelog]').first().click();
   assert.equal(await page.evaluate(() => document.getElementById('changelogDialog').open), true);
 });

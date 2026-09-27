@@ -93,9 +93,13 @@ test('a share is read with its decimals: 64.0% satisfied is 64, and 64.5% is 64.
   ]);
   assert.deepEqual(amounts, ['64%<small>satisfied</small>', '64.5%<small>satisfied</small>',
     '80%<small>promotion</small>', '72.5%<small>promotion</small>']);
-  // And on the Overview itself: no "0%" beside a 64.0% sentence.
-  const row = await page.locator('#alerts .find[data-kind="satisfaction"] .amt').first().textContent();
-  assert.match(row, /^64%/);
+  // And on the Overview itself: no "0%" beside a 64.0% sentence, and no "64%"
+  // either, since the sentence already holds it (declutter G6).
+  const row = page.locator('#alerts .find[data-kind="satisfaction"]').first();
+  assert.match(await row.locator('.what').textContent(), /64\.0%/);
+  assert.equal(await row.locator('.amt').count(), 0);
+  assert.equal(await page.evaluate(() => ovEcho('64%<small>satisfied</small>', 'Customer satisfaction at 64.0%')), true);
+  assert.equal(await page.evaluate(() => ovEcho('$450<small>/day</small>', 'Umbrella import is paused')), false);
 });
 
 // --- landings keep their route -----------------------------------------------------------
@@ -208,9 +212,11 @@ test('Find a location opened without a preset keeps the reader\'s filters throug
 
 // --- Supply: the diagram is Goods flow -----------------------------------------------------
 
-test('Goods flow and its Table move Supply between a view and the picture, and a reload keeps both', async t => {
+test('Goods flow is a view of its own: its tab moves Supply to the picture, a reload keeps it, and Back returns to the view before', async t => {
   const page = await board(t, {hash: '#supply/imports'});
-  await page.locator('#secImports [data-sb-toflow]').first().click();
+  // No second way there on the view, and no Table toggle on the picture: the row of views does both.
+  assert.equal(await page.locator('#secImports .sbv-bar [data-sb-toflow]').count(), 0);
+  await page.locator('#localNav a[data-route="supply/flow"]').click();
   let w = await where(page);
   assert.deepEqual([w.route, w.hash, w.lit], ['supply/flow', '#supply/flow', 'supply/flow']);
   assert.equal(await page.locator('#secFlow .sb-diag #flow').count(), 1);
@@ -218,9 +224,10 @@ test('Goods flow and its Table move Supply between a view and the picture, and a
   await page.waitForFunction(() => typeof hasData === 'function' && hasData());
   assert.equal((await where(page)).route, 'supply/flow');
   assert.equal(await page.locator('#secFlow .sb-diag #flow').count(), 1);
-  await page.locator('#secFlow [data-sb-totable]').click();
+  assert.equal(await page.locator('#secFlow [data-sb-totable]').count(), 0);
+  await back(page);
   w = await where(page);
-  assert.equal(w.route, 'supply/imports', 'Table goes back to the view the reader came from');
+  assert.equal(w.route, 'supply/imports', 'Back goes to the view the reader came from');
   assert.equal(w.lit, 'supply/imports');
 });
 
@@ -336,7 +343,11 @@ test('the dark theme keeps the shell\'s own colours, and a finding\'s kind label
         return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); };
       const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
       const v = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-      const label = document.querySelector('#alerts .find .ov-k');
+      /* The small-caps label a row carries (its "new" marker): a probe where
+         no row is new, since the kind tag is the headline's tip now. */
+      let label = document.querySelector('#alerts .find .ov-k');
+      if(!label){ label = document.createElement('span'); label.className = 'ov-k'; label.textContent = 'KIND';
+        document.querySelector('#alerts .find .ov-l1').append(label); }
       const ink = getComputedStyle(label).color.match(/[\d.]+/g).map(Number).slice(0, 3);
       return {soft: ['--neg-soft', '--warn-soft', '--info-soft'].map(v), ink3: v('--ink-3'),
         ground: ratio(ink, rgbOf(v('--ground'))), surface: ratio(ink, rgbOf(v('--surface'))),
@@ -434,9 +445,10 @@ test('on a 320 x 568 phone, and at 130% on 390 x 844, the first critical finding
 
 test('Staffing › Schedules is named for shops and offices, in the board\'s words', async t => {
   const page = await board(t, {hash: '#staffing/schedules'});
-  const head = await page.locator('#secSchedules > .sechead').innerText();
+  // The heading, for screen readers: the lit tab shows the view, and no line under it restates it (declutter G1, G9).
+  const head = await page.locator('#secSchedules > .sechead').textContent();
   assert.match(head, /Shop and office schedules/);
-  assert.match(head, /each office/);
+  assert.equal(await page.locator('#secSchedules > .sechead .quiet').count(), 0);
   assert.doesNotMatch(head, /\b(roster|shifts?|posts?)\b/i);
 });
 
@@ -470,7 +482,9 @@ test('a finding opens Imports on its line, Goods flow follows the depot, and the
   await page.waitForFunction(() => route === 'supply/imports');
   // The card reviews the line, lit, and the strip says why the reader is here.
   assert.match(await page.locator('#sbCard[data-sb-at] .sbi-title').textContent(), /Water · HART\. Hub/);
-  assert.match(await page.locator('#arrive').textContent(), /Water · HART\. Hub, Weekly order too small/);
+  // The place and the item; the kind is the card's to say, and the back button says where from.
+  assert.match(await page.locator('#arrive').textContent(), /Water · HART\. Hub/);
+  assert.doesNotMatch(await page.locator('#arrive').textContent(), /Weekly order too small|You came from/);
   // Its supply route, followed.
   await page.locator('#sbCard [data-sb-toflow]').click();
   await page.waitForFunction(() => route === 'supply/flow');
@@ -591,4 +605,54 @@ test('a pick carried into Find a location by the masthead survives a reload of t
   await finderOn(page);
   await settled(page, key);
   assert.deepEqual(await finderPick(page), {selected: key, pressed: key, card: true, state: key, route: 'expansion/finder'});
+});
+
+// --- final review: Back returns to the view left inside an area ---------------------
+
+test('a Changes row opens its view as a new visit: Back returns to Changes; a section of another view does the same', async t => {
+  const page = await board(t, {hash: '#supply/changes'});
+  const len = () => page.evaluate(() => history.length);
+  const before = await len();
+  const row = page.locator('#secChanges [data-sb-go]').first();
+  const target = JSON.parse(await row.getAttribute('data-sb-go'))[0];
+  await row.click();
+  let w = await where(page);
+  assert.equal(w.route, `supply/${target}`);
+  assert.equal(await len(), before + 1, 'a new entry');
+  await back(page);
+  w = await where(page);
+  assert.equal(w.route, 'supply/changes', 'Back returns to Changes');
+  // The search palette's way to a section on another view of the page on screen.
+  await page.evaluate(() => openRoute('businesses/results'));
+  await page.evaluate(() => reveal('secGoals'));
+  assert.equal((await where(page)).route, 'businesses/milestones');
+  await back(page);
+  assert.equal((await where(page)).route, 'businesses/results');
+});
+
+test('Schedules keeps the business, its day and its now / plan view through Back, Forward and a reload', async t => {
+  const page = await board(t, {hash: '#staffing/schedules'});
+  const shop = await page.evaluate(() => D.businesses.find(b => b.status === 'retail' && (spRosterRow(b.key) || {}).shifts?.length).key);
+  await page.locator(`#secSchedules [data-sched-pick="${shop}"]`).click();
+  const tabs = page.locator('#schDetail .sp-daytabs a');
+  const day = await tabs.last().getAttribute('data-day');
+  await tabs.last().click();
+  await page.locator('#schDetail .sp-nowplan a[data-view="now"]').click();
+  const state = () => page.evaluate(() => ({pick: schedLit,
+    day: (document.querySelector('#schDetail .sp-daytabs a.sp-on') || {}).dataset?.day,
+    view: (document.querySelector('#schDetail .sp-nowplan a.sp-on') || {}).dataset?.view,
+    now: !!document.querySelector('#schDetail .sp-gantt.sp-now')}));
+  const want = {pick: shop, day, view: 'now', now: true};
+  assert.deepEqual(await state(), want);
+  await page.locator('#localNav a[data-route="staffing/payroll"]').click();
+  await back(page);
+  assert.deepEqual(await state(), want, 'Back');
+  // Forward to Payroll and Back again: the same visit, as it was left.
+  await forward(page);
+  assert.equal((await where(page)).route, 'staffing/payroll');
+  await back(page);
+  assert.deepEqual(await state(), want, 'Forward, then Back');
+  await page.reload();
+  await page.waitForFunction(() => typeof hasData === 'function' && hasData() && route === 'staffing/schedules');
+  assert.deepEqual(await state(), want, 'a reload');
 });

@@ -1551,7 +1551,7 @@ test("the finder's demand figure leads back to that type's Growth row", async ()
     await pick(page, HK[0]);
     const back = page.locator('#cityMapPage .site .mf-grow');
     assert.equal((await back.locator('b').textContent()).trim(), '77');
-    assert.match(await back.getAttribute('data-tip'), /Clothing Store in every neighbourhood, on Growth › Demand/);
+    assert.match(await back.getAttribute('data-tip'), /Clothing Store in every neighbourhood, on Expansion › Demand/);
     // From the product views too: the link switches the grid back to By type.
     await page.evaluate(() => showPage('growth'));
     await page.locator('#marketTools a[data-id="mine"]').click();

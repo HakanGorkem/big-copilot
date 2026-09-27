@@ -925,18 +925,19 @@ test('no page claims the game files carry no prices anywhere', async () => {
   }
 });
 
-test('the stamp dates the game files and names a build only as a save build', async () => {
+test('the stamp dates the game files and names a build only as a save build, in the search\'s tip', async () => {
   const w = wiki();
   const html = await w.load('wiki');
-  assert.match(html, /game files of 2026-09-03/);
+  // In the tip, not a chip on the page (declutter M2).
+  assert.match(html, /data-tip="[^"]*game files of 2026-09-03/);
+  assert.doesNotMatch(html, /class="[^"]*chip[^"]*"[^>]*>game files of/);
   assert.doesNotMatch(html, /build 3675/, 'the mockup\'s number is not a fact about this install');
   assert.doesNotMatch(html, /25231854/, 'Steam\'s depot id is not the save build');
-  assert.doesNotMatch(html, /save build/, 'this catalogue states none, so none is shown');
+  assert.doesNotMatch(html, /from build/, 'this catalogue states none, so none is said');
 
   const known = wiki({data: {...DATA, provenance: {...DATA.provenance, saveBuildNumber: 3675}}});
   const html2 = await known.load('wiki');
-  assert.match(html2, /save build 3,?675/);
-  assert.match(html2, /The build number a save reports/);
+  assert.match(html2, /data-tip="[^"]*A save from build 3,?675 matches these pages/);
 });
 
 test('a page the sample does not cover is a reader, not the authored layout', async () => {

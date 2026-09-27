@@ -93,9 +93,9 @@ test('the basis is kept per company: the device key is the fallback, and one com
 
 test('a figure kept by the previous board has no basis: Needs review, out of every write, until kept or reset', async t => {
   const page = await board(t, {seed: {'ba_import_set_v2:r8-fixture': JSON.stringify({[HUB_FLOUR]: {value: 15000, inGame: 14000}})}});
-  // Moved to version 3 with no basis; version 2 removed once version 3 reads back.
-  assert.deepEqual(await page.evaluate(() => [JSON.parse(localStorage.getItem('ba_import_set_v3:r8-fixture')), localStorage.getItem('ba_import_set_v2:r8-fixture')]),
-    [{[HUB_FLOUR]: {value: 15000, inGame: 14000, basis: null}}, null]);
+  // Copied to version 3 with no basis; version 2 stays, for a rollback to find.
+  assert.deepEqual(await page.evaluate(() => [JSON.parse(localStorage.getItem('ba_import_set_v3:r8-fixture')), JSON.parse(localStorage.getItem('ba_import_set_v2:r8-fixture'))]),
+    [{[HUB_FLOUR]: {value: 15000, inGame: 14000, basis: null}}, {[HUB_FLOUR]: {value: 15000, inGame: 14000}}]);
   const row = () => page.evaluate(() => { const r = sbData().rows.find(x => x.kind === 'Weekly imports' && x.slug === 'flour');
     return [r.proposed, r.review, r.basis]; });
   assert.deepEqual(await row(), [15000, true, null], 'the figure is kept, and asks for a review');
@@ -163,12 +163,17 @@ test('the recurring order and the one-time catch-up are two changes, each with i
   assert.equal(await card.locator('.sbi-sec').count(), 2, 'the order and the gap, side by side');
   assert.match(await card.locator('.sbi-gap').textContent(), /~600\s*units, bought now/);
   assert.match(await card.locator('.sbi-gap').textContent(), /by hand; no game-link write/);
-  const marks = card.locator('[data-sb-mark]');
-  await marks.nth(1).click();
+  // The card has no mark buttons of its own (declutter U20): each change has
+  // its tick on its own row of Changes.
+  assert.equal(await card.locator('[data-sb-mark]').count(), 0);
+  const keys = await page.evaluate(() => sbData().rows.filter(r => r.slug === 'flour' && r.site === 0 && r.view === 'imports').map(r => r.key));
+  await page.evaluate(() => { openRoute('supply/changes'); });
+  const tick = key => page.locator(`#secChanges .sbc-row[data-key="${key.replace(/"/g, '\\"')}"] .sb-tick`);
   const st = () => page.evaluate(() => sbData().rows.filter(r => r.slug === 'flour' && r.site === 0 && r.view === 'imports')
     .map(r => [r.kind, pgState(sbData(), r)]));
+  await tick(keys[1]).click();
   assert.deepEqual(await st(), [['Weekly imports', 'suggested'], ['Before the next delivery', 'marked']]);
-  await marks.nth(0).click();
+  await tick(keys[0]).click();
   assert.deepEqual(await st(), [['Weekly imports', 'marked'], ['Before the next delivery', 'marked']]);
   // Copy the changes: both, each in its own words.
   const copied = await page.evaluate(() => orderChecklistText(sbData().rows.filter(r => r.slug === 'flour' && r.site === 0 && r.view === 'imports'), 'T'));
@@ -189,17 +194,21 @@ test('one figure and one basis from the row to the copy, under both bases', asyn
     // The card: the box, what it is planned for, Why and the manual instructions.
     assert.match(await page.locator('#sbCard .sbi-basis').textContent(), new RegExp(`set while planning for ${basis}`));
     await page.click('#sbCard [data-sbi-panel=why]');
-    assert.match(await page.locator('#sbCard .sbi-panel[data-panel=why]').textContent(), new RegExp(`Why 15,500 a week · planned for ${basis}`, 'i'));
+    // Planned on the basis on screen: the switch says which, the heading does not again.
+    assert.match(await page.locator('#sbCard .sbi-panel[data-panel=why] h4').textContent(), /^Why 15,500 a week$/i);
     await page.click('#sbCard [data-sbi-panel=manual]');
     assert.match(await page.locator('#sbCard .sbi-panel[data-panel=manual]').textContent(), /set the amount to 15,500 a week/);
     // Changes, its copy, and the write the game link would send.
     const got = await page.evaluate(() => {
       const r = sbData().rows.find(x => x.kind === 'Weekly imports' && x.slug === 'flour');
       const plan = gwImportPlan(null, gwImportRows.find(x => x.slug === 'flour' && x.s === 0).impId)[0];
-      return {proposed: r.proposed, basis: r.basis, text: orderChecklistText([r], 'T'), write: plan ? plan.r.value : null};
+      return {proposed: r.proposed, basis: r.basis, text: orderChecklistText([r], 'T', sizing), write: plan ? plan.r.value : null};
     });
     assert.deepEqual([got.proposed, got.basis, got.write], [15500, mode, 15500]);
-    assert.match(got.text, new RegExp(`14000 -> 15500 units/week.*Planned for ${basis}\\.`));
+    // The copy's header names the basis; a line names it only when it is the other one.
+    assert.match(got.text, /14000 -> 15500 units\/week/);
+    assert.match(got.text, new RegExp(`Planned for ${basis}:`));
+    assert.doesNotMatch(got.text, /Planned for [a-z ]+\./);
     await redraw(page);
     assert.match(await page.locator('#secChanges .sbc-row', {hasText: 'Flour'}).first().textContent(), /15,500/);
     // The other basis keeps the figure, beside its own suggestion, with a way back to it.
@@ -299,6 +308,10 @@ test('a schedule is confirmed by its shift print on a later read; a hire by each
   assert.deepEqual(await hire(), ['applied', 1, 1, 1]);
   await page.evaluate(k => { const d = JSON.parse(JSON.stringify(D)); d.staffing[0].people.push({id: 'C1', name: 'New'}); d.meta.minute = 5; takeData(d); pgEvaluate(); }, key);
   assert.deepEqual((await hire())[0], 'partly', 'the hire is seen, the move to a warehouse is not');
+  // Staff needs says how many were seen, never the clock the board judged them at.
+  const said = await page.evaluate(() => { drawNeeds(); return document.querySelector('#secNeeds .nd-pg').textContent; });
+  assert.match(said, /1 of 2 seen at their sites so far/);
+  assert.doesNotMatch(said, /object/);
   // Someone found at another site than the one they were sent to: not confirmed.
   await page.evaluate(k => { const d = JSON.parse(JSON.stringify(D)); d.staffing.push({key: 'dist#6', people: [{id: 'E9', name: 'Moved'}]}); d.meta.minute = 9; takeData(d); pgEvaluate(); }, key);
   assert.equal((await hire())[0], 'changed');
@@ -359,7 +372,7 @@ test('a write made before a reload is confirmed by a later board after it; the s
   assert.equal(await state(), 'confirmed');
 });
 
-test('a figure typed under one basis keeps it after a switch: its factory hours, card and copied lines', async t => {
+test('a figure typed under one basis keeps it after a switch; the hours it assumes are no step where the basis on screen plans others', async t => {
   const page = await board(t);
   // Flour typed at 15,500 while planning for full production: the cake line is planned on 24 h.
   await page.evaluate(() => { impSetKeep(impSetId('hub#1', 'flour'), {value: 15500, inGame: 14000, basis: 'cap'}); sbStamp++; });
@@ -372,16 +385,46 @@ test('a figure typed under one basis keeps it after a switch: its factory hours,
       text: orderChecklistText([w, ...(w.hours || [])], 'T', sizing)};
   });
   assert.deepEqual(got.deps, [[24, 'cap']], 'the hours of the plan the figure was set for');
-  assert.deepEqual(got.hours, [24]);
-  assert.match(got.text, /Flour: 14000 -> 15500 units\/week\..*Planned for full production\./);
-  assert.match(got.text, /Cake: run 12 -> 24 hours\/day\..*Planned for full production\./);
-  assert.match(got.text, /Lines that name another basis keep the plan they were set for/);
-  assert.doesNotMatch(got.text, /-> 10 hours/);
-  // The card and its manual step say the same.
+  // Shop demand plans the cake line for 10 h: 24 h is no step of this checklist.
+  assert.deepEqual(got.hours, []);
+  assert.match(got.text, /Flour: 14000 -> 15500 units\/week\..*Its figure assumes Cake at .* runs 24 hours a day, as full production plans; that is not a step here, where shop demand plans 10 h\..*Planned for full production\./);
+  assert.doesNotMatch(got.text, /Cake: run/);
+  assert.match(got.text, /Lines that name another basis keep the figure they were set for; the factory hours are this basis's/);
+  // The card says so, and its manual steps have no hours step.
   await page.evaluate(() => { sbSelOff = false; sbSel = {s: 0, slug: 'flour'}; drawImportsView(); wireAll(); });
-  assert.match(await page.locator('#sbCard .sbi-dep').textContent(), /15,500, planned for full production, assumes these hours:.*→ 24 h a day/s);
+  assert.match(await page.locator('#sbCard .sbi-dep').textContent(), /Planned on other factory hours\..*15,500 assumes Cake at .* runs 24 h a day, as full production plans; shop demand plans 10 h/s);
   await page.click('#sbCard [data-sbi-panel=manual]');
-  assert.match(await page.locator('#sbCard .sbi-steps').textContent(), /staff Cake 24 h a day on each of its 2 machines \(now 12 h\)/);
+  assert.doesNotMatch(await page.locator('#sbCard .sbi-steps').textContent(), /staff Cake/);
+});
+
+test('an import figure typed on full production, then shop demand on screen: Why explains full production, and the machines get one hours step', async t => {
+  const page = await board(t, {data: DAY47()});
+  const hub = await page.evaluate(k => D.businesses.findIndex(b => b.key === k), HUB47);
+  await page.evaluate(([s, slug, k]) => {
+    sizing = 'cap'; impSetKeep(impSetId(k, slug), {value: 17000, inGame: 3000, basis: 'cap'}); sbStamp++;
+    sizing = 'dem'; sbStamp++; sbSelOff = false; sbSel = {s, slug}; drawSupplyStrip(); drawImportsView(); wireAll();
+  }, [hub, WATER, HUB47]);
+  const want = await page.evaluate(([s, slug]) => {
+    const pick = m => { const w = szFactFor(s, slug, m); return w.import || w; };
+    return {cap: pick('cap').use, dem: pick('dem').use};
+  }, [hub, WATER]);
+  assert.notEqual(want.cap, want.dem, 'the two bases use different weeks here');
+  await page.click('#sbCard [data-sbi-panel=why]');
+  const why = page.locator('#sbCard [data-panel=why]');
+  assert.match(await why.locator('h4').textContent(), /17,000 a week · planned for full production/i);
+  const uses = await why.locator('tr', {hasText: 'Uses a week'}).locator('td').nth(1).textContent();
+  assert.equal(uses, await page.evaluate(n => num(n), want.cap), 'the week full production uses, not shop demand\'s');
+  assert.match(await why.textContent(), /With shop demand instead/);
+  assert.doesNotMatch(await why.textContent(), /With full production instead/);
+  // Changes and its copy: one hours step for the Beer machines, never two.
+  const got = await page.evaluate(() => {
+    const d = sbData();
+    const hours = d.rows.filter(x => x.kind === 'Factory run hours' && x.slug === 'ba:itemname_beer');
+    return {hours: hours.map(h => h.proposed), text: orderChecklistText(d.rows, 'T', sizing)};
+  });
+  assert.ok(got.hours.length <= 1, `one hours step for the Beer machines, got ${got.hours}`);
+  assert.equal((got.text.match(/Beer: run/g) || []).length, got.hours.length);
+  assert.doesNotMatch(got.text, /Beer: run [^\n]*-> 24 hours/, 'full production\'s 24 h is not a step on shop demand');
 });
 
 test('the factory hours an import assumes are each machine\'s: 12 h and 0 h at the day-47 brewery', async t => {
@@ -503,8 +546,11 @@ test('Changes counts what the Overview counts, lists only import records, and co
   await page.evaluate(() => { sbScope.changes = 'factories'; drawChangesView(); wireAll(); });
   const left = await page.evaluate(() => { const d = sbData(); return d.rows.filter(r => !pgDone(d, r) && sbInScope('changes', r.site)).length; });
   assert.ok(left > 0 && left < n.total);
-  assert.equal(await page.locator('#sbcTop [data-sb-copy=remaining] small').textContent(), String(left));
+  // The preview holds what Copy remaining copies: the scope's changes still open.
   assert.equal(await page.evaluate(() => (document.querySelector('#secChanges .sbc-prev pre').textContent.match(/^\[ \]/gm) || []).length), left);
+  // A mark takes its line out of the preview at once (final review, Fable 3).
+  await page.locator('#secChanges .sbc-row .sb-tick').first().click();
+  assert.equal(await page.evaluate(() => (document.querySelector('#secChanges .sbc-prev pre').textContent.match(/^\[ \]/gm) || []).length), left - 1);
 });
 
 test('Production speaks the board\'s words: no roster, shift or posting, and the bases by their names', async t => {

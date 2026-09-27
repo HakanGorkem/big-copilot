@@ -195,7 +195,7 @@ body .mast{top:var(--release-height,0px)}
 .landing > p{margin:0;color:var(--ink-2);font-size:15px;max-width:460px;text-align:center;text-wrap:pretty}
 .drop{
   width:560px;height:280px;border-radius:16px;border:1.5px dashed var(--rule);display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:16px;cursor:pointer;transition:border-color .2s,background .2s,transform .12s ease-out;position:relative;
+  align-items:center;justify-content:center;gap:16px;transition:border-color .2s,background .2s,transform .12s ease-out;position:relative;
   transform:rotateX(var(--rx,0)) rotateY(var(--ry,0));transform-style:preserve-3d;
 }
 .drop:hover,.drop.lg-over{border-color:var(--accent);background:var(--surface)}
@@ -241,6 +241,10 @@ button.btn{border:0;cursor:pointer}
 .strip .file:empty,.strip #srcStatus:empty{display:none}
 .strip .btn2:disabled{opacity:.4;pointer-events:none}
 .strip .st{min-width:0;flex-wrap:wrap}
+/* All well on the board: Update and ··· alone; reading: the bar alone. */
+.strip.calm .st{display:none}
+.source-row .strip.calm{justify-content:flex-end;background:none;border-color:transparent;padding:0 0 0 16px}
+.strip.reading #srcLed,.strip.reading #srcStatus,.strip.reading #srcMeta{display:none}
 .strip #srcStatus:not(.err),.strip .file,.strip .right > *{white-space:nowrap}
 .strip .right{flex:none}
 /* On the board the file line is the strip's one long piece of text: it wraps
@@ -392,10 +396,9 @@ details.help[open] summary::after{content:"\2013"}
 <section class="landing" id="landing">
   <div class="brand rv" id="lgBrand"><span class="wordmark">Big Copilot</span><span class="dot" id="lgDot"></span></div>
   <p class="rv" id="welcomeLede" data-tt="land.lede">Drop a Big Ambitions save. Everything is read in this tab and nothing leaves it.</p>
-  <div class="drop rv" id="drop" role="button" tabindex="0" title="Choose the folder named Big Ambitions inside SaveGames, or drop it here. The page looks through every company folder in it and takes the newest save; a menu then lets you pick another character or save." data-tt-title="land.drop.title">
+  <div class="drop rv" id="drop" title="Drop the folder named Big Ambitions inside SaveGames here. The page looks through every company folder in it and takes the newest save; a menu then lets you pick another character or save." data-tt-title="land.drop.title2">
     <div class="folder"><i class="tab"></i><i></i><span class="file"></span><i class="flap"></i></div>
     <b data-tt="land.drop.head">Drop your save folder anywhere</b>
-    <span data-tt="land.drop.sub">the newest .hsg in it opens</span>
   </div>
   <div class="row rv" id="entryRow">
     <button type="button" class="btn" id="folderBtn" title="Choose the folder named Big Ambitions inside SaveGames. The page looks through every company folder in it and takes the newest save." data-tt-title="land.folder.title">__ICON_FOLDER__Choose the folder</button>
@@ -450,17 +453,19 @@ details.help[open] summary::after{content:"\2013"}
      the board has its own footer and carries them itself. -->
 <template id="boardControls">
   <div class="menu" id="srcMenu">
-    <button type="button" class="ibtn tr" id="menuBtn" aria-haspopup="true" aria-expanded="false" aria-label="More" data-tip="Change folder · one file · watch · game text · history · about" data-tt-aria-label="app.menu.more" data-tt-tip="app.menu.tip">__ICON_MORE__</button>
+    <button type="button" class="ibtn tr" id="menuBtn" aria-haspopup="true" aria-expanded="false" aria-label="More" data-tip="Change folder · one file · watch the game" data-tt-aria-label="app.menu.more" data-tt-tip="app.menu.tip2">__ICON_MORE__</button>
     <div class="menu-panel">
       <div class="menu-heading" data-tt="app.menu.source">Save source</div>
       <div id="menuSourceSlot"></div>
       <button type="button" class="lg-btn lg-watch" id="watchBtn" hidden>Watch</button>
-      <p class="menu-hint" data-tt="app.menu.hint">Pick a character or one save above and the board follows it, or link to the running game. Or drop a .hsg save anywhere.</p>
+      <p class="menu-src" id="menuSrcLine"></p>
       <div class="menu-divider"></div>
-      <div id="menuChipSlot"></div>
-      <p class="menu-hint" id="menuChipHint"></p>
+      <!-- Game text and Forget history are Preferences' (declutter X5): their
+           controls wait here, out of sight, for its rows to drive them. -->
+      <div id="menuChipSlot" hidden></div>
+      <p class="menu-hint" id="menuChipHint" hidden></p>
       <div id="menuHelpSlot"></div>
-      <div class="menu-foot"><div id="menuFootSlot" class="foot-links"></div></div>
+      <div class="menu-foot" hidden><div id="menuFootSlot" class="foot-links"></div></div>
     </div>
   </div>
 </template>

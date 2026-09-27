@@ -35,11 +35,12 @@ class Footer(unittest.TestCase):
         # Both footers are in the site's page until the board replaces the
         # landing, so anything they both carry has to be a class or a data
         # attribute. The board fills #footBuild, which the landing
-        # lacks; the landing owns #helpLink.
+        # lacks. The landing shows its save-folder box itself, so its footer
+        # has no link to the same help (declutter L3).
         landing = set(re.findall(r'id="([^"]+)"', footer_html(landing=True, site=True)))
         board = set(re.findall(r'id="([^"]+)"', footer_html(site=True)))
         self.assertEqual(landing & board, set())
-        self.assertIn("helpLink", landing)
+        self.assertNotIn("helpLink", landing)
         self.assertIn("footBuild", board)
 
     def test_only_the_cli_page_names_the_save_in_its_footer(self):

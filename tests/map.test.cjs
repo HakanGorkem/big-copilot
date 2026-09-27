@@ -745,9 +745,9 @@ test('a rented home is its own layer: white footprint, counted, and a card with 
     const panel=await page.locator('#sitePanel').textContent();
     assert.match(panel,new RegExp(home.address.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
     assert.deepEqual(await page.$$eval('#sitePanel .sp-hometiles .sstat .lab',ls=>ls.map(l=>l.textContent)),
-      ['Rent / day','Rent / week','Size','Per m²']);
-    // $34 a day is $238 a week; the flat is in no picker and in no portfolio row.
-    assert.match(panel,/\$34/);assert.match(panel,/\$238/);
+      ['Rent / day','Size','Per m²']);
+    // $34 a day, and no week beside it (declutter BP17); the flat is in no picker and in no portfolio row.
+    assert.match(panel,/\$34/);assert.doesNotMatch(panel,/\$238/);
     assert.equal(await page.locator('#sitePanel #sitePick').count(),0);
     await page.evaluate(()=>{closeSite();showPage('map');});await ready(page);
     // The same arrow in the dialog map, which closes behind it.

@@ -64,7 +64,8 @@ test('a type cell is the average demand of its range, and a one-product type rea
   const page = await grid();
   try {
     assert.deepEqual(await rowNames(page), ['Cinema', 'Supermarket', 'Travel Agency', 'Law Firm']);
-    assert.match(await page.locator('#marketNote').innerText(), /Ranked by each type's best neighbourhood/);
+    // The default ranking is no sentence under the heading (declutter E1).
+    assert.doesNotMatch(await page.locator('#marketNote').innerText(), /Ranked by/);
     assert.equal((await cell(page, 1, 2).innerText()).trim(), '64');
     assert.match(await cell(page, 1, 2).getAttribute('data-tip'),
       /average demand 64 across its 3 products, 1 seller on average$/);
@@ -114,7 +115,11 @@ test('sorting by a neighbourhood orders each band by demand, the emptier market 
     // Midtown: Cinema and Supermarket both read 64; the supermarket has one rival, the cinema three.
     await page.locator('#market .h[data-hood="ba:neighborhood_midtown"]').click();
     assert.deepEqual(await rowNames(page), ['Supermarket', 'Cinema', 'Law Firm', 'Travel Agency']);
-    assert.match(await page.locator('#marketNote').innerText(), /Sorted by demand in Midtown, highest first/);
+    // The lit header shows the sort, its arrow and its tip; the note keeps only the way back (declutter E1).
+    const head = page.locator('#market .h[data-hood="ba:neighborhood_midtown"]');
+    assert.equal(await head.locator('.mk-dir').textContent(), '↓');
+    assert.equal(await head.getAttribute('data-tip'), 'Sorted by demand in Midtown, highest first');
+    assert.equal((await page.locator('#marketNote').innerText()).trim(), 'usual order');
     // A second click reverses the whole order, ties included: the least
     // inviting cell (equal demand, more sellers) leads.
     await page.locator('#market .h[data-hood="ba:neighborhood_midtown"]').click();
@@ -136,26 +141,14 @@ test('a shop row carries its own way into Plan a chain; an office row has none, 
       drawMarket();
       window.drawPlan = () => { window.planned = planType; };   // the plan page itself is not under test
     });
-    const plans = () => page.$$eval('#market .r', rs => rs.map(r => r.querySelector('.mk-plan')?.dataset.plan || null));
-    assert.deepEqual(await plans(), ['ba:businesstype_cinema', 'ba:businesstype_supermarket', null, null]);
-    assert.equal(await page.locator('#market .r[data-r="0"] small').innerText(), '1 product · Setup guide › · Plan a factory ›');
+    // Plan a factory is the next tab, with its own type picker: no row links it (declutter E2).
+    assert.equal(await page.locator('#market .mk-plan').count(), 0);
+    assert.equal(await page.locator('#market .r[data-r="0"] small').innerText(), '1 product · Setup guide ›');
     // Nothing is drawn under the grid.
     assert.equal(await page.locator('#cellDetail').count(), 0);
-    await page.locator('#market .r[data-r="1"] .mk-plan').click();
-    assert.equal(await page.evaluate(() => window.planned), 'ba:businesstype_supermarket');
-    assert.equal(await page.evaluate(() => planType), 'ba:businesstype_supermarket');
-    // A second click on the type already open keeps the machines the player stepped.
-    await page.evaluate(() => { planCounts = {'ba:itemname_apple': 4}; showPage('growth'); showSub('growth', 'market'); });
-    await page.locator('#market .r[data-r="1"] .mk-plan').click();
-    assert.deepEqual(await page.evaluate(() => planCounts), {'ba:itemname_apple': 4});
-    await page.evaluate(() => showSub('growth', 'market'));
-    await page.locator('#market .r[data-r="0"] .mk-plan').click();
-    assert.deepEqual(await page.evaluate(() => [planType, planCounts]), ['ba:businesstype_cinema', {}]);
-    // A product row plans the type that sells it; the office fee still plans nothing.
     await page.evaluate(() => { marketView = 'mine'; drawMarket(); });
-    assert.deepEqual(await plans(), [null, 'ba:businesstype_supermarket']);
-    assert.equal(await page.locator('#market .r[data-r="0"] small').innerText(), 'you sell it');
-    assert.equal(await page.locator('#market .r[data-r="1"] small').innerText(), 'you sell it · Plan a factory ›');
+    assert.equal(await page.locator('#market .mk-plan').count(), 0);
+    assert.equal(await page.locator('#market .r[data-r="1"] small').innerText(), 'you sell it');
   } finally { await page.close(); }
 });
 

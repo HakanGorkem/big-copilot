@@ -170,18 +170,18 @@ test('a refresh leaves Today, an open site and Supply standing as they were', as
 
 test('what a refresh redraws on a view out of sight is there on the way back', async t => {
   const page = await board(t);
-  // Staff needs has been seen: its hiring page's Payroll role cards arrived.
+  // Staff needs has been seen: its hiring page arrived.
   await page.evaluate(() => { showPage('staffing'); showSub('staffing', 'needs'); });
   await settle(page);
-  assert.ok(await page.locator('#secStaff #hrPayroll .role').count() > 0, 'the fixture has role cards');
+  assert.ok(await page.locator('#secStaff .hs-head').count() > 0, 'the hiring page is drawn');
   assert.equal(await page.locator('#secStaff .rv:not(.in)').count(), 0, 'everything on Staff has arrived');
   await page.evaluate(() => showPage('today'));
   await settle(page);
-  await page.evaluate(() => { window.calmOld = document.querySelector('#secStaff .role'); });
+  await page.evaluate(() => { window.calmOld = document.querySelector('#secStaff .hs-head'); });
   await deliver(page);
   await page.evaluate(() => showPage('staffing'));
-  assert.ok(await page.evaluate(() => window.calmOld !== document.querySelector('#secStaff .role')),
-    'the refresh rebuilt the role cards');
+  assert.ok(await page.evaluate(() => window.calmOld !== document.querySelector('#secStaff .hs-head')),
+    'the refresh rebuilt the hiring page'); 
   assert.deepEqual(await motion(page), still);
 });
 
@@ -236,18 +236,20 @@ test('a refresh on Today draws Today; every other page waits for its visit and o
   const standing = () => page.evaluate(() =>
     Object.fromEntries(Object.entries(calmOld).map(([k, el]) => [k, !!el && el.isConnected])));
   await mark();
-  assert.match(await page.locator('#hrPayroll .facts').textContent(), /^People3Wages a day/);
+  // The hiring page as drawn for the save before, marked to tell a redraw from none.
+  const old = () => page.locator('#secStaff .hs-head[data-old]').count();
+  await page.evaluate(() => { document.querySelector('#secStaff .hs-head').dataset.old = '1'; });
 
   // (a) The refresh redraws Today and leaves the other pages' markup alone.
   await deliver(page, later);
   assert.match(await page.locator('#kpis').innerText(), /25,000/, 'Today has the new cash');
   assert.deepEqual(await standing(), {kpis: false, payroll: true, portfolio: true, stock: true, market: true});
-  assert.match(await page.locator('#hrPayroll .facts').textContent(), /^People3Wages a day/, 'Staff waits for its visit');
+  assert.equal(await old(), 1, 'Staff waits for its visit');
 
   // (b) By the nav: Staffing opens on Staff needs, the view it was left on,
   // drawn for the new numbers.
   await page.click('#nav a[data-id="staffing"]');
-  assert.match(await page.locator('#hrPayroll .facts').textContent(), /^People4Wages a day/);
+  assert.equal(await old(), 0, 'drawn again for the new numbers');
   assert.deepEqual(await motion(page), still, 'a view seen before comes back already arrived');
   let [shown, redrawn] = await asRedrawn(page);
   assert.equal(shown, redrawn);
@@ -328,6 +330,8 @@ test('a draw that throws on the way in leaves the view out of date, not the read
   await deliver(page, later);
   const stale = () => page.evaluate(() => [...pageStale].some(row => /drawStaff/.test(String(row[1]))));
   assert.equal(await stale(), true, 'Staff waits for its visit');
+  await page.evaluate(() => { const h = document.querySelector('#secStaff .hs-head'); if(h) h.dataset.old = '1'; });
+  const old = () => page.locator('#secStaff .hs-head[data-old]').count();
   const messages = [];
   page.on('console', m => { if (m.type() === 'error') messages.push(m.text()); });
   await page.evaluate(() => {
@@ -340,7 +344,7 @@ test('a draw that throws on the way in leaves the view out of date, not the read
   assert.equal(await page.locator('#pageToday').isHidden(), true);
   assert.equal(await stale(), true, 'the view is still out of date');
   assert.ok(messages.some(m => /payroll broke/.test(m)), messages.join('\n'));
-  assert.match(await page.locator('#hrPayroll .facts').textContent(), /^People3Wages a day/);
+  assert.equal(await old(), 1, 'the page still shows the save before');
   // The view shows the save before; the Live dot says so.
   assert.deepEqual(await liveDot(page), {stale: true, says: 'Stale', why: 'payroll broke'});
 
@@ -348,8 +352,8 @@ test('a draw that throws on the way in leaves the view out of date, not the read
   await page.click('#nav a[data-id="overview"]');
   await page.click('#nav a[data-id="staffing"]');
   assert.equal(await stale(), false);
-  assert.match(await page.locator('#hrPayroll .facts').textContent(), /^People4Wages a day/, 'drawn on the next visit');
-  assert.deepEqual(await liveDot(page), {stale: false, says: 'LIVE', why: ''});
+  assert.equal(await old(), 0, 'drawn on the next visit');
+  assert.deepEqual(await liveDot(page), {stale: false, says: '', why: ''});
 });
 
 // The masthead's Live dot: marked Stale or not, what it says, and why.
@@ -389,7 +393,7 @@ test('one row that throws on a view does not keep the others from drawing, and i
   assert.deepEqual(await due(), []);
   assert.deepEqual(await liveDot(page), {stale: true, says: 'Stale', why: 'rebuild broke'});
   await page.evaluate(() => window.calmWatch.stale(''));
-  assert.deepEqual(await liveDot(page), {stale: false, says: 'LIVE', why: ''});
+  assert.deepEqual(await liveDot(page), {stale: false, says: '', why: ''});
 
   // The next board clears a row's mark too; the row is tried again on its visit.
   await page.evaluate(() => {
@@ -401,7 +405,7 @@ test('one row that throws on a view does not keep the others from drawing, and i
   assert.equal((await liveDot(page)).stale, true);
   await page.evaluate(() => { window.drawPortfolio = window.calmDraw; showSub('company', 'products'); });
   await deliver(page, later);
-  assert.deepEqual(await liveDot(page), {stale: false, says: 'LIVE', why: ''});
+  assert.deepEqual(await liveDot(page), {stale: false, says: '', why: ''});
 });
 
 test('a row that throws while the board is drawn leaves the rest drawn, wired and marked Stale', async t => {
@@ -430,7 +434,7 @@ test('a row that throws while the board is drawn leaves the rest drawn, wired an
   // Once it draws again, the next board clears the mark.
   await page.evaluate(() => { window.drawAlerts = window.calmDraw; });
   await deliver(page, later);
-  assert.deepEqual(await liveDot(page), {stale: false, says: 'LIVE', why: ''});
+  assert.deepEqual(await liveDot(page), {stale: false, says: '', why: ''});
   assert.equal(await page.evaluate(() => [...pageStale].some(row => /drawAlerts/.test(String(row[1])))), false);
 });
 
@@ -446,7 +450,7 @@ test('a row drawn on every page that threw is tried again on the next page opene
   assert.deepEqual(await liveDot(page), {stale: true, says: 'Stale', why: 'finder line broke'});
   await page.evaluate(() => { window.drawFindLocation = window.calmDraw; });
   await page.click('#nav a[data-id="businesses"]');
-  assert.deepEqual(await liveDot(page), {stale: false, says: 'LIVE', why: ''});
+  assert.deepEqual(await liveDot(page), {stale: false, says: '', why: ''});
   assert.equal(await page.evaluate(() => [...pageStale].some(row => /drawFindLocation/.test(String(row[1])))), false);
 });
 

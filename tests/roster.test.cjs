@@ -850,12 +850,11 @@ test('an unmeasured shop with cover to type gets the whole block, not the empty 
     assert.equal(await page.locator('#sp-roster button.sp-shift').count(), 8);
     assert.equal(await page.locator('#sp-roster .sp-daytabs a').count(), 7);
     assert.equal(await page.locator('#sp-roster .sp-nowplan a').count(), 2);
-    // Before an entry is pointed at, the line reads out what the week asks for.
-    assert.equal(await page.locator('#sp-roster .sp-read.sp-readout').innerText(),
-      'Cover · 96 h to set in 8 entries · 2 to hire');
-    // Two more cleaners to hire, and no locker here, so nothing is marked as
-    // new spending: the hiring line is the only thing the cover week needs.
-    assert.match(await page.locator('#sp-roster .sp-hc').innerText(), /hire 2/);
+    // The head says what the week asks for; the read-out waits for an entry
+    // to be pointed at, and the role strip leaves the hires to the head (declutter T3).
+    assert.equal((await page.locator('#sp-roster .sp-read.sp-readout').innerText()).trim(), '');
+    assert.match(await page.locator('#sp-roster').innerText(), /\+2 to hire/);
+    assert.doesNotMatch(await page.locator('#sp-roster .sp-hc').innerText(), /hire/);
     assert.equal(await page.locator('#sp-roster .sp-hc .sp-new').count(), 0);
   } finally { await page.close(); }
 });
@@ -1167,12 +1166,11 @@ test('a cover bill the row does not carry is left unsaid, not rendered as NaN', 
   } finally { await page.close(); }
 });
 
-test('a measured shop gets its name in the heading and no note at all', async () => {
+test('a measured shop gets no note at all, and its heading does not repeat the business named above it', async () => {
   const page = await shop('full');
   try {
     assert.equal(await page.locator('#sp-roster .sp-note').count(), 0);
-    assert.match(await page.locator('#sp-roster .sechead .quiet').innerText(), /HART\. Test 12/,
-      'the shop the block is about, at the top of it');
+    assert.equal(await page.locator('#sp-roster .sechead .quiet').count(), 0);
     // What the block is for stays a hover away, on the heading's own note.
     const why = await page.locator('#sp-roster .sechead [data-tip]').getAttribute('data-tip');
     assert.match(why, /BizMan \u203a Schedule/);
@@ -1559,7 +1557,9 @@ test('Build shop schedules opens its shop in Schedules, with its planner, and it
     // The shop's page summarises its week and links back to the planner; it
     // draws no second planner.
     assert.equal(await page.locator('#sitePanel #sp-roster').count(), 0);
-    assert.equal(await page.locator('#sitePanel #sp-sched [data-site-go="staffing/schedules"]').count(), 1);
+    // The header's Schedule button, the one way back from the page (declutter BP1).
+    assert.equal(await page.locator('#sitePanel .sitehead [data-site-go="staffing/schedules"]').count(), 1);
+    assert.equal(await page.locator('#sitePanel #sp-sched [data-site-go]').count(), 0);
   } finally { await page.close(); }
 });
 

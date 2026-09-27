@@ -18,15 +18,19 @@ knows are in `NEIGHBOURHOODS` in `ba_dashboard.py`.
 
 ## What's on the board
 
-The board is six pages behind one bar, and shows one page at a time. **Today** is
-the daily check; the other five are places you go on purpose. Which page you were
-on, and which view inside it, is remembered on the device and mirrored in the URL
-hash, so a live refresh and a reopened tab both land where you left off.
+The masthead holds five areas and two references, and the board shows one at a time.
+**Overview** is the daily check. **Businesses** (Results, Products & prices, Standards,
+Milestones), **Supply** (Changes, Imports, Deliveries, Production, Goods flow),
+**Staffing** (Schedules, Payroll, Staff needs) and **Expansion** (Demand, Find a location,
+Plan a factory) each open on a row of views under the masthead. The **City map** and the
+**Game guide** sit beside them. Which view you were on is remembered on the device and
+mirrored in the URL hash (`#supply/imports`), so a live refresh and a reopened tab both
+land where you left off, and the browser's Back returns to the view before.
 
-**Map** shows the city with your business footprints in green, buildings you own dashed
+The **City map** shows the city with your business footprints in green, buildings you own dashed
 blue, homes you rent in white, and a floating list of places over the right edge. Five
 chips above the map are layers that add up: your businesses, buildings you own, homes you
-rent, sites with a finding from Today (any finding of a kind still switched on, the ones
+rent, sites with a finding in Needs attention (any finding of a kind still switched on, the ones
 under the list included; board search colours a site's dot from the list alone, above the
 gate and of a kind still on), and every address (off by default, drawn as faint
 outlines). Clicking a chip switches that
@@ -57,11 +61,11 @@ addresses; 80 Third Street and 1 Airport Avenue are excluded from the geometry. 
 logistics connections or moving deliveries are shown. Below 760 px the list moves under
 the map.
 
-- **Today**: four tiles and the *Needs attention* list, nothing else. Profit yesterday
+- **Overview**: four tiles, the *Needs attention* list and *All tools*, the tasks by name. Profit yesterday
   with its seven-day average and trend, revenue with customers served, cash on hand
   with where the profit went, and the daily fixed-cost base (rent plus payroll). Net
   worth takes the fourth tile whenever the game reports it again. The Profit tile opens
-  Company › Results at the daily result. Bank debt appears in the cash tile's note when
+  Businesses › Results at the daily result. Bank debt appears in the cash tile's note when
   there is some, and on its sub line after the period ("this week · $1.89M owed on loans")
   once it is more than the last seven days' profit. Site and staff counts sit in the masthead. Sparklines cover
   the last 61 days. On a phone the tiles pair up two by two and the Next moves cards stack.
@@ -98,8 +102,8 @@ the map.
   The other amenity warnings do come from the save's cached answer, and likewise
   only where this business type's customers actually make that demand — a
   florist's and a theatre's never ask for music, so it is never reported there.
-- **Company / Results**: the company, then its chains, then one site. Results is
-  the first Company view; existing `#results` links still open it.
+- **Businesses › Results**: the company, then its chains, then one site. Results is
+  the first Businesses view; older `#results` and `#company` links still open it.
   - *Daily result*: a seven-day rolling profit line over the daily ones. Daily profit
     swings by a million between a weekend and a Tuesday purely because that is when the
     week's goods are paid for, so the rolling line is the one that says whether trading
@@ -115,7 +119,7 @@ the map.
     beside yesterday's takings. Every column sorts. Click a chain to open it, then a
     site to open its detail. Under the sites' total, *Company costs outside sites* (loan
     payments, health insurance, homes, parking; itemised on hover) leads to *Company
-    profit*, the figure on Today's Profit tile.
+    profit*, the figure on the Overview's Profit tile.
   - *Business detail*: nothing until a site is opened from the portfolio or a finding;
     then that site alone, with its profit history, cost breakdown, crew and shelves, and
     an hour-by-hour grid comparing historical customers with capacity from the
@@ -170,24 +174,27 @@ the map.
     row on top. Tapping a site follows it: what comes in above, what goes out below, the
     pipe carrying a short or stalled product coloured, its facts in words, and buttons to
     its rows and its site page. With no pipe at all the box says so and links the wiki.
-- **Growth**: planning, one view at a time.
-  - *Market demand*: what is rising, what your suppliers are short of, and a demand
+- **Expansion**: planning, one view at a time.
+  - *Demand*: what is rising, what your suppliers are short of, and a demand
     grid by neighbourhood covering both what you sell and what you don't, with office
     agencies in a band under the shop types.
-  - *Plan a chain*: machines run flat out, so the answer is the weekly raw material
+  - *Find a location*: premises to rent or take over, ranked for the business you want
+    to open (the City map's finder mode, described under the map).
+  - *Plan a factory*: machines run flat out, so the answer is the weekly raw material
     bill. Set the machines per line and get the delivery that keeps them fed, plus what
     the shops absorb and what is left over to export.
-- **Company / Products, Staff, Milestones**: the reference tables and the career
-  checklist. Staff (Payroll until issue #89) adds up, per role, the people each shop,
+- **Staffing › Schedules, Payroll, Staff needs**, and **Businesses › Products & prices,
+  Milestones**: the week of hours per business, the wages, and the career checklist.
+  Staff needs adds up, per role, the people each shop,
   office and factory still needs, then fills them: spare people moved between sites
   first, then the headhunters' candidates. Its numbers:
-  - *Needs* are the hire weeks of the plan each site follows: a shop's roster (the
+  - *Needs* are the hire weeks of the plan each site follows: a shop's schedule (the
     full-cover week for a shop nobody works yet), a factory's in the sizing the Supply
     switch shows, an office's by the office default. Each hire week is a week one new
     person could work under the game's rules (12 hours a day, 50 a week),
     so the count is people, not hours divided by 40.
   - *The office default*: three computers staffed around the clock in a building with a
-    door capacity of 50, proportionally fewer in smaller ones (at least one); every
+    building capacity of 50, proportionally fewer in smaller ones (at least one); every
     computer 08-22 on weekdays; half the computers 08-22 on weekends, the round-the-clock
     ones among them. Hours the office is shut are left out.
   - *Spare* people are a site's own staff its plan gives no hours, in a role the plan
@@ -207,19 +214,19 @@ the map.
     with a plan they get the plan's open weeks in that role; past those, and at a site
     with no plan, they join with no hours.
 
-  *Current staff* (Payroll) stays at the foot of Staff. It names two wage figures:
+  *Payroll* names two wage figures:
   "Wages a day" is every hourly wage times its assigned weekly hours over seven,
   "Booked yesterday" is what the statements recorded (the Portfolio's Wages total). There is no debt page; loans cap at $2M, which is
   beside the point at this stage.
 
-- **Wiki**: browse the game's help without loading a save, starting with a shelf
+- **Game guide**: browse the game's help without loading a save, starting with a shelf
   of categories and searchable pages. The Gift Shop guide presents setup
   checklists, products and their fixtures/suppliers, recipe flows and map links.
   Checklist ticks are planning notes, not proof that equipment is installed.
   Game help and Big Copilot's calculations are labelled separately; live company
   information belongs in the guide's Yours section.
 
-The Wiki catalogue is refreshed from the installed game when the site is built.
+The Game guide's catalogue is refreshed from the installed game when the site is built.
 It is a versioned snapshot of the game's help, which can lag runtime behaviour.
 A visitor's game update does not automatically change the hosted catalogue.
 See [Wiki data pipeline](wiki-data-pipeline.md) for extraction and provenance.
@@ -291,7 +298,7 @@ What is on the list is what moves the number:
   comes with plus what its marketing campaigns add, held at 100%. The address cannot be
   changed, so any shop selling something is either at the 100% cap or at 100% marketing.
   Anything else is campaigns not bought, and the shops it applies to read as one line with
-  each one's shortfall. The three figures sit side by side in the Portfolio's Operations
+  each one's shortfall. The three figures sit side by side in Businesses › Standards
   view, which is where the finding's *details ›* link lands.
 
 ## The weekly rhythm
@@ -716,7 +723,7 @@ the table does not know, from a newer game, is left out rather than guessed at.
 Satisfaction moves slowly, so a demand met today can still show in an unhappy employee for
 a while, and a new unmet one before their satisfaction falls.
 
-## Plan a chain
+## Plan a factory
 
 **The number that has to be right is the weekly raw material.** Two facts set the shape
 of this. A workstation runs flat out around the clock, so a line's output is fixed by how
@@ -876,7 +883,7 @@ shelves: its detail lists its fee instead, with the price, the hours billed a da
 revenue, and the same hour-by-hour grid as a shop.
 
 Neighbourhood demand lives in the Market demand view rather than being repeated per
-site, and customer scores stay in the Portfolio's Operations view.
+site, and customer scores stay on Businesses › Standards.
 
 ### What a shop's and an office's page adds
 
@@ -940,7 +947,7 @@ and dims the rest; clicking scrolls there.
   hours and the person, so a plan that changes any of those has changed the entry and the
   tick stops counting. The week the plan is about is the hours somebody can be put on: the
   *Hours / week* tile carries those hours, the entries they come in against the entries in the
-  game, and the people still to hire; the *Optimize staffing* card on Today sizes the
+  game, and the people still to hire; Staffing › Schedules sizes the
   same week. The ring counts the narrower set the board can mark, since an entry whose station or
   person the save gives no id is one to set and not one to tick, and says so where the two differ.
   The block leads with a line naming the shop and saying what the week below is for, so
@@ -1058,7 +1065,7 @@ out of the save; the floor comes from the board's own table of every building in
 and an address that table does not carry reads as a dash rather than a nought, with no
 rent per square metre to divide.
 
-A home opens from its card on the Map and nowhere else. It is in no picker and in no
+A home opens from its card on the City map and nowhere else. It is in no picker and in no
 portfolio row, because there is no trading to rank it against.
 
 ## How goods move
@@ -1223,7 +1230,7 @@ Supply's views ask the questions that matter instead:
   cause: a **top-up target too high** (a target four weeks of the busiest day deep; on a
   shelf, Shops offers the lower target to type: the busiest day for each day to the
   depot's next round, plus the margin, rounded up to 10, a change with a tick that
-  Today's Plan imports card leaves out), an
+  Overview's Calculate import amounts task leaves out), an
   **import keeping too much** (a Smart Delivery level or weekly order worth four weeks of
   what the depot feeds), or plain overstock. Nothing drawing on it is **not moving**, or,
   where your own sites sell or need the item with no plan feeding them, **Not routed**:
@@ -1449,7 +1456,7 @@ the note has the exact count).
 
 An office you run is outlined like a shop, and its fee counts as something you sell in
 *What I sell*. Clicking a neighbourhood sorts the band by the same score without mixing it
-into the shops. An office cell, in any view, does not offer *Plan a chain*, because a fee
+into the shops. An office cell, in any view, does not offer *Plan a factory*, because a fee
 has no production line to plan.
 
 The product views are for what to stock and charge in the businesses you already run:

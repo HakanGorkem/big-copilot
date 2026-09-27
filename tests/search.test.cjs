@@ -203,10 +203,10 @@ test('the wiki joins the index once its file is in, with its synonyms', async ()
   try {
     await page.keyboard.press('/');
     await typed(page, 'headhunter');
-    await page.waitForSelector('#ssRes .ss-grp[aria-label="Wiki"]');
+    await page.waitForSelector('#ssRes .ss-grp[aria-label="Game guide"]');
     await typed(page, 'hire');
-    await page.waitForSelector('#ssRes .ss-grp[aria-label="Wiki"] .ss-syn');
-    const wiki = await page.$$eval('#ssRes .ss-grp[aria-label="Wiki"] .t', ts => ts.map(t => t.textContent));
+    await page.waitForSelector('#ssRes .ss-grp[aria-label="Game guide"] .ss-syn');
+    const wiki = await page.$$eval('#ssRes .ss-grp[aria-label="Game guide"] .t', ts => ts.map(t => t.textContent));
     assert.ok(wiki.some(t => /^Headhunter/.test(t)), wiki.join(' | '));
     assert.ok((await page.evaluate(() => ssIndex.filter(e => e.g === 'wiki').length)) > 800);
     assert.deepEqual(page.errors, []);
@@ -312,13 +312,13 @@ test('"n more" opens the rest of a group and lights the first row it had kept ba
   try {
     await page.keyboard.press('/');
     await typed(page, 'gym');
-    await page.waitForSelector('#ssRes .ss-grp[aria-label="Wiki"] .ss-more');
-    const before = await page.locator('#ssRes .ss-grp[aria-label="Wiki"] .ss-row').count();
+    await page.waitForSelector('#ssRes .ss-grp[aria-label="Game guide"] .ss-more');
+    const before = await page.locator('#ssRes .ss-grp[aria-label="Game guide"] .ss-row').count();
     assert.equal(before, 4);
-    await page.click('#ssRes .ss-grp[aria-label="Wiki"] .ss-more');
-    const after = await page.locator('#ssRes .ss-grp[aria-label="Wiki"] .ss-row').count();
+    await page.click('#ssRes .ss-grp[aria-label="Game guide"] .ss-more');
+    const after = await page.locator('#ssRes .ss-grp[aria-label="Game guide"] .ss-row').count();
     assert.ok(after > before);
-    assert.equal(await page.locator('#ssRes .ss-grp[aria-label="Wiki"] .ss-row').nth(4).evaluate(el => el.classList.contains('on')), true);
+    assert.equal(await page.locator('#ssRes .ss-grp[aria-label="Game guide"] .ss-row').nth(4).evaluate(el => el.classList.contains('on')), true);
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
 });
@@ -360,8 +360,8 @@ test('on a phone the masthead has the icon, and the palette is the whole screen,
     assert.deepEqual([box.x, box.y, box.width, box.height], [0, 0, page_w, 844]);
     assert.equal(await page.locator('#ssPal .ss-cancel').isVisible(), true);
     await typed(page, 'gym');
-    await page.waitForSelector('#ssRes .ss-grp[aria-label="Wiki"]');
-    assert.equal(await page.locator('#ssRes .ss-grp[aria-label="Wiki"] .ss-row').count(), 3);
+    await page.waitForSelector('#ssRes .ss-grp[aria-label="Game guide"]');
+    assert.equal(await page.locator('#ssRes .ss-grp[aria-label="Game guide"] .ss-row').count(), 3);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.getBoundingClientRect().width), 'nothing scrolls sideways');
     await page.click('#ssPal .ss-cancel');
     assert.equal(await page.locator('#ssPal').isHidden(), true);
@@ -776,10 +776,10 @@ test('a redraw keeps a lit question or "n more" row lit, so Enter does what it s
     await page.evaluate(() => { ssIndex = ssBuild(); ssRender(true); });
     assert.equal(await lit(page), 'Is my factory fed?');
     await typed(page, 'gym');
-    await page.waitForSelector('#ssRes .ss-grp[aria-label="Wiki"] .ss-more');
-    await page.evaluate(() => ssPick(+document.querySelector('#ssRes .ss-grp[aria-label="Wiki"] .ss-more').dataset.k));
+    await page.waitForSelector('#ssRes .ss-grp[aria-label="Game guide"] .ss-more');
+    await page.evaluate(() => ssPick(+document.querySelector('#ssRes .ss-grp[aria-label="Game guide"] .ss-more').dataset.k));
     await page.evaluate(() => ssDataChanged());
-    assert.equal(await page.locator('#ssRes .ss-grp[aria-label="Wiki"] .ss-more').evaluate(el => el.classList.contains('on')), true);
+    assert.equal(await page.locator('#ssRes .ss-grp[aria-label="Game guide"] .ss-more').evaluate(el => el.classList.contains('on')), true);
     await typed(page, '');
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowDown');

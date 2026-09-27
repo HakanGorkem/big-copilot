@@ -193,3 +193,140 @@ Validation, in the foreground, Edge, `--test-concurrency=2`, on the final source
 | `python -m unittest tests.test_css_integrity tests.test_doc_registries tests.test_release_latest tests.test_wiki_prices tests.test_payload_snapshot` | 26 tests, OK |
 | `python -m unittest discover -s tests -p "test_i18n*.py"` | 35 tests, OK |
 | `python build_web.py`, then `python build_web.py --check` | exit 0, "web/ is up to date" |
+
+## Final fixes (27 September 2026)
+
+Two sets of changes on `3e6f160`, which holds all three accepted chunks:
+
+- the findings of the final reviews: Fable's generic review, and astra's two QA runs;
+- Peter's declutter pass.
+
+The declutter pass is written up page by page, with before and after screenshots, in
+[`docs/ui-declutter.md`](ui-declutter.md).
+
+### Review findings
+
+Each SHOULD has a test that fails on a `git archive 3e6f160` copy (with its own `web/`) and
+passes now. The failures on `3e6f160` are the ones each fix is about:
+
+- the hire line reads `[object Object] of 2 seen`;
+- the checklist has `[24]` hours steps where `[]` is expected;
+- Why's uses read `2,250` where `8,400` is expected;
+- the preview keeps 3 lines where 2 remain;
+- `history.length` is 2 where 3 is expected;
+- Back returns MON / plan instead of SUN / now;
+- `All shops` offers `Apply 1 import amount`.
+
+| # | Finding | Fix | Test (fails on `3e6f160`) |
+| --- | --- | --- | --- |
+| 1 | astra2 SHOULD: an import figure typed on full production, then shop demand on screen: Why was headed "planned for full production" but computed on shop demand; Changes and the copy asked for 4 h and 24 h on the same Beer machines | Why is built from the figure's own basis (`setting.why` from `szFactFor(…, ownBasis)`): its use, margin, rounding, and "With {the basis on screen} instead". A dependency planned on the other basis that asks other hours than the basis on screen plans for the same machines (`sbDeps()` now carries `needNow`) is no step. The import's row says so (`sb.ck.dep.clash`); the card has a note (`sb.card.clash*`); the manual steps skip it. The copy's header reads "…the factory hours are this basis's" (`sb.ck.copy.mixed2`) | `progress`: "an import figure typed on full production, then shop demand on screen: Why explains full production, and the machines get one hours step" (the day-47 fixture: Why's uses 8,400, not 2,250; at most one Beer hours step, never 24 h on shop demand); "a figure typed under one basis keeps it after a switch; the hours it assumes are no step where the basis on screen plans others" (rewritten: it had asserted the conflicting step) |
+| 2 | astra SHOULD: Schedules lost the day and the now / plan view on Back | `schedDay` and `schedView` are kept on the entry with the business (`nxSch`) and put back after every draw (`schedApplyView()`); another business resets them | `shell_routes`: "Schedules keeps the business, its day and its now / plan view through Back, Forward and a reload" |
+| 3 | Fable SHOULD 1: Back skipped a view inside an area (a Changes row, Goods flow's "See its rows", search to another view of the area) | `reveal()` names the route (`HOST_ROUTES`) when it changes the view of the page on screen, so `showPage()` pushes an entry instead of `showSub()` replacing it | `shell_routes`: "a Changes row opens its view as a new visit: Back returns to Changes; a section of another view does the same" |
+| 4 | Fable SHOULD 2 + astra LOW: old place names and banned words on screen | Every label reworded, board-wide sweep included (list in `docs/ui-declutter.md`, "Wording fixes"); `f.uniform.gaps` moves the `link.json` payload snapshot | `search`, `finder`, `wiki-guides`, `game_link_write` assert the new words |
+| 5 | astra LOW: "[object Object] of 2 seen" | `PG_CHECK.hire` returns `seenCount`; `pgEvaluate()` keeps `seen` for its clock | `progress`: the hire test asserts "1 of 2 seen at their sites so far" |
+| 6 | astra2 LOW: the bulk Apply on Changes ignored the scope | Apply follows the scope. One site: its own lines. A kind of site holding none: no button. A kind holding some: every line, labelled "…, whole company" (`sb.cw.apply.whole*`), since each importer's cap is shared | `game_link_write` (web target): "Changes: the bulk import Apply follows the scope; a scope with no import line has none" |
+| 7 | LOWs | See the list below | `progress` (preview after a mark, v2 kept), `businesses_expansion` (office price tips) |
+
+The LOWs, in order:
+
+- **Arrival strip from a business page.** It names the business once, on its Back button, and
+  after a tab switch its way back opens the business's page, not the list.
+- **The office footnote on Products & prices.** Replaced by per-column tips; an office's tips
+  speak of billed hours (declutter BV7).
+- **The Changes copy preview.** It repaints on every mark (`sbPaintChangesTop()`).
+- **"Your changes".** It arrives from Needs attention, and the way back puts the keyboard on
+  that line.
+- **The version 2 import store.** It is kept after migration, for a rollback.
+- **The privacy notice** names the typed import figures, the marks and the record of game-link
+  writes (14 game days).
+- **README and `docs/dashboard-reference.md`** describe the areas and views: Overview,
+  Businesses, Supply, Staffing, Expansion (Demand, Find a location, Plan a factory), City map,
+  Game guide. "Plan a chain" is gone.
+- **Fable NITs:**
+  - `PAGE_DRAWS` rows carry named tags (`staff`, `schedules`) instead of regexes over their
+    source;
+  - `pgBoard()` reads the store once;
+  - the empty `{when}` of `sb.card.do.smart` is gone;
+  - the dead row keydown on Changes is removed (the row's own button is the keyboard target);
+  - `rec.expect.unit` is escaped;
+  - the `#pageStaffing` comment is fixed;
+  - `#nav` and `#phoneNav` keep one label, since CSS shows only one at a time.
+
+### Declutter pass
+
+All 121 audit items, with Peter's eight decisions (E5, O13, O11, S8, S6, M2, X5, S5). Section
+15 of the audit:
+
+- the vocabulary item and E7's blank numbers are fixed;
+- the rest are listed as not done, below.
+
+Tests that asserted removed text now assert the structure or what remains; none lost the
+behaviour it covered (see "Tests" in `docs/ui-declutter.md`).
+
+### Translations
+
+For every new and reworded key, drafts in German, Spanish, French, Portuguese and Russian:
+
+- gpt-6-sol for 97 to 113 keys a language (`import-draft --model gpt-6-sol`);
+- Opus 5.5 for `app.menu.tip2`.
+
+All are marked for native review. `status` gives 0 missing, 0 stale and 0 mismatched in all
+five. The removed keys are orphans.
+
+### Files
+
+- **Source:**
+  - `ba_dashboard.py`;
+  - `build_web.py`;
+  - `web/app.js`, `web/community.js`, `web/community.css`;
+  - `web/map.js`, `web/wiki.js`, `web/privacy.html`;
+  - `tools/wiki_sample.json`.
+- **Translations:** `i18n/{de,es,fr,pt,ru}.json`, `.base.json` and `.ai.json`.
+- **Docs:**
+  - `README.md`;
+  - `docs/dashboard-reference.md`;
+  - `docs/ui-chunk-3-handoff.md`;
+  - new: `docs/ui-declutter.md`.
+- **Tests:**
+  - `businesses_expansion`, `calm_refresh`, `community-browser`, `findability`, `finder`;
+  - `game_link_write`, `i18n_layout`, `import_routes`, `import_setto`, `map`, `market`;
+  - `milestones`, `progress`, `roster`, `search`, `shell_routes`, `site_panel`;
+  - `staff_hire`, `today_layout`, `wiki-guides`, `wiki` (all `.test.cjs`);
+  - `tests/test_footer.py`, `tests/fixtures/payload_snapshot/link.json`.
+- **Generated:**
+  - `web/index.html`, `web/py/ba_dashboard.py`, `web/version.json`;
+  - `web/i18n/*.json`, `web/wiki-data.json`.
+
+### Validation
+
+In the foreground, Edge, `--test-concurrency=2`, on the final source:
+
+| Command | Result |
+| --- | --- |
+| The new tests on a `git archive 3e6f160` copy | the 7 fail as described above |
+| `python build_web.py` | exit 0 |
+| `python -m unittest discover -s tests` | 1371 tests, OK, 1 skipped |
+| `node --test tests/*.test.cjs` (CLI target) | 1259 tests, 1258 pass, 0 fail, 1 skipped |
+| `BOARD_TARGET=web`: `shell_routes`, `search`, `businesses_expansion`, `progress`, `import_routes`, `game_link_write`, `release`, `news`, `update`, `calm_refresh`, `i18n_layout` | 306 tests, 305 pass, 0 fail, 1 skipped |
+| `python -m unittest tests.test_privacy_promises tests.test_footer tests.test_release_latest` | 19 tests, OK |
+| `python build_web.py --check` | "web/ is up to date" |
+
+After the last key's translation (a `web/i18n` change only), the following were rerun: the
+`test_i18n*` Python tests, `tests.test_web_fresh`, the Node `i18n_catalogue` and `i18n_runtime`
+tests (35 of 35), and `--check`.
+
+### Not done
+
+- **The news strip** still announces Big Copilot Link 0.2.0 (audit section 15, item 2). A new
+  announcement is Peter's content to write; it is not a declutter.
+- **Other audit section 15 items, left for Peter:**
+  - the CLI title "Recover #2" from an autosave (item 4);
+  - whether "→ another counter" and "another computer workstation" count as capacity advice
+    (item 6);
+  - the untranslated hiring block (item 7).
+- **`docs/dashboard-reference.md`** still uses the scheduling words AGENTS.md rules out, in its
+  technical sections. Only its navigation was rewritten, as the brief asked.
+- **The status line.** Its words stay in the markup, out of sight in the ok and busy states, so
+  that the page's `role="status"` and the tests that wait on "Up to date" keep working. "built
+  in" is among them.
+- **No commit.** The coordinator commits.

@@ -166,14 +166,15 @@ label issue.
 
 ## What's on the dashboard?
 
-| Page | Use it for |
-| --- | --- |
-| Today | Profit, cash and issues needing attention. |
-| Company | Results, trends and business details, plus product totals, payroll and milestones. |
-| Supply | Import orders, replenishment checklists, stock checks and goods flows. |
-| Growth | Market demand by neighbourhood and business type, and factory planning. |
-| Map | The city with your premises, findings and owned buildings as layers; pick a place for its card. |
-| Wiki | Search the game's help, browse categories, and explore the Gift Shop's setup, products, recipes and suppliers. No save required. |
+| Area | Views | Use it for |
+| --- | --- | --- |
+| Overview | | Profit, cash, the findings that need attention, and every tool by task. |
+| Businesses | Results, Products & prices, Standards, Milestones | Company results and finances, each business's page, prices against the market, satisfaction and amenities, the game's milestones. |
+| Supply | Changes, Imports, Deliveries, Production, Goods flow | The settings to change, import amounts, delivery targets, factory running hours and the route goods take. |
+| Staffing | Schedules, Payroll, Staff needs | Each business's week of hours, wages by role, staff demands and whom to hire. |
+| Expansion | Demand, Find a location, Plan a factory | Market demand by neighbourhood and business type, premises to rent, and factory planning. |
+| City map | | The city with your premises, findings and owned buildings as layers; pick a place for its card. |
+| Game guide | | Search the game's help, browse categories, and explore each business type's setup, products, recipes and suppliers. No save required. |
 
 See the [dashboard reference](docs/dashboard-reference.md) for calculations,
 assumptions and detailed views. Recommendations are estimates to apply in-game;

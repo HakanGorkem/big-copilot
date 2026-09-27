@@ -507,10 +507,11 @@ test('a change of language writes the strip\'s file line again, for a save and f
   const {page, errors} = await shell(t, {remembered: true});
   const meta = () => page.locator('#srcMeta').textContent();
   const folder = await meta();
-  assert.match(folder, / · autosave from .* · built in \d+\.\d s · watching$/);
+  // Watching is the menu's Watch button's to say, not the strip's (declutter S1).
+  assert.match(folder, / · autosave from .* · built in \d+\.\d s$/);
   await page.evaluate(table => ttSetTable('de', table), TABLE);
   const pseudo = await meta();
-  assert.match(pseudo, /\[áútóšávé fróm .*\] · \[búílt íñ \d+,\d š·+\] · \[wátçhíñg·+\]$/, pseudo);
+  assert.match(pseudo, /\[áútóšávé fróm .*\] · \[búílt íñ \d+,\d š·+\]$/, pseudo);
   await page.evaluate(() => ttSetTable('en', null));
   assert.equal(await meta(), folder);
   // Linked to the game: the line names the game's day and the link.

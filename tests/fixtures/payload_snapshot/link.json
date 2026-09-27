@@ -30,7 +30,7 @@
    "level": "warn",
    "site": "HART. Gifts",
    "siteKey": "ba:street_secondavenue#10",
-   "text": "No uniform set for ⟦ba:skill_customerservice|Customerservice⟧; customers judge every role on a station shift here",
+   "text": "No uniform set for ⟦ba:skill_customerservice|Customerservice⟧; customers judge every role staffed at a station here",
    "unit": "",
    "worth": null
   },
@@ -128,7 +128,7 @@
    "level": "warn",
    "site": "HART. Corner",
    "siteKey": "ba:street_broadway#2",
-   "text": "No uniform set for ⟦ba:skill_customerservice|Customerservice⟧; customers judge every role on a station shift here",
+   "text": "No uniform set for ⟦ba:skill_customerservice|Customerservice⟧; customers judge every role staffed at a station here",
    "unit": "",
    "worth": null
   },
@@ -341,7 +341,7 @@
     "level": "warn",
     "site": "HART. Gifts",
     "siteKey": "ba:street_secondavenue#10",
-    "text": "No uniform set for ⟦ba:skill_customerservice|Customerservice⟧; customers judge every role on a station shift here",
+    "text": "No uniform set for ⟦ba:skill_customerservice|Customerservice⟧; customers judge every role staffed at a station here",
     "unit": "",
     "worth": null
    },
@@ -439,7 +439,7 @@
     "level": "warn",
     "site": "HART. Corner",
     "siteKey": "ba:street_broadway#2",
-    "text": "No uniform set for ⟦ba:skill_customerservice|Customerservice⟧; customers judge every role on a station shift here",
+    "text": "No uniform set for ⟦ba:skill_customerservice|Customerservice⟧; customers judge every role staffed at a station here",
     "unit": "",
     "worth": null
    },

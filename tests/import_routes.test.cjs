@@ -66,6 +66,8 @@ const rows = (page, sec) => page.$$eval(`#${sec} tr[data-slug]`, trs => trs.map(
   }),
   box: r.querySelector('input.imp-in')?.value ?? null,
   tick: !!r.querySelector('.sb-tick'),
+  // The status word's sentence is its tip (declutter G4).
+  tip: r.querySelector('.st .sb-v')?.dataset.tip || '',
 })));
 const bySlug = async (page, sec, s) => Object.fromEntries((await rows(page, sec))
   .filter(r => s === undefined || r.s === String(s)).map(r => [r.slug, r]));
@@ -91,20 +93,23 @@ test('Imports and Deliveries list every depot line, with the import lines\' Set 
     assert.deepEqual(Object.values(hub).filter(r => r.box !== null).map(r => r.slug).sort(),
       ['bags', 'butter', 'coffee', 'flour', 'milk', 'sugar']);
     // The lines' 11,200 and the other sites' 2,800; 24/7 puts the margin on the sites' part only.
-    assert.match(hub.flour.cells[WH.uses], /^14,000 full$/);
+    assert.match(hub.flour.cells[WH.uses], /^14,000$/);
     assert.equal(hub.flour.box, '14420');
-    assert.match(hub.flour.cells[WH.order], /raise/);
+    // The arrow to the box says raise: no chip says it again (declutter U12).
+    assert.doesNotMatch(hub.flour.cells[WH.order], /raise/);
     assert.match(hub.sugar.cells[WH.order], /resume import/);
     assert.equal(hub.sugar.box, '2800', 'a paused contract resumes as it stands');
     assert.match(hub.bags.cells[WH.status], /^idle/);
     assert.match(hub.butter.cells[WH.status], /^new/);
     assert.match(hub.coffee.cells[WH.order], /could lower/);
-    assert.match(hub.soda.cells[WH.status], /not routed: Garden Gym 53\/day/);
+    assert.match(hub.soda.tip, /Not routed: Garden Gym 53\/day/);
     // Uses / week carries Python's split on hover.
     const tip = await page.locator('#secImports tr[data-slug="coffee"] .sb-uses').getAttribute('data-tip');
     assert.match(tip, /shops 420 a week/);
+    // The verdict counts only what no tab count or status column says (declutter U6).
     const verdict = await page.locator('#secImports .sb-verdict').textContent();
-    assert.match(verdict, /inside the margin/);
+    assert.match(verdict, /reach their next delivery with room/);
+    assert.doesNotMatch(verdict, /inside the margin|fall short/);
     // Soda is held and imported by nobody: a delivery, on Deliveries, not an import.
     assert.ok(!(await bySlug(page, 'secImports', 0)).soda);
     assert.match(await page.locator('#secDeliveries').textContent(), /2 lines sit idle/);
@@ -181,7 +186,9 @@ test('Changes counts the marks on every view, and each view counts what is left'
     assert.match(await page.locator('#secImports tr[data-slug="flour"]').getAttribute('class'), /sb-done/);
     // The same mark shows on Changes, as Marked by you.
     assert.match(await page.locator('#secChanges .sbc-row.sb-done').first().textContent(), /Marked by you/);
-    assert.equal(await page.locator('#sbcTop [data-sb-copy="remaining"] small').textContent(), '7');
+    // The counter says how far along the list is; Copy remaining carries no second count.
+    assert.match(await page.locator('#sbcTop .sbc-n').textContent(), /^3\s*of 10/);
+    assert.equal(await page.locator('#sbcTop [data-sb-copy="remaining"] small').count(), 0);
     // The ticks are kept on the device, per character, under the key the old checklist used.
     const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('ba_order_marks_v1:r8-fixture')));
     assert.equal(kept.length, 3);
@@ -228,8 +235,9 @@ test('Needs a change keeps the rows with a change or a word worth reading', asyn
     const shops = await shelves();
     // The no-plan gym and the three idle paper-bag shelves; the covered and new shelves wait under Everything.
     assert.deepEqual(shops.map(r => `${r.s}:${r.slug}`).sort(), ['2:bags', '3:bags', '4:bags', '4:soda']);
-    assert.match(await page.locator('#secDeliveries .sb-more').first().textContent(), /3 more shelves are fine/);
-    await page.locator('#secDeliveries [data-sb-mode="all"]').first().click();
+    // No line counts the fine ones: Everything, in the view's one row, lists them.
+    assert.equal(await page.locator('#secDeliveries .sb-more', {hasText: 'fine'}).count(), 0);
+    await page.locator('#secDeliveries .sbv-mode [data-sb-mode="all"]').click();
     assert.equal((await shelves()).length, 7);
     assert.equal(await page.locator('#secDeliveries .sbv-mode a.on').textContent(), 'Everything');
   } finally { await page.close(); }
@@ -279,14 +287,17 @@ test('a line short of its hours is a change at full production; under shop deman
     assert.ok(cake.tick);
     // Line, Machines, Hours a day, Makes, Ships, Held, Status after the tick.
     assert.match(cake.cells[3], /^12 24 h$/);
-    assert.match(cake.cells[7], /^short staffed 12 h of the 24 hours a day it needs, planned for full production$/);
+    assert.match(cake.cells[7], /^short$/);
+    assert.match(cake.tip, /^Staffed 12 h of the 24 hours a day it needs\./);
+    assert.doesNotMatch(cake.tip, /planned for full production/);
     assert.match(await counted(cap), /0 of 10/);
   } finally { await cap.close(); }
   const dem = await board(fixture(), {mode: 'dem'});
   try {
     const cake = (await bySlug(dem, 'secProduction', 1)).cake;
     assert.equal(cake.tick, false);
-    assert.match(cake.cells[7], /^covered needs 10 of its 12 hours: fewer would do$/);
+    assert.match(cake.cells[7], /^covered$/);
+    assert.match(cake.tip, /^Needs 10 of its 12 hours: fewer would do\./);
     assert.ok((await actions(dem)).every(a => a.kind !== 'Factory run hours'));
     // Bread feeds nothing a shop draws: Demand sizes it round the clock too.
     assert.match((await bySlug(dem, 'secProduction', 1)).bread.cells[3], /24 h/);
@@ -306,14 +317,17 @@ test('under Demand the Factories verdict says, plainly, that fewer hours and wor
   const page = await board(fixture(), {mode: 'dem'});
   try {
     const verdict = await text(page, '#secProduction .sb-verdict');
-    assert.match(verdict, /Current schedules cover the needed hours; 1 line could run fewer hours and 2 factory workers could go \(factory staffing below\)/);
+    // Workers who could go are the staffing block's to count, below the lines.
+    assert.match(verdict, /Current schedules cover the needed hours; 1 line could run fewer hours\./);
+    assert.doesNotMatch(verdict, /could go|factory staffing below/);
     assert.doesNotMatch(await page.locator('#secProduction .sb-verdict b').allTextContents().then(t => t.join(' ')), /could/);
   } finally { await page.close(); }
   // At 24/7 the bakery has to hire: named, and no "Current rosters cover".
   const cap = await board(fixture());
   try {
     const verdict = await text(cap, '#secProduction .sb-verdict');
-    assert.match(verdict, /2 to hire at .*Bakery Factory \(factory staffing below\)/);
+    // The hires are the staffing block's own figure.
+    assert.doesNotMatch(verdict, /to hire|factory staffing below/);
     assert.doesNotMatch(verdict, /Current schedules cover/);
   } finally { await cap.close(); }
   // Spares are counted, never netted against another factory's hires.
@@ -322,7 +336,10 @@ test('under Demand the Factories verdict says, plainly, that fewer hours and wor
     headcount: {needed: 700, min: 14, have: 10, spare: 0, hire: 4}, delta: {workers: 4, perDay: 720}});
   const mixed = await board(data, {mode: 'dem'});
   try {
-    assert.match(await text(mixed, '#secProduction .sb-verdict'), /2 factory workers could go and 4 to hire at/);
+    assert.doesNotMatch(await text(mixed, '#secProduction .sb-verdict'), /could go|to hire/);
+    // Spares are counted per factory, never netted against another factory's hires.
+    assert.match(await text(mixed, '#sbStaff'), /2 could go: the week needs/);
+    assert.match(await text(mixed, '#sbStaff'), /All factories:/);
   } finally { await mixed.close(); }
   // No staffing card, no pointer to it.
   delete data.factoryStaffing;
@@ -340,7 +357,7 @@ test('a line with a day off reads its week, and names the thin day', async () =>
   const page = await board(data);
   try {
     const cake = (await bySlug(page, 'secProduction', 1)).cake;
-    assert.match(cake.cells[7], /staffed 12 \(Sun 0 h\) of the 24 hours a day it needs/);
+    assert.match(cake.tip, /Staffed 12 \(Sun 0 h\) of the 24 hours a day it needs/);
     const row = await page.evaluate(() => sbData().rows.find(r => r.kind === 'Factory run hours'));
     assert.match(row.reason, /the schedule has them 12 \(Sun 0 h\)/);
   } finally { await page.close(); }
@@ -432,7 +449,7 @@ test('the Deliveries search entry opens Deliveries, where every daily top-up and
     assert.equal(await page.evaluate(() => route), 'supply/deliveries');
     // Shops, a second-tier depot and the factory's inputs, grouped by where the goods arrive.
     assert.deepEqual(await page.$$eval('#secDeliveries .sbv-group > h3', hs => hs.map(h => h.textContent.trim())),
-      ['Shops · daily top-ups and wholesale', 'Warehouses · second tier', 'Factories · inputs']);
+      ['Shops', 'Warehouses']);
   } finally { await page.close(); }
 });
 
@@ -441,10 +458,12 @@ test('Staffing for factory lines reads the plan for the sizing on screen', async
   try {
     const card = await text(cap, '#sbStaff');
     assert.match(card, /672 machine-hours a week; you have 12 factory workers hire \+2/);
-    assert.match(card, /hire 2: the week needs 14/);
+    // The hire chip says the hires once; no line under it says them again.
+    assert.doesNotMatch(card, /hire 2: the week needs/);
     assert.match(card, /\+\$360 a day in wages/);
     assert.match(card, /Cake .*12 24 h 00–12 12 h 12–24 12 h × 2 machines/);
-    assert.match(card, /Full production: \+2 factory workers \+\$360 a day/);
+    // One factory: no totals under it restating its own figures.
+    assert.doesNotMatch(card, /Full production:|All factories:/);
     // The factory's own page has its lines, not a staffing block: the link says so and lands there.
     const open = cap.locator('#sbStaff a[data-sb-lines]');
     assert.equal(await open.textContent(), 'Open factory page ›');
@@ -460,7 +479,9 @@ test('Staffing for factory lines reads the plan for the sizing on screen', async
     // The fewest workers that cover the week are placed; the rest could go.
     assert.match(card, /2 could go: the week needs 10/);
     assert.match(card, /Cake .*12 10 h 06–16 10 h × 2 machines/);
-    assert.match(card, /Shop demand: −2 factory workers −\$360 a day/);
+    // One factory: its own row says it, with no totals line under it.
+    assert.match(card, /2 could go: the week needs 10 −\$360 a day in wages/);
+    assert.doesNotMatch(card, /Shop demand:/);
     // The day strip starts where the run does: Cake runs from 06:00.
     const cells = await dem.$$eval('#sbStaff .sb-sln .sb-day', ds => [...ds[0].children].map(i => i.className));
     assert.deepEqual([cells[5], cells[6], cells[15], cells[16]], ['', 'on', 'on', 'slack']);
@@ -531,7 +552,8 @@ test("a factory's paused contract the top-up falls short without is a change; on
       return await page.evaluate(() => {
         const own = [...document.querySelectorAll('#secImports .sb-part')].find(p => p.textContent === 'Its own imports');
         const table = own && own.nextElementSibling;
-        return {milk: table ? table.querySelector('tr[data-slug="milk"]')?.textContent.replace(/\s+/g, ' ') : null,
+        const tr = table ? table.querySelector('tr[data-slug="milk"]') : null;
+        return {milk: tr ? `${tr.textContent} ${[...tr.querySelectorAll('[data-tip]')].map(x => x.dataset.tip).join(' ')}`.replace(/\s+/g, ' ') : null,
                 tick: !!(table && table.querySelector('tr[data-slug="milk"] .sb-tick')),
                 acts: sbData().rows.filter(a => a.item === 'Milk' && a.kind === 'Weekly imports').map(a => [a.kind, !!a.paused])};
       });
@@ -626,7 +648,8 @@ test('a recipe named in this browser reads new until the next refresh', async ()
   const page = await board(data, {names: {'r-muffin': 'muffin'}});
   try {
     const f = await bySlug(page, 'secProduction', 1);
-    assert.match(f.butter.cells.at(-1), /^new named in this browser/);
+    assert.match(f.butter.cells.at(-1), /^new$/);
+    assert.match(f.butter.tip, /named in this browser/i);
     // Its top-up has no figure until Python judges it, so nothing to set.
     assert.equal(f.butter.tick, false);
     assert.ok((await actions(page)).every(a => a.item !== 'Butter'));
@@ -644,7 +667,7 @@ test('an unnamed line is on Production with its recipe picker', async () => {
   const page = await board(data, {which: 'changes'});
   try {
     assert.equal(await page.locator('#secProduction select.linepick').count(), 1);
-    assert.match(await page.locator('#secChanges .sbc-why').textContent(), /1 recipe to name/);
+    assert.match(await page.locator('#sbcTop .sbc-n').getAttribute('data-tip'), /1 recipe to name/);
     assert.match(await page.locator('#secProduction .sb-verdict').textContent(), /1 machine without usable recipe details/);
   } finally { await page.close(); }
 });

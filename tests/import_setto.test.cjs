@@ -118,7 +118,9 @@ test('the table reads a Smart Delivery level apart from a weekly order', async (
     // Sugar's level is short of its week: the box holds the suggestion.
     assert.equal(rows.Sugar.box, '1400');
     assert.equal(rows.Sugar.changed, true);
-    assert.match(rows.Sugar.verdict, /raise/);
+    // Short: the status says so; the arrow to the box says raise (declutter U12).
+    assert.match(rows.Sugar.verdict, /short/);
+    assert.doesNotMatch(rows.Sugar.verdict, /raise/);
     // A high level only holds stock: covered, never "could lower".
     assert.equal(rows.Flour.box, '5000');
     assert.equal(rows.Flour.changed, false);
@@ -208,7 +210,8 @@ for(const smart of [true, false]){
         // Said at its depot, never summed across depots into a level none has.
         assert.match(water.tip, /^Smart Delivery keeps 3,000 in stock at 1 Depot, from /);
         assert.doesNotMatch(water.tip, /a week on order/);
-        assert.match(water.cell, /^3,000 a week at most, Smart Delivery/);
+        // "A week at most" is the column header's tip; the row keeps a short mark (declutter E9).
+        assert.match(water.cell, /^3,000 Smart/);
       } else {
         assert.match(water.tip, /^3,000 a week on order now from /);
         assert.doesNotMatch(water.cell, /Smart Delivery/);
@@ -294,7 +297,7 @@ for(const value of [900, 2000]){
     try{
       const sugar = (await cells(page)).find(r => r.item === 'Sugar');
       assert.deepEqual([sugar.box, sugar.changed], ['1400', true]);
-      assert.match(sugar.verdict, /raise/);
+      assert.match(sugar.verdict, /short/);
       assert.equal(await page.evaluate(key => localStorage.getItem(key), KEY), '{}');
     } finally { await page.close(); }
   });

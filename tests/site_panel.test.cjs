@@ -1264,8 +1264,10 @@ test('an empty depot and an unreadable factory still draw', async () => {
     assert.equal(await bare.locator('#sp-stock').count(), 1);
     assert.equal(await bare.locator('#sp-stock tbody tr').count(), 0);
     assert.equal((await bare.locator('#sp-stock .quiet').innerText()).trim(), 'No stock');
-    assert.equal((await bare.locator('#sp-feeds .quiet').innerText()).trim(), 'No feeds');
-    assert.match(await bare.locator('#sp-tiles .sstat', {hasText: 'Thinnest'}).innerText(), /—/);
+    // Empty blocks and tiles are left out (declutter BP12): no Feeds, no Thinnest.
+    assert.equal(await bare.locator('#sp-feeds').count(), 0);
+    assert.equal(await bare.locator('#sp-tiles .sstat', {hasText: 'Thinnest'}).count(), 0);
+    assert.equal(await bare.locator('#sp-tiles .sstat', {hasText: 'Feeds'}).count(), 0);
     assert.match(await bare.locator('#sp-tiles .sstat', {hasText: 'On the floor'}).innerText(), /—/);
   } finally { await bare.close(); }
 
@@ -1572,14 +1574,14 @@ async function home(row = HOME) {
   return page;
 }
 
-test('a home draws its four tiles and none of the shop blocks', async () => {
+test('a home draws its three tiles and none of the shop blocks', async () => {
   const page = await home();
   try {
     const tiles = await page.$$eval('#sitePanel .sp-hometiles .sstat', ts => ts.map(t => [
       t.querySelector('.lab').textContent, t.querySelector('.v').textContent]));
+    // Rent a day, never a week as well: the week is only seven of them.
     assert.deepEqual(tiles, [
       ['Rent / day', '$1,150'],
-      ['Rent / week', '$8,050'],
       ['Size', '204m²'],
       ['Per m²', '$5.64/day'],
     ]);
@@ -1608,22 +1610,20 @@ test('a flat the building table does not carry reads as a dash, never a zero', a
   const page = await home({...HOME, m: null, hood: null});
   try {
     const tiles = await page.$$eval('#sitePanel .sp-hometiles .sstat .v', vs => vs.map(v => v.textContent));
-    assert.deepEqual(tiles, ['$1,150', '$8,050', '—', '—']);
+    assert.deepEqual(tiles, ['$1,150', '—', '—']);
     // No neighbourhood is no bullet and no second half of the line.
     assert.equal(await page.textContent('#sitePanel .sitehead .sub'), 'Home');
     assert.equal(await page.locator('#sitePanel .sitehead .bullet').count(), 0);
   } finally { await page.close(); }
 });
 
-test('the week is seven times the day the panel shows, to the dollar', async () => {
-  // A fractional rent rounded twice makes the two tiles disagree: $11 a day
-  // against $74 a week. The week is seven times the tile above it.
-  for(const [rent, day, week, perM] of [[10.5, '$11', '$77', '$0.05/day'],
-                                        [34.6, '$35', '$245', '$0.17/day']]) {
+test('a fractional rent reads as whole dollars a day, and the rate per m² from the rent itself', async () => {
+  for(const [rent, day, perM] of [[10.5, '$11', '$0.05/day'],
+                                  [34.6, '$35', '$0.17/day']]) {
     const page = await home({...HOME, rent});
     try {
       const tiles = await page.$$eval('#sitePanel .sp-hometiles .sstat .v', vs => vs.map(v => v.textContent));
-      assert.deepEqual(tiles, [day, week, '204m²', perM], `rent ${rent}`);
+      assert.deepEqual(tiles, [day, '204m²', perM], `rent ${rent}`);
     } finally { await page.close(); }
   }
 });
@@ -1683,19 +1683,14 @@ const cellsWith = (page, cls) => page.evaluate(cls => {
 const hoursOf = (days, from, to) =>
   days.flatMap(wd => Array.from({length: to - from}, (_, k) => `${wd}:${from + k}`));
 
+/* The overstaffed week is the finding row's to tell on the page (declutter
+   BP5): no chip under the grid says it again. The row lights the week, and
+   arrived from it the read-out tells the week as the Overview line does. */
+const idleArrive = (page, row, fx = IDLE) => page.evaluate(([key, id]) => openSite(key, false, id), [fx.grid.key, row.id]);
 test('the hours block tells the overstaffed week the Today line tells', async () => {
   const page = await idleSite();
   try {
-    const worth = await page.evaluate(w => fmt(w), IDLE.row.worth);
-    const chip = page.locator('#sp-hours .sp-hchip.idle');
-    assert.equal((await chip.textContent()).trim(),
-      `72 staff-hours a week · 3 fitness planning boards Mon-Wed 8-20 · ${worth}/day of wages`);
-    // The sentence is the Today line's, less the site the page already names.
-    assert.equal(await chip.getAttribute('data-tip'),
-      `${IDLE.row.text.replace(/^Pump runs /, '')}; about ${worth}/day of wages.`);
-    // The chip lights the week's hours, all three days of them.
-    await chip.hover();
-    assert.deepEqual(await cellsWith(page, 'sp-lit'), hoursOf([1, 2, 3], 8, 20));
+    assert.equal(await page.locator('#sp-hours .sp-hchip.idle').count(), 0, 'the finding row says it; no chip repeats it');
     // Not arrived from the line, the read-out opens on the grid's own hour.
     assert.doesNotMatch(await page.locator('#hourRead').textContent(), /^Overstaffed/);
     // The finding's row lights the hours block and pulses the same week.
@@ -1727,12 +1722,10 @@ test('a roster that differs by day is told one headcount at a time, on the page 
     const worth = await page.evaluate(w => fmt(w), MIXED.row.worth);
     const runs = '2 fitness planning boards Mon 8-20; 4 fitness planning boards Tue 8-20';
     assert.match(MIXED.row.text, new RegExp(`: ${runs} for `));
-    const chip = page.locator('#sp-hours .sp-hchip.idle');
-    assert.equal((await chip.textContent()).trim(), `48 staff-hours a week · ${runs} · ${worth}/day of wages`);
-    assert.equal(await chip.getAttribute('data-tip'),
-      `${MIXED.row.text.replace(/^Pump runs /, '')}; about ${worth}/day of wages.`);
-    await chip.hover();
-    assert.deepEqual(await cellsWith(page, 'sp-lit'), hoursOf([1, 2], 8, 20));
+    await idleArrive(page, MIXED.row, MIXED);
+    assert.equal((await page.locator('#hourRead').textContent()).trim(), `Overstaffed · 48 staff-hours a week · ${runs} · ${worth}/day of wages`);
+    await page.locator(`.sp-find[data-id="${MIXED.row.id}"]`).hover();
+    assert.deepEqual(await cellsWith(page, 'sp-hit'), hoursOf([1, 2], 8, 20));
   } finally { await page.close(); }
 });
 
@@ -1744,24 +1737,21 @@ test('a week of three headcounts names the biggest two, on the page as on Today,
     const worth = await page.evaluate(w => fmt(w), MANY.row.worth);
     const runs = '3 fitness planning boards Tue 8-20; 4 fitness planning boards Wed 8-20 (and 1 more)';
     assert.ok(MANY.row.text.includes(`: ${runs} for `), MANY.row.text);
-    const chip = page.locator('#sp-hours .sp-hchip.idle');
-    assert.equal((await chip.textContent()).trim(), `72 staff-hours a week · ${runs} · ${worth}/day of wages`);
-    assert.equal(await chip.getAttribute('data-tip'),
-      `${MANY.row.text.replace(/^Pump runs /, '')}; about ${worth}/day of wages.`);
+    await idleArrive(page, MANY.row, MANY);
+    assert.equal((await page.locator('#hourRead').textContent()).trim(), `Overstaffed · 72 staff-hours a week · ${runs} · ${worth}/day of wages`);
     // "(and 1 more)": every hour of the week is still lit, Monday's included.
-    await chip.hover();
-    assert.deepEqual(await cellsWith(page, 'sp-lit'), hoursOf([1, 2, 3], 8, 20));
-    // On a phone the chip wraps inside the page rather than pushing it sideways.
+    await page.locator(`.sp-find[data-id="${MANY.row.id}"]`).hover();
+    assert.deepEqual(await cellsWith(page, 'sp-hit'), hoursOf([1, 2, 3], 8, 20));
+    // On a phone the read-out wraps inside the page rather than pushing it sideways.
     await page.setViewportSize({width: 390, height: 900});
-    await page.evaluate(() => drawSite());
+    await idleArrive(page, MANY.row, MANY);
     const fit = await page.evaluate(() => {
-      const c = document.querySelector('#sp-hours .sp-hchip.idle').getBoundingClientRect();
+      const c = document.querySelector('#hourRead').getBoundingClientRect();
       return {right: c.right, width: innerWidth, scroll: document.documentElement.scrollWidth,
-              client: document.documentElement.clientWidth, tall: c.height > 40};
+              client: document.documentElement.clientWidth};
     });
-    assert.ok(fit.right <= fit.width, `chip ends at ${fit.right} of ${fit.width}`);
+    assert.ok(fit.right <= fit.width, `read-out ends at ${fit.right} of ${fit.width}`);
     assert.ok(fit.scroll <= fit.client, `page scrolls sideways: ${fit.scroll} > ${fit.client}`);
-    assert.equal(fit.tall, true, 'the chip wraps onto more than one line');
   } finally { await page.close(); }
 });
 
@@ -1770,11 +1760,11 @@ test('a finding written before the week existed reads as a week of its one run',
   const page = await idleSite(old);
   try {
     const worth = await page.evaluate(w => fmt(w), old[0].worth);
-    const chip = page.locator('#sp-hours .sp-hchip.idle');
-    assert.equal((await chip.textContent()).trim(),
-      `24 staff-hours a week · 3 fitness planning boards Mon 8-20 · ${worth}/day of wages`);
-    await chip.hover();
-    assert.deepEqual(await cellsWith(page, 'sp-lit'), hoursOf([1], 8, 20));
+    await idleArrive(page, IDLE.row);
+    assert.equal((await page.locator('#hourRead').textContent()).trim(),
+      `Overstaffed · 24 staff-hours a week · 3 fitness planning boards Mon 8-20 · ${worth}/day of wages`);
+    await page.locator(`.sp-find[data-id="${IDLE.row.id}"]`).hover();
+    assert.deepEqual(await cellsWith(page, 'sp-hit'), hoursOf([1], 8, 20));
   } finally { await page.close(); }
 });
 

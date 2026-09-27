@@ -356,17 +356,29 @@
   // which is read from inside the file. The raw file name stays on hover.
   let company = "";
   const isAutosave = (file) => /^recover/i.test(file.name);
-  const fileLine = (file, extra) => {
+  const fileWords = (file) => {
     const when = fmtTime(file.lastModified);
     const base = file.name.replace(/\.hsg$/i, "");
-    const what = isAutosave(file)
+    return isAutosave(file)
       ? tt("app.file.autosave", "autosave from {when}", {when})
       : base.toLowerCase() === company.toLowerCase()
       ? tt("app.file.saved", "saved {when}", {when})
       : tt("app.file.named", "{name} saved {when}", {name: base, when});
-    $("srcStrip").title = file.name;
-    return `${company ? company + " · " : ""}${what}${extra ? ` · ${extra}` : ""}`;
   };
+  const fileLine = (file, extra) => {
+    $("srcStrip").title = file.name;
+    return `${company ? company + " · " : ""}${fileWords(file)}${extra ? ` · ${extra}` : ""}`;
+  };
+  /* Where the board on screen comes from, for the ··· menu: the strip says
+     nothing while all is well (declutter S1), and the masthead clock holds
+     the game's day. */
+  function sourceWords() {
+    if (linkUrl) return tt("app.menu.src.link", "Game link");
+    const file = lastGood || lastFile;
+    if (!file) return "";
+    return dirHandle ? tt("app.menu.src.folder", "Folder {folder} · {file}", {folder: dirHandle.name, file: fileWords(file)})
+      : tt("app.menu.src.file", "One save file · {file}", {file: fileWords(file)});
+  }
 
   // The strip is painted from these: a tone (ok, busy, bad, remembered,
   // ready), a headline, a mono file line; and a note, which in the bad tone
@@ -378,6 +390,14 @@
   function paintStrip() {
     const board = onBoard();
     const bad = strip.tone === "bad";
+    /* On the board the strip is Update and ··· while all is well, and the
+       progress bar alone while a read runs; it speaks when something is
+       wrong (declutter S1, S2). The words stay in the markup, out of sight. */
+    const srcStrip = $("srcStrip");
+    srcStrip.classList.toggle("calm", board && strip.tone === "ok");
+    srcStrip.classList.toggle("reading", board && strip.tone === "busy");
+    const menuLine = $("menuSrcLine");
+    if (menuLine) menuLine.textContent = board ? sourceWords() : "";
     const restoring = !board && attempt && attempt.restoring && strip.tone === "busy";
     const landing = $("landing");
     if (landing) landing.classList.toggle("lg-resume", !!(dirHandle || linkUrl));
@@ -391,7 +411,6 @@
     let meta = bad && noted.sub ? noted.sub
       : strip.tone === "busy" && lastGood ? tt("app.strip.kept", "last good board stays on screen")
       : strip.meta;
-    if (watchTimer && strip.tone === "ok") meta += " · " + tt("app.strip.watching", "watching");
     $("srcMeta").textContent = restoring ? "" : meta;
     const btn = $("updateBtn");
     btn.disabled = !!readerError || !!attempt || busy || !(dirHandle || lastFile || linkUrl);
@@ -486,7 +505,6 @@
       row.appendChild($("srcStrip"));
       $("sourceNote").appendChild($("srcNote"));
       $("srcActions").appendChild($("boardControls").content.cloneNode(true));
-      wireCompanySwitch();
       const lb = $("linkBtn");
       fb.className = "lg-btn";
       if (lb) lb.className = "lg-btn";
@@ -545,20 +563,8 @@
       }
     }
   }
-  // The chevron after the company's name in the masthead opens the source
-  // menu, where the save picker and the other sources are: the company and
-  // save choice stays one click from every page.
-  function wireCompanySwitch() {
-    const co = $("mastCo"), menu = $("menuBtn");
-    if (!co || !menu) return;
-    co.hidden = false;
-    co.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (window.scrollY > 0) window.scrollTo(0, 0);
-      menu.click();
-      co.setAttribute("aria-expanded", menu.getAttribute("aria-expanded") || "false");
-    });
-  }
+  /* The ··· button is the one way into the source menu: the company name in
+     the masthead carries no second button to it (declutter S5). */
   function wireMenu() {
     $("menuBtn").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -576,7 +582,6 @@
     closeSavePicker();
     m.classList.remove("open");
     $("menuBtn").setAttribute("aria-expanded", "false");
-    if ($("mastCo")) $("mastCo").setAttribute("aria-expanded", "false");
   }
   function enterBoard() {
     if (onBoard()) return;
@@ -2345,9 +2350,8 @@
       drop.style.setProperty("--ry", (x * 10) + "deg"); drop.style.setProperty("--rx", (-y * 8) + "deg");
     });
     drop.addEventListener("mouseleave", () => { drop.style.setProperty("--ry", "0deg"); drop.style.setProperty("--rx", "0deg"); });
-    drop.addEventListener("click", pickFolder);
-    drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickFolder(); } });
-    $("helpLink").addEventListener("click", (e) => { e.preventDefault(); $("help").open = !$("help").open; });
+    /* The drop box takes a drop; Choose the folder under it is the one way to
+       click for the same picker (declutter L1). */
     wireCoin();
     wireSphere();
     // A bookmarked Wiki route can remove the landing immediately. Bind its
@@ -2408,11 +2412,8 @@
     const title = window.isSecureContext
       ? tt("land.folder.snapshot", "Choose the folder named Big Ambitions inside SaveGames. In this browser the choice is a snapshot; Update opens the picker again.")
       : tt("land.folder.snapshot.http", "Choose the folder named Big Ambitions inside SaveGames. Watching a folder takes Chrome or Edge on an HTTPS or localhost address, so here the choice is a snapshot; Update opens the picker again.");
-    for (const el of [$("folderBtn"), $("drop")]) {
-      if (!el) continue;
-      el.removeAttribute("data-tt-title");
-      el.title = title;
-    }
+    const fb = $("folderBtn");
+    if (fb) { fb.removeAttribute("data-tt-title"); fb.title = title; }
   }
 
   // A change of UI language (web/i18n.js calls this after it has refilled

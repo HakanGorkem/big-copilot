@@ -178,7 +178,7 @@ test('a sleeping browser skips missed intervals and a failed heartbeat backs off
   const failed = page.waitForResponse('**/api/community/presence');
   await page.clock.fastForward(3600000);
   await failed;
-  await page.getByText('Online count unavailable',{exact:true}).waitFor();
+  await page.locator('#live.community-unavailable').waitFor({state:'attached'});
   await page.evaluate(() => new Promise(resolve => setTimeout(resolve,50)));
   assert.equal(state.heartbeats.length,2,'no replay of twelve missed heartbeats');
   await page.clock.fastForward(30000);
@@ -235,7 +235,7 @@ test('a site that has answered keeps its vote card through a run of failures', a
     await beat;
     await page.evaluate(() => new Promise(resolve => setTimeout(resolve,50)));
   }
-  await page.getByText('Online count unavailable',{exact:true}).waitFor();
+  await page.locator('#live.community-unavailable').waitFor({state:'attached'});
   assert.equal(await page.locator('[data-vote-card]').first().isVisible(),true,
     'the API answered once; a run of blips is not a copy without one');
 });

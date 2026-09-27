@@ -100,7 +100,8 @@ test('a shop block reads out its most telling cell before anything is pointed at
   const page = await board({hours: grid(false, 3)});
   try {
     // The hour grid opens on the busiest hour spent at the ceiling, Monday first.
-    assert.match(await textOf(page.locator('#hourRead')), /^Worst hour · Monday 12:00 6 customers · .* · at the ceiling$/);
+    // "Worst hour" says the ceiling; the line does not say it again.
+    assert.match(await textOf(page.locator('#hourRead')), /^Worst hour · Monday 12:00 6 customers · .*register capacity on$/);
     assert.equal(await readOf(page, 'pull'), 'Foot traffic 41 + marketing 31 · 28 short of the cap');
     // Nothing on the page asks to be hovered any more.
     assert.doesNotMatch(await textOf(page.locator('#sitePanel')), /Hover an? /);
@@ -217,25 +218,18 @@ test('a factory reads out the machine that makes nothing, else the least staffed
 
 // --- cross-links -------------------------------------------------------------
 
-test('the Shelves and Fees heads link to the guide, landing on Prices in your save', async () => {
+test("the guide's Prices in your save is linked from Products & prices; the Shelves head, beside the header's Prices button, has no second link", async () => {
   let page = await board();
   try {
-    const link = page.locator('#sp-shelves .sechead .xl-guide');
-    assert.equal(await textOf(link), 'Compare with market prices ›');
+    assert.equal(await page.locator('#sp-shelves .sechead .xl-guide').count(), 0);
+    assert.equal(await page.locator('#sitePanel .sitehead [data-site-go="businesses/prices"]').count(), 1);
+    // Products & prices carries the guide's prices, and following it opens the guide there.
+    await page.evaluate(() => openRoute('businesses/prices'));
+    const link = page.locator('#secPrices [data-price-guide]');
     assert.equal(await link.getAttribute('href'), '#wiki/businesstypes-giftshop/prices');
-    // Following it opens the Wiki page on that route.
     await link.click();
     await page.waitForFunction(() => page === 'wiki');
     assert.match(await page.evaluate(() => location.hash), /^#wiki\/businesstypes-giftshop\/prices$/);
-  } finally { await page.close(); }
-  page = await board({shop: {status: 'office', type: 'Law Firm', typeSlug: 'ba:businesstype_lawfirm'}});
-  try {
-    assert.equal(await page.locator('#sp-shelves .xl-guide').getAttribute('href'), '#wiki/businesstypes-lawfirm/prices');
-  } finally { await page.close(); }
-  // A site whose type the save does not name gets no link rather than a dead one.
-  page = await board({shop: {typeSlug: null}});
-  try {
-    assert.equal(await page.locator('#sp-shelves .xl-guide').count(), 0);
   } finally { await page.close(); }
 });
 
@@ -459,7 +453,8 @@ test("a finding row's name opens the site's page; the rest of the row still open
     // A finding's landing says why the reader is here, in the strip above the
     // page, whose way back takes the crumb's place.
     assert.equal(await page.locator('#arrive').isVisible(), true);
-    assert.match(await page.locator('#arrive').innerText(), /You came from HART\. Gifts/);
+    assert.match(await page.locator('#arrive').innerText(), /HART\. Gifts/);
+    assert.doesNotMatch(await page.locator('#arrive').innerText(), /You came from/);
     assert.equal(await page.locator('.ss-crumb.from').isVisible(), false, 'one way back, not two');
     await page.locator('#arrive .nx-back').click();
     await page.waitForFunction(() => location.hash === '#overview' && page === 'today');

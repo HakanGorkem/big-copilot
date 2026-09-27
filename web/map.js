@@ -359,7 +359,7 @@ const MAP_WORDS = {
   get home(){ return tt("map.layer.home", "Homes"); },
   get homeTip(){ return tt("map.layer.home.tip", "Homes you rent, white on the map."); },
   get fnd(){ return tt("map.layer.fnd", "Findings"); },
-  get fndTip(){ return tt("map.layer.fnd.tip", "Sites with a finding from Today. Red is critical, amber is worth a look, grey is for information. The dots show once you zoom in."); },
+  get fndTip(){ return tt("map.layer.fnd.tip", "Sites with a finding in Needs attention. Red is critical, amber is worth a look, grey is for information. The dots show once you zoom in."); },
   get all(){ return tt("map.layer.all", "All"); },
   get allTip(){ return tt("map.layer.all.tip", "Every address in the city, as faint outlines. Off by default."); },
   get layersWhy(){ return tt("map.layers.why", "The chips are layers: your businesses, buildings you own, homes you rent, sites with a finding, every address. Click one to switch it off; off is dimmed, never gone. Pick a place from the list or on the map and its card opens beside the building. Drag to pan, wheel to zoom."); },
@@ -1092,7 +1092,7 @@ class CityMapView {
     // type's row there.
     const demand = f.slug
       ? `<a class="num mf-grow" href="#secMarket" data-grow="${mapText(f.slug)}" data-tip="${
-          mapText(tt("map.demand.tip", "{type} in every neighbourhood, on Growth › Demand", {type: f.fit}))}"><b class="mono">${f.demand}</b><span>${
+          mapText(tt("map.demand.tip", "{type} in every neighbourhood, on Expansion › Demand", {type: f.fit}))}"><b class="mono">${f.demand}</b><span>${
           mapText(tt("map.stat.demandgo", "demand ›"))}</span></a>`
       : stat(f.demand, tt("map.stat.demand", "demand"));
     const traffic = tt("map.stat.traffic", "traffic");

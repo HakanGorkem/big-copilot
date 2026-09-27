@@ -14,7 +14,7 @@ const board = (goals = {typesRun: 1, typesTotal: 3}) => {
   const section = {innerHTML: ''};
   const context = vm.createContext({
     $: id => (assert.equal(id, 'secGoals'), section),
-    sechead: (title, o) => `<head why="${o.why ?? ''}">${o.quiet}</head>`,
+    sechead: (title, o = {}) => `<head why="${o.why ?? ''}">${title}${o.quiet ? ` · ${o.quiet}` : ''}</head>`,
     icon: () => '',
     compact: n => String(n),
     D: {goals, meta: {}},
@@ -37,7 +37,9 @@ const rule = (name, value, normal, lean, unit = '×') =>
 test('Milestones is the career goals and the totals, with the buildings a total, not a goal', () => {
   const html = draw({typesRun: 5, typesTotal: 24, buildingsOwned: 0, buildingsTotal: 885, rivalsDefeated: 0,
     rivalsTotal: 4, goalsDone: 44, diplomas: 5, diplomasTotal: 5, goodsProduced: 321, taxesPaid: 0});
-  assert.match(html, /<head why="">as the game counts them<\/head>/);
+  // The heading alone: no line under it saying what the goals are.
+  assert.match(html, /<head why="">Career goals<\/head>/);
+  assert.doesNotMatch(html, /Taxes paid<\/span><span class="v">\$0<\/span><span class="sub">/);
   assert.doesNotMatch(html, /Every building owned|885/);
   // Each goal with a total has its bar; the complete one is ticked; personal
   // goals have no total and no bar.
