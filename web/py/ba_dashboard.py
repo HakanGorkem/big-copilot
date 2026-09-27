@@ -3785,6 +3785,7 @@ def _supply(
     )
 
     # --- 2. depots: does the holding reach the next delivery?
+    factory_keys = {b["key"] for b in businesses if b.get("typeSlug") in FACTORY_TYPES}
     import_rows = []
     weekly_use = {}  # (depot, item) -> a week of the draw the rows below judge
     route_week = {}  # (site index, item) -> a week of what routes bring, unrounded
@@ -3877,15 +3878,6 @@ def _supply(
             def until_drop(when):
                 return max(when - day - 1 + today + (1 if rounds else 0), 0.0)
 
-            due = until_drop(supply["arrives"]) if supply["active"] else None
-            # A paused backup beside a route that brings the week has no drop
-            # to reach; the shelf is judged over a week instead, which the
-            # route's few percent of drift cannot empty.
-            horizon = covered and due is None
-            week_on = day + (6 if rounds else 7)  # a week of rounds, or of days
-            if horizon:
-                due = until_drop(week_on)
-
             # Is the standing order the right size? Last week's draw is not the
             # test — an order that exactly matched last week's use is a well
             # sized order, not a warning. The test is the week the order has to
@@ -3896,11 +3888,43 @@ def _supply(
                 import_avg * 7 if routed
                 else sum(per_day * weekly[(start + ahead) % 7] for ahead in range(7))
             )
+            # A route whose share the log cannot measure (the draw is what the
+            # shops sell, not the logged rounds) still feeds the depot while its
+            # senders hold the item: a factory used as a store tops the depot up
+            # from what it holds. Each sender counts no more than its route can
+            # bring in a week, a round a day up to the target. With a week of
+            # the need behind the route, the import is not the whole supply, so
+            # its size is not judged; the shelf still is. Not where a factory
+            # line draws on the depot too: the shops' week leaves that need out.
+            # With the import paused the route is the whole supply, so its
+            # morning top-up must also cover the busiest day, as a depot only
+            # a route feeds is judged (route_fed); short of that, the paused
+            # import is the finding.
+            routes = route_targets.get((business["key"], item), ())
+            unmeasured = (
+                not routed and basis == "sales"
+                and not any(i == item and dest in factory_keys
+                            for dest, i, _amount in edges.get(business["key"], ()))
+                and sum(min(held.get(source, {}).get(item, 0), 7 * amount)
+                        for source, amount in routes)
+                >= week_need > 0
+                and (supply["active"] or max(amount for _source, amount in routes) >= gross * factor)
+            )
+
+            due = until_drop(supply["arrives"]) if supply["active"] else None
+            # A paused backup beside a route that brings the week has no drop
+            # to reach; the shelf is judged over a week instead, which the
+            # route's few percent of drift cannot empty.
+            horizon = covered and due is None
+            week_on = day + (6 if rounds else 7)  # a week of rounds, or of days
+            if horizon:
+                due = until_drop(week_on)
+
             # Last week's order against this week's is a change of mind, not a
             # shortfall; without a measured draw the order is not judged.
             order_fit = (
                 "short" if week_need and not supply["weekly"] else _fit(week_need, supply["weekly"])
-            ) if basis != "order" else "ok"
+            ) if basis != "order" and not unmeasured else "ok"
 
             # An order sized to consumption always looks as though it runs out a
             # few hours before the next drop — that is the design, not a finding.
@@ -3948,7 +3972,9 @@ def _supply(
                 # shelf before the next morning's round.
                 level = "critical" if cover_fit == "short" else "warn"
                 reason = "shortfall"
-            elif not supply["active"]:
+            # A paused import beside a route its senders hold a week for is the
+            # backup the board calls it, not a line to resume.
+            elif not supply["active"] and not unmeasured:
                 level, reason = ("critical" if cover < 7 else "warn"), "paused"
             elif order_fit == "short":
                 level, reason = "critical", "order"
@@ -3976,6 +4002,9 @@ def _supply(
                     # The route covers all of it: a paused import beside it
                     # is a backup, not a warning.
                     "covered": covered,
+                    # Fed by a route the log cannot measure, from senders
+                    # holding a week of the need: the order is not judged.
+                    **({"heldUpstream": True} if unmeasured else {}),
                     "basis": basis,
                     "peakDay": peak_day,
                     "peakPerDay": round(gross * factor),
@@ -4916,8 +4945,14 @@ def _supply_facts(ctx: dict) -> dict:
                 "parts": {"lines": round(lines_use), "sites": round(sites), "route": round(routed)},
                 "imp": False, "wholesale": True, "day": deal["day"],
             }, "weekly"
+        # A route the log cannot measure, from senders holding a week of the
+        # need (_supply's heldUpstream): the import is not the whole supply,
+        # and pausing it asks nothing back while they hold it.
+        # Only for a depot no factory line draws on: the row's week is the
+        # shops' sales, and a line's need would not be in it.
+        upstream = bool(row and row.get("heldUpstream")) and not lines_use
         p = {}
-        if paused and use and not covered:
+        if paused and use and not covered and not upstream:
             p["paused"] = True
             p["cover"] = row["cover"] if row else (stock / (use / 7) if use else 60)
         elif not entry and use and not covered and (lines_use or not inbound):
@@ -4926,19 +4961,19 @@ def _supply_facts(ctx: dict) -> dict:
         if row is not None and row["basis"] == "order" and not lines_use:
             p["young"] = "young"
         short = []
-        if entry and not paused and use and _below(brought, use):
+        if entry and not paused and use and not upstream and _below(brought, use):
             short.append("order")
         if measured and row["coverFit"] == "short":
             short.append("shortfall")
         p["short"] = short
-        if entry and not paused and _below(brought, need):
+        if entry and not paused and not upstream and _below(brought, need):
             p["tight"] = "order"
         elif measured and row["coverFit"] == "tight":
             p["tight"] = "shortfall"
-        if covered:
+        if covered or (upstream and not short):
             p["covered"] = "route"
         set_to = None
-        if not paused and need and (_below(brought, need) if entry else p.get("noplan")):
+        if not paused and need and not upstream and (_below(brought, need) if entry else p.get("noplan")):
             set_to = _raise_import(entry, need) if entry else _ceil_ten(need)
         have = None
         if entry:
