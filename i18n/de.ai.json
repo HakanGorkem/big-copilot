@@ -36,5 +36,7 @@
  "sp.off.open": "gpt-6-sol",
  "sp.off.openh": "gpt-6-sol",
  "sp.off.people": "gpt-6-sol",
- "sp.off.quiet": "gpt-6-sol"
+ "sp.off.quiet": "gpt-6-sol",
+ "upd.news.help-translate": "claude-opus-5-5",
+ "upd.news.lang-ko": "claude-opus-5-5"
 }

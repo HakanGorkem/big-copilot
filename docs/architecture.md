@@ -944,7 +944,7 @@ Then `python build_web.py`.
 
 | Anchor | What goes in it | Test that covers it |
 | --- | --- | --- |
-| `<aside class="news-strip" id="newsStrip" data-news-id="…">` in `BANNER` in `build_web.py` | A new `data-news-id`, so it shows again to anyone who dismissed the last one; the `.news-copy` text; the `#newsLink` href, which is written out rather than taken from `WORKSHOP_URL` | `tests/news.test.cjs`, "the strip shows on first load with its text, Workshop link and named Dismiss" |
+| `<aside class="news-strip" id="newsStrip" data-news-id="…">` in `BANNER` in `build_web.py` | A new `data-news-id`, so it shows again to anyone who dismissed the last one; the `.news-copy` text; the `#newsLink` href, which is written out rather than taken from a URL constant | `tests/news.test.cjs`, "the strip shows on first load with its text, translation link and named Dismiss" |
 | `.news-strip{` in `BANNER`'s `<style>` | *Only for* a layout change | `tests/news.test.cjs`, the "stack without overlap" tests |
 | `/* One-time news strip (#newsStrip in build_web.py)` in `web/update.js` | Nothing; it shows and dismisses the strip, remembered under `bc_news_dismissed` | `tests/news.test.cjs`, "Dismiss hides the strip …" |
 

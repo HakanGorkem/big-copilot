@@ -32,13 +32,13 @@ async function setup(t, options = {}) {
   return page;
 }
 
-test('the strip shows on first load with its text, Workshop link and named Dismiss', async t => {
+test('the strip shows on first load with its text, translation link and named Dismiss', async t => {
   const page = await setup(t);
   const strip = page.getByRole('complementary', {name:'News'});
   assert.equal(await strip.isVisible(), true);
-  assert.match(await strip.innerText(), /Big Copilot Link 0\.2\.0 lets the board make changes in your game/);
-  const link = page.getByRole('link', {name:'Get the mod on the Steam Workshop'});
-  assert.equal(await link.getAttribute('href'), 'https://steamcommunity.com/sharedfiles/filedetails/?id=3806322395');
+  assert.match(await strip.innerText(), /Big Copilot now comes in Korean, thanks to Chanwoo Kim \(kcw2034\)/);
+  const link = page.getByRole('link', {name:'Help translate Big Copilot'});
+  assert.equal(await link.getAttribute('href'), 'https://github.com/PeterHartwieg/big-copilot/blob/main/docs/translating.md');
   assert.equal(await link.getAttribute('target'), '_blank');
   assert.match(await link.getAttribute('rel'), /noopener/);
   assert.equal(await page.getByRole('button', {name:'Dismiss this news'}).isVisible(), true);
