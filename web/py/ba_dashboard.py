@@ -3896,22 +3896,26 @@ def _supply(
             # the need behind the route, the import is not the whole supply, so
             # its size is not judged; the shelf still is. Not where a factory
             # line draws on the depot too: the shops' week leaves that need out.
+            # With the import paused the route is the whole supply, so its
+            # morning top-up must also cover the busiest day, as a depot only
+            # a route feeds is judged (route_fed); short of that, the paused
+            # import is the finding.
+            routes = route_targets.get((business["key"], item), ())
             unmeasured = (
                 not routed and basis == "sales"
                 and not any(i == item and dest in factory_keys
                             for dest, i, _amount in edges.get(business["key"], ()))
                 and sum(min(held.get(source, {}).get(item, 0), 7 * amount)
-                        for source, amount in route_targets.get((business["key"], item), ()))
+                        for source, amount in routes)
                 >= week_need > 0
+                and (supply["active"] or max(amount for _source, amount in routes) >= gross * factor)
             )
 
             due = until_drop(supply["arrives"]) if supply["active"] else None
             # A paused backup beside a route that brings the week has no drop
             # to reach; the shelf is judged over a week instead, which the
-            # route's few percent of drift cannot empty. Beside a route the log
-            # cannot measure the week is walked without it, so the shelf has to
-            # hold the week on its own.
-            horizon = (covered or unmeasured) and due is None
+            # route's few percent of drift cannot empty.
+            horizon = covered and due is None
             week_on = day + (6 if rounds else 7)  # a week of rounds, or of days
             if horizon:
                 due = until_drop(week_on)

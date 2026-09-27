@@ -101,13 +101,22 @@ class HeldUpstreamTests(unittest.TestCase):
         self.assertEqual(fact["st"], "paused")
 
 
-    def test_a_paused_backup_still_needs_a_shelf_that_holds_the_week(self):
-        """Paused beside a held route, the shelf is walked over a week without
-        the route: 600 at 500 a day does not hold it."""
+    def test_a_paused_backup_beside_a_route_that_refills_each_morning_is_ok(self):
+        """600 on the shelf at 500 a day, but the route tops it back up to
+        10,000 every morning from a factory holding 20,000: nothing to resume."""
         row, fact, _orders = supply_for(factory_units=20000, depot_units=600, active=False)
         self.assertTrue(row.get("heldUpstream"))
-        self.assertEqual((row["level"], row["reason"]), ("critical", "shortfall"))
-        self.assertEqual((fact["st"], fact["why"]), ("short", "shortfall"))
+        self.assertEqual((row["level"], row["reason"]), ("ok", None))
+        self.assertEqual((fact["st"], fact["why"]), ("covered", "route"))
+
+    def test_a_paused_import_beside_a_route_short_of_the_busiest_day_is_paused(self):
+        """With the import paused the route is the whole supply, and a top-up
+        to 400 does not cover a 500 day: resume the import."""
+        row, fact, _orders = supply_for(factory_units=20000, target=400, depot_units=600,
+                                        active=False)
+        self.assertNotIn("heldUpstream", row)
+        self.assertEqual(row["reason"], "paused")
+        self.assertEqual(fact["st"], "paused")
 
     def test_a_depot_feeding_a_factory_line_is_never_held_upstream(self):
         """The shops' week leaves the line's need out, so the row keeps
