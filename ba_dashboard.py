@@ -3896,11 +3896,22 @@ def _supply(
                 import_avg * 7 if routed
                 else sum(per_day * weekly[(start + ahead) % 7] for ahead in range(7))
             )
+            # A route whose share the log cannot measure (the draw is not the
+            # logged rounds) still feeds the depot while its senders hold the
+            # item: a factory used as a store tops the depot up from what it
+            # holds. With a week of the need on hand there, the import is not
+            # the whole supply, so its size is not judged; the shelf still is.
+            unmeasured = (
+                not routed and basis != "shipped"
+                and sum(held.get(source, {}).get(item, 0)
+                        for source, _amount in route_targets.get((business["key"], item), ()))
+                >= week_need > 0
+            )
             # Last week's order against this week's is a change of mind, not a
             # shortfall; without a measured draw the order is not judged.
             order_fit = (
                 "short" if week_need and not supply["weekly"] else _fit(week_need, supply["weekly"])
-            ) if basis != "order" else "ok"
+            ) if basis != "order" and not unmeasured else "ok"
 
             # An order sized to consumption always looks as though it runs out a
             # few hours before the next drop — that is the design, not a finding.
@@ -3976,6 +3987,9 @@ def _supply(
                     # The route covers all of it: a paused import beside it
                     # is a backup, not a warning.
                     "covered": covered,
+                    # Fed by a route the log cannot measure, from senders
+                    # holding a week of the need: the order is not judged.
+                    **({"heldUpstream": True} if unmeasured else {}),
                     "basis": basis,
                     "peakDay": peak_day,
                     "peakPerDay": round(gross * factor),
@@ -4925,20 +4939,23 @@ def _supply_facts(ctx: dict) -> dict:
             p["noplanLvl"] = "warn" if stock < use else "info"
         if row is not None and row["basis"] == "order" and not lines_use:
             p["young"] = "young"
+        # A route the log cannot measure, from senders holding a week of the
+        # need (_supply's heldUpstream): the import is not the whole supply.
+        upstream = bool(row and row.get("heldUpstream"))
         short = []
-        if entry and not paused and use and _below(brought, use):
+        if entry and not paused and use and not upstream and _below(brought, use):
             short.append("order")
         if measured and row["coverFit"] == "short":
             short.append("shortfall")
         p["short"] = short
-        if entry and not paused and _below(brought, need):
+        if entry and not paused and not upstream and _below(brought, need):
             p["tight"] = "order"
         elif measured and row["coverFit"] == "tight":
             p["tight"] = "shortfall"
         if covered:
             p["covered"] = "route"
         set_to = None
-        if not paused and need and (_below(brought, need) if entry else p.get("noplan")):
+        if not paused and need and not upstream and (_below(brought, need) if entry else p.get("noplan")):
             set_to = _raise_import(entry, need) if entry else _ceil_ten(need)
         have = None
         if entry:
