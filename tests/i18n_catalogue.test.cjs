@@ -370,7 +370,10 @@ after_review = json.loads(json.dumps(files))
 files["de.json"]["f.c"] = "Frisch!"
 del english["f.m_one"], english["f.m_other"]
 i18n.accept("de", ["f.c"], english)
-again = i18n.import_draft("de", {"f.c": "Frisch (v2)"}, "gpt-6-sol", english, {})
+# Only f.p_other's English changes: a draft of that one form is enough.
+files["de.json"].update({"f.p_one": "{n} Palette", "f.p_other": "{n} Paletten"})
+files["de.base.json"].update({"f.p_one": "{n} pallet", "f.p_other": "{n} pallet(s)"})
+again = i18n.import_draft("de", {"f.c": "Frisch (v2)", "f.p_other": "{n} Paletten!"}, "gpt-6-sol", english, {})
 print(json.dumps([got, after_import, after_review, files, again]))`);
   assert.equal(out.status, 0, out.stderr);
   const [got, drafted, reviewed, accepted, again] = JSON.parse(out.stdout);
@@ -388,9 +391,10 @@ print(json.dumps([got, after_import, after_review, files, again]))`);
   // Reviewing f.a drops its mark and nothing else.
   assert.deepEqual(Object.keys(reviewed['de.ai.json']).sort(), got.taken.filter(k => k !== 'f.a'));
   assert.equal(reviewed['de.json']['f.a'], 'Verlust {w:$}');
-  // accept drops f.c's mark, and the marks of f.m, whose English went, go with it.
-  assert.deepEqual(Object.keys(accepted['de.ai.json']), []);
+  // accept dropped f.c's mark and those of f.m, whose English went; only the redrafted f.p_other is marked.
+  assert.deepEqual(Object.keys(accepted['de.ai.json']), ['f.p_other']);
   assert.deepEqual(again.kept, ['f.c']);
+  assert.deepEqual(again.taken, ['f.p_other']);
   assert.equal(accepted['de.json']['f.c'], 'Frisch!');
 });
 
