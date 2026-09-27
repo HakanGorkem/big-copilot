@@ -162,3 +162,34 @@ Validation, in the foreground, Edge, `--test-concurrency=2`, on the final source
 | `python build_web.py`, then `python build_web.py --check` | exit 0, "web/ is up to date" |
 
 The full Python and Node suites were not rerun this round (CI runs them).
+
+## Round 2 fixes (27 September 2026)
+
+The scoped recheck of `8a58886`: Sol code READY; Opus code and Sol QA HOLD, every round-1
+finding confirmed fixed. Each fix below has a test that fails on `8a58886` (run on a
+`git archive 8a58886` copy, for the defect it targets) and passes now.
+
+| # | Finding | Fix | Test |
+| --- | --- | --- | --- |
+| 1 | Opus SHOULD: a chain of more than four stages (a real 63-business hub-and-spoke save: importer, depot, factory, depot, factory, shops) shrank to fit the box but kept its unscaled height: ~160 px blank above and below, names at 9-10 px | The picture is always drawn 1:1; where it is wider than the box's room (`flowTooWide()`), the SVG takes its own width and the box scrolls sideways (`sb-flow-scroll`); the page does not. A resize across that line redraws (`flowWatch()`); the narrow chain is unchanged | `flow_chain`: "a six-stage chain keeps its names at full size and scrolls inside the box, with no blank band" (1280: scale 1, heads within 30 px of the top, names at the stage's 11.5 px, the box scrolls; at 2200 it fits again) |
+| 2 | QA SHOULD: "{value} runs short" whenever the lines draw more than planned, without weighing the figure; Opus NIT 1: an uneven split drawing the plan's total read as a mismatch | `sbDepWords()` says how much more the lines draw at these hours, then weighs the figure against the week the depot sends at these hours (the figure's basis's week plus the lines' difference): "still covers the N a week that takes" or "runs short of the N a week that takes"; a Smart Delivery level is not weighed; machines split unevenly whose draw equals the plan's read "the machines' hours are uneven, but together they draw what {value} is planned on" | `progress`: "lines drawing more than planned: a figure that covers the draw says so, one under it runs short" (day 47, shop demand at 4 h: 700 more, 5,000 covers 2,100, 2,000 runs short) and "machines split unevenly that draw the plan's total read as uneven, …" |
+| 3 | Opus LOW 1: `pgBoard()` wrote the whole store on every board, so a second tab of the same company erased the other's records | `pgSave()` merges into what is stored: another tab's records stay unless this page took them away (`gone`: undo, clear, expiry), and the count is the higher of the two; `pgBoard()` saves where this page or the store holds records | `progress`: "two tabs of one company: a board in one keeps the other's records, and an undo in one stays undone" |
+
+Left as asked: Opus NIT 2 (the hours row's figure is the least-staffed machine's). Known: a tab
+shows the other tab's new records only after a reload, and a record the other tab removed can
+come back from a tab that had already loaded it.
+
+Files: `ba_dashboard.py`; `docs/ui-chunk-2-handoff.md`, `docs/ui-progress-postconditions.md`,
+`docs/dashboard-reference.md`; `tests/flow_chain.test.cjs`, `tests/progress.test.cjs`;
+generated `web/index.html`, `web/py/ba_dashboard.py`, `web/version.json`.
+
+Validation, in the foreground, Edge, `--test-concurrency=2`, on the final source:
+
+| Command | Result |
+| --- | --- |
+| `node --test` (CLI target) on `flow_chain`, `progress`, `import_routes`, `import_setto`, `supply_sort`, `game_link_write`, `shell_routes`, `navigation` | 289 tests, 289 pass |
+| `BOARD_TARGET=web` on `progress`, `flow_chain`, `import_routes` | 82 tests, 82 pass |
+| The four new tests on a `git archive 8a58886` copy | 4 run, 4 fail, each on its defect |
+| `python -m unittest tests.test_css_integrity tests.test_doc_registries` | 6 tests, OK |
+| `python -m unittest discover -s tests -p "test_i18n*.py"` | 35 tests, OK |
+| `python build_web.py`, then `python build_web.py --check` | exit 0, "web/ is up to date" |

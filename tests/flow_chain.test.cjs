@@ -441,3 +441,38 @@ test('a live refresh keeps the site followed and the open group, and lays the pi
   assert.match(await page.locator('#flowChain .sb-fc-where').textContent(), /Following Cake Distr\./);
   assert.ok((await state(page)).pipes.length >= 2);
 });
+
+/* A chain of more stages than a desk box holds (importer, depot, factory,
+   depot, factory, shops: a second tier of each) is drawn 1:1 and scrolls
+   sideways inside its box, rather than shrinking its names past reading
+   into a box as tall as the unscaled picture. */
+test('a six-stage chain keeps its names at full size and scrolls inside the box, with no blank band', async t => {
+  const data = fixture();
+  const g = data.supply.graph;
+  g.nodes.push({...g.nodes.find(n => n.id === 'factory#2'), id: 'factory#7', name: '[BF] Bread Works', tag: 'BF', site: null, items: []});
+  g.links.push({from: 'dist#6', to: 'factory#7', perDay: 200, items: 1, slugs: ['cake'], cadence: 'daily', paused: false},
+    {from: 'factory#7', to: 'shop#4', perDay: 150, items: 1, slugs: ['bread'], cadence: 'daily', paused: false});
+  const page = await board(t, data, 1280);
+  const m = await page.evaluate(() => {
+    const svg = document.getElementById('flow'), box = document.getElementById('sbFlowBox');
+    const top = svg.getBoundingClientRect().top;
+    const text = svg.querySelector('.node text:not(.s)');
+    return {heads: [...svg.querySelectorAll('text.col')].map(x => x.textContent),
+      scale: svg.getScreenCTM().a,
+      headGap: svg.querySelector('text.col').getBoundingClientRect().top - top,
+      font: parseFloat(getComputedStyle(text).fontSize) * svg.getScreenCTM().a,
+      scrolls: box.scrollWidth > box.clientWidth,
+      page: document.documentElement.scrollWidth - document.documentElement.clientWidth};
+  });
+  assert.deepEqual(m.heads, ['IMPORTERS', 'DEPOTS', 'FACTORIES', 'DEPOTS', 'FACTORIES', 'SHOPS']);
+  assert.ok(m.scale > 0.99, `drawn 1:1, not at ${m.scale.toFixed(2)}`);
+  assert.ok(m.headGap < 30, `the heads start ${m.headGap.toFixed(0)} px under the top`);
+  // The names at the stage's own 11.5 px (.flow .node text), not shrunk.
+  assert.ok(m.font >= 11.5, `names at ${m.font.toFixed(1)} px`);
+  assert.equal(m.scrolls, true, 'the box scrolls sideways');
+  assert.ok(m.page <= 0, 'the page itself does not');
+  // The box grown wide enough draws it to fit again, with no scroll.
+  await page.setViewportSize({width: 2200, height: 1000});
+  await page.waitForFunction(() => !document.getElementById('sbFlowBox').classList.contains('sb-flow-scroll'));
+  assert.equal(await page.evaluate(() => document.getElementById('flow').style.width), '100%');
+});

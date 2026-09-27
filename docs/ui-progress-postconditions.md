@@ -33,6 +33,9 @@ bytes then say *Not confirmed*. A judged record is not judged again.
 Kept per character in `localStorage["ba_progress_v1:<character>"]` as `{v: 1, n, recs: {id: rec}}`.
 Without a character id nothing is written, and records last as long as the page; another company's
 board reads its own key, so no record crosses companies. Storage that refuses keeps the page's copy.
+A save is merged into what is stored: a record another tab of the same company wrote since stays,
+unless this page took it away (an undo, a clear, an expiry), and the count is the higher of the two.
+A tab does not pick up the other tab's records on screen until it is reloaded.
 
 A record: `id`, `family`, `target`, `expect`, `rowKeys` (the checklist rows it answers, by key),
 `label`, `state`, `at` (ms), `seq` (the company's board count at the write), `load` (the page

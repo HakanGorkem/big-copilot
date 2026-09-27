@@ -14978,6 +14978,8 @@ html:has(dialog:modal){overflow:hidden}
 /* goods flow: the diagram as a view of the tab */
 #pageSupply .sb-flowbox{margin-top:8px;border-radius:10px;background:var(--surface);border:1px solid var(--rule-soft);padding:14px 20px 12px}
 #pageSupply .sb-flowbox svg{width:100%;display:block}
+#pageSupply .sb-flowbox.sb-flow-scroll{overflow-x:auto}
+#pageSupply .sb-flowbox.sb-flow-scroll svg{max-width:none}
 #pageSupply .sb-flowleg{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;font:500 11px/1 "IBM Plex Mono",monospace;color:var(--ink-3)}
 #pageSupply .sb-flowleg span{display:inline-flex;align-items:center;gap:7px}
 #pageSupply .sb-flowleg i{width:9px;height:9px;border-radius:50%;display:inline-block}
@@ -18495,6 +18497,7 @@ function drawFlow(){
   box.classList.toggle("sb-fc-focus", !empty && narrow && !!flowPickId);
   box.classList.toggle("sb-fc-wide", box.getBoundingClientRect().width >= 600);
   svg.style.display = flowChainDrawn ? "none" : "";
+  if(flowChainDrawn){ flowWide = false; box.classList.remove("sb-flow-scroll"); }
   if(chain) chain.hidden = !flowChainDrawn;
   if(flowChainDrawn){
     svg.innerHTML = "";
@@ -18556,9 +18559,24 @@ function drawFlow(){
     if(flag) dots.push(`<circle class="${flag[0]}" cx="${x + NODE_W - 10}" cy="${y + 10}" r="4"><title>${flag[1]}</title></circle>`);
   });
 
+  /* Always 1:1, so the names stay legible: a chain of more stages than
+     the box holds (a second depot and factory tier) scrolls sideways inside
+     the box rather than shrinking into it. */
+  flowWide = flowTooWide(width);
+  box.classList.toggle("sb-flow-scroll", flowWide);
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.style.width = "100%"; svg.style.height = height + "px";
+  svg.style.width = flowWide ? `${width}px` : "100%"; svg.style.height = height + "px";
   svg.innerHTML = heads.concat(pipes, boxes, dots, cargo).join("");
+}
+/* Whether the picture is wider than the box's room for it (a box waiting
+   at home, width 0, is never too narrow). */
+let flowWide = false;
+function flowTooWide(width){
+  const box = $("sbFlowBox");
+  if(!box) return false;
+  const cs = getComputedStyle(box);
+  const room = box.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  return room > 0 && width > room;
 }
 
 /* --- the chain on a narrow screen (#148) ----------------------------------
@@ -18604,6 +18622,8 @@ function flowWatch(){
     last = w;
     const narrow = flowNarrow() || !flowHasPipes(D.supply.graph);
     if(turned && narrow !== flowChainDrawn){ drawFlow(); if(!narrow) applyFlow(); return; }
+    /* The picture fits the box again, or no longer does. */
+    if(turned && !narrow && flowTooWide(flowLayout().width) !== flowWide){ drawFlow(); applyFlow(); return; }
     /* Any other tick (a card grew a line at the same width, say) re-lays
        the pipes, so their ends stay on the cards. */
     if(narrow){ box.classList.toggle("sb-fc-wide", w >= 600); flowChainPipes(); }
@@ -24594,20 +24614,40 @@ function pgStore(){
       const saved = JSON.parse(localStorage.getItem(PG_KEY + who));
       if(saved && saved.v === 1 && saved.recs && typeof saved.recs === "object"){ recs = saved.recs; n = Number(saved.n) || 0; }
     }catch(e){}
-    pgMemo.set(who, {recs, n});
+    pgMemo.set(who, {recs, n, gone: new Set()});
   }
   const m = pgMemo.get(who);
   return {who, recs: m.recs, memo: m};
 }
+/* The store as saved: another tab of the same company may have written it
+   since this page read it. */
+function pgSaved(who){
+  try{
+    const saved = JSON.parse(localStorage.getItem(PG_KEY + who));
+    return saved && saved.v === 1 && saved.recs && typeof saved.recs === "object" ? saved : null;
+  }catch(e){ return null; }
+}
+/* Written over what is stored, not in place of it: a record another tab
+   wrote since stays, unless this page took it away (`gone`: an undo, a
+   clear, an expiry); the count is the higher of the two. */
 function pgSave(){
   const {who, recs, memo} = pgStore();
-  if(who) try{ localStorage.setItem(PG_KEY + who, JSON.stringify({v: 1, n: memo.n, recs})); }catch(e){}
+  if(!who) return;
+  const saved = pgSaved(who);
+  const all = {};
+  if(saved){
+    Object.entries(saved.recs).forEach(([id, rec]) => { if(!memo.gone.has(id)) all[id] = rec; });
+    memo.n = Math.max(memo.n, Number(saved.n) || 0);
+  }
+  Object.assign(all, recs);
+  try{ localStorage.setItem(PG_KEY + who, JSON.stringify({v: 1, n: memo.n, recs: all})); }catch(e){}
 }
-/* A board taken in for this company (takeData()): one more on its count. */
+/* A board taken in for this company (takeData()): one more on its count,
+   saved where the company has records here or in another tab. */
 function pgBoard(){
-  const {recs, memo} = pgStore();
+  const {who, recs, memo} = pgStore();
   memo.n++;
-  if(Object.keys(recs).length) pgSave();
+  if(Object.keys(recs).length || (who && pgSaved(who))) pgSave();
 }
 /* The game's clock as minutes: the link's, where it reads one, else the board's. */
 const pgMinutes = c => c && Number.isFinite(Number(c.day)) ? (Number(c.day) * 24 + (Number(c.hour) || 0)) * 60 + (Number(c.minute) || 0) : null;
@@ -24619,8 +24659,8 @@ function pgClockNow(){
 /* A write that went through: `rec` names its family, target, expected values
    and the rows it answers; it is Applied until a later board judges it. */
 function pgRecord(rec){
-  const {recs} = pgStore();
-  const {memo} = pgStore();
+  const {recs, memo} = pgStore();
+  memo.gone.delete(rec.id);
   recs[rec.id] = Object.assign({}, rec, {state: "applied", at: Date.now(), seq: memo.n, load: PG_LOAD, clock: pgClockNow()});
   pgSave();
   if(typeof sbStamp !== "undefined") sbStamp++;
@@ -24685,7 +24725,7 @@ function pgEvaluate(){
   let touched = false;
   Object.entries(recs).forEach(([id, rec]) => {
     const made = pgMinutes(rec.clock);
-    if(now !== null && made !== null && now - made > PG_KEEP_DAYS * 1440){ delete recs[id]; touched = true; return; }
+    if(now !== null && made !== null && now - made > PG_KEEP_DAYS * 1440){ delete recs[id]; memo.gone.add(id); touched = true; return; }
     if(!["applied", "partly", "unseen"].includes(rec.state) || !(memo.n > rec.seq)) return;
     if(now !== null && made !== null && (now < made || (now === made && rec.load !== PG_LOAD))) return;
     let v = null;
@@ -24730,8 +24770,8 @@ const pgSettled = family => Object.values(pgStore().recs).filter(r => (!family |
 /* Clear what the player can clear: their marks are cleared by the checklist;
    judged records by this. */
 function pgClearSettled(){
-  const {recs} = pgStore();
-  Object.keys(recs).forEach(id => { if(recs[id].state === "confirmed" || recs[id].state === "changed") delete recs[id]; });
+  const {recs, memo} = pgStore();
+  Object.keys(recs).forEach(id => { if(recs[id].state === "confirmed" || recs[id].state === "changed"){ delete recs[id]; memo.gone.add(id); } });
   pgSave();
 }
 /* A write's records, by family. Imports: one a line written, its contracts'
@@ -24793,8 +24833,8 @@ function pgHireDone(body, answer){
 /* An undo takes its write's records back: nothing is left to confirm. */
 function pgDrop(ids){
   if(!ids || !ids.length) return;
-  const {recs} = pgStore();
-  ids.forEach(id => { delete recs[id]; });
+  const {recs, memo} = pgStore();
+  ids.forEach(id => { delete recs[id]; memo.gone.add(id); });
   pgSave();
   if(typeof sbStamp !== "undefined") sbStamp++;
   pgSupplyStale();
@@ -26480,19 +26520,32 @@ function sbDepWords(r, deps){
       {item: spEsc(dep.item), site: spEsc(D.businesses[dep.s] ? shortName(D.businesses[dep.s]) : "?"), m: dep.machines, n: dep.machines,
        now: sbHoursWords(dep.each), need: dep.need, thin: thin ? ` (${thin})` : ""});
   });
-  /* The consequence from the machine-hours staffed now against the plan's. */
+  /* The consequence from the machine-hours staffed now against the plan's:
+     what the lines draw at these hours, more or less than the figure was
+     planned on. The figure runs short only where it is under the week the
+     depot sends at these hours (the week it was planned for, with the lines'
+     difference); a Smart Delivery level is stock, not a week, and is not
+     weighed. Machines split unevenly that draw the plan's total draw it. */
   const known = deps.every(x => Number.isFinite(x.perHour));
   const gap = x => x.week - x.need * 7 * x.machines;
   const more = deps.filter(x => gap(x) > 0), less = deps.filter(x => gap(x) < 0);
   const diff = Math.round(deps.reduce((n, x) => n + (Number.isFinite(x.perHour) ? x.perHour * gap(x) : 0), 0));
   const depot = D.businesses[r.s] ? spEsc(shortName(D.businesses[r.s])) : "";
   const value = num(r.value ?? 0);
-  const then = more.length && !less.length
-    ? (known && diff > 0 ? tt("sb.dep.more.n", "Until they do, the lines eat about {n} a week more than planned, and {value} runs short.", {n: num(diff), value})
-      : tt("sb.dep.more", "Until they do, the lines eat more than planned, and {value} runs short.", {value}))
-    : less.length && !more.length
-    ? (known && diff < 0 ? tt("sb.dep.less.n", "Until they do, the lines eat about {n} a week less than planned: that stock piles up at {depot}, and the lines make less than the plan.", {n: num(-diff), depot})
-      : tt("sb.dep.less", "Until they do, the lines eat less than planned: the stock piles up at {depot}, and the lines make less than the plan.", {depot}))
+  const pf = szFactFor(r.s, r.slug, deps[0].basis || sizing), pUse = pf ? (pf.import || pf).use : null;
+  const week = !r.smart && Number.isFinite(pUse) && Number.isFinite(r.value) ? pUse + diff : null;
+  const drawMore = () => {
+    const lead = tt("sb.dep.more.draw", "Until they do, the lines draw about {n} a week more than planned.", {n: num(diff)});
+    if(week === null) return lead;
+    return `${lead} ${r.value < week ? tt("sb.dep.more.short", "{value} runs short of the {need} a week that takes.", {value, need: num(week)})
+      : tt("sb.dep.more.covers", "{value} still covers the {need} a week that takes.", {value, need: num(week)})}`;
+  };
+  const then = known && diff === 0 && !(more.length && !less.length) && !(less.length && !more.length)
+    ? tt("sb.dep.even", "The machines' hours are uneven, but together they draw what {value} is planned on.", {value})
+    : known && diff > 0 ? drawMore()
+    : known && diff < 0 ? tt("sb.dep.less.n", "Until they do, the lines eat about {n} a week less than planned: that stock piles up at {depot}, and the lines make less than the plan.", {n: num(-diff), depot})
+    : more.length && !less.length ? tt("sb.dep.more.check", "Until they do, the lines draw more than planned: check that {value} covers it.", {value})
+    : less.length && !more.length ? tt("sb.dep.less", "Until they do, the lines eat less than planned: the stock piles up at {depot}, and the lines make less than the plan.", {depot})
     : tt("sb.dep.mixed", "Until they do, what the lines eat is not what {value} is planned on.", {value});
   return {lines, then};
 }

@@ -505,3 +505,74 @@ test('Production speaks the board\'s words: no roster, shift or posting, and the
   assert.doesNotMatch(words, /\b(roster|rostered|shifts?|posted|post)\b/i);
   assert.doesNotMatch(words, /24\/7|under Demand/);
 });
+
+// --- round 2 of the chunk's review -------------------------------------------
+
+test('two tabs of one company: a board in one keeps the other\'s records, and an undo in one stays undone', async t => {
+  const context = await browser.newContext({viewport: {width: 1280, height: 900}});
+  t.after(() => context.close());
+  await context.route('https://**', r => r.abort());
+  await context.route('http://progress.test/**', r => {
+    const rel = decodeURIComponent(new URL(r.request().url()).pathname.slice(1));
+    if(!rel) return r.fulfill({contentType: 'text/html', body: html});
+    const f = path.join(root, 'web', rel);
+    return fs.existsSync(f) && fs.statSync(f).isFile() ? r.fulfill({path: f}) : r.fulfill({status: 404, body: ''});
+  });
+  const open = async () => { const p = await context.newPage(); await p.goto('http://progress.test/'); return p; };
+  const a = await open(), b = await open();
+  await a.evaluate(() => localStorage.clear());
+  for(const p of [a, b]) await p.evaluate(d => { takeData(d); }, fixture());
+  const rec = id => ({id, family: 'imports', target: {depot: 'hub#1', slug: id}, expect: {contracts: [], inGame: 1}, rowKeys: [], label: id});
+  await b.evaluate(r => pgRecord(r), rec('from-b'));
+  await a.evaluate(r => pgRecord(r), rec('from-a'));
+  const stored = () => a.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('ba_progress_v1:r8-fixture')).recs).sort());
+  // Tab B's next board saves its count: tab A's record stays.
+  await b.evaluate(() => takeData(JSON.parse(JSON.stringify(D))));
+  assert.deepEqual(await stored(), ['from-a', 'from-b']);
+  // Tab A's undo takes its record away; tab B's next board does not bring it back.
+  await a.evaluate(() => pgDrop(['from-a']));
+  await b.evaluate(() => { takeData(JSON.parse(JSON.stringify(D))); pgRecord({id: 'b2', family: 'imports', target: {depot: 'hub#1', slug: 'b2'}, expect: {contracts: [], inGame: 1}, rowKeys: [], label: 'b2'}); });
+  assert.deepEqual(await stored(), ['b2', 'from-b']);
+  // The count is the higher of the two tabs'.
+  const n = await Promise.all([a, b].map(p => p.evaluate(() => pgStore().memo.n)));
+  assert.equal(await a.evaluate(() => JSON.parse(localStorage.getItem('ba_progress_v1:r8-fixture')).n), Math.max(...n));
+});
+
+/* Day 47 with a shop demand plan of 4 h a machine: the brewery's machines at
+   12 h and 0 h draw 84 machine-hours of Water (25 each) a week against the
+   plan's 56, 700 more; the week the Hub sends at these hours is the plan's
+   1,400 plus that. */
+test('lines drawing more than planned: a figure that covers the draw says so, one under it runs short', async t => {
+  const data = DAY47();
+  const brewery = data.supply.factories.sites[0];
+  brewery.lines[0].needHours.dem = 4;
+  const hub = data.businesses.findIndex(b => b.key === HUB47);
+  Object.assign(data.supply.facts[hub][WATER].dem, {use: 1400, need: 1610});
+  const page = await board(t, {data, mode: 'dem'});
+  const said = value => page.evaluate(([s, slug, k, value]) => {
+    impSetKeep(impSetId(k, slug), {value, inGame: 3000, basis: 'dem'}); sbStamp++;
+    sbSelOff = false; sbSel = {s, slug}; drawSupplyStrip(); drawImportsView(); wireAll();
+    return document.querySelector('#sbCard .sbi-dep').textContent.replace(/\s+/g, ' ');
+  }, [hub, WATER, HUB47, value]);
+  const covers = await said(5000);
+  assert.match(covers, /staffed 12 h and 0 h a day → 4 h a day each/);
+  assert.match(covers, /the lines draw about 700 a week more than planned\. 5,000 still covers the 2,100 a week that takes\./);
+  assert.doesNotMatch(covers, /runs short/);
+  assert.match(await said(2000), /2,000 runs short of the 2,100 a week that takes\./);
+});
+
+test('machines split unevenly that draw the plan\'s total read as uneven, not as a draw that differs', async t => {
+  const data = fixture();
+  // The cake line's two machines at 24 h and 0 h; shop demand plans 12 h each.
+  Object.assign(data.supply.factories.sites[0].lines[0], {gaps: [{slot: 2, hours: 0, off: 'Mon-Sun 0-24'}], hoursWeek: 168, hoursNow: 0,
+    needHours: {cap: 24, dem: 12}});
+  const page = await board(t, {data, mode: 'dem'});
+  const text = await page.evaluate(() => {
+    impSetKeep(impSetId('hub#1', 'flour'), {value: 12000, inGame: 14000, basis: 'dem'}); sbStamp++;
+    sbSelOff = false; sbSel = {s: 0, slug: 'flour'}; drawSupplyStrip(); drawImportsView(); wireAll();
+    return document.querySelector('#sbCard .sbi-dep').textContent.replace(/\s+/g, ' ');
+  });
+  assert.match(text, /staffed 24 h and 0 h a day → 12 h a day each/);
+  assert.match(text, /The machines' hours are uneven, but together they draw what 12,000 is planned on\./);
+  assert.doesNotMatch(text, /is not what|more than planned|less than planned/);
+});
