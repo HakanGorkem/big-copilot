@@ -2,8 +2,8 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script>window.LEDGER_BUILD = "405b5104c3";</script>
-<link rel="stylesheet" href="community.css?v=405b5104c3">
+<script>window.LEDGER_BUILD = "e33f971b1c";</script>
+<link rel="stylesheet" href="community.css?v=e33f971b1c">
 <title>Big Copilot</title>
 <script>
 /* The remembered theme, before anything paints. It has to be an inline, blocking
@@ -15,7 +15,7 @@
 try{ var t = localStorage.getItem("ba_dash_theme"); if(t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); }catch(e){}
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d100f'/%3E%3Ccircle cx='16' cy='16' r='8' fill='%2343c07a'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="fonts/fonts.css?v=405b5104c3">
+<link rel="stylesheet" href="fonts/fonts.css?v=e33f971b1c">
 <style>
 /* The map artwork keeps its approved dark palette in either dashboard theme. */
 .map-shortcut{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-left:5px;padding:4px;border:1px solid var(--rule);border-radius:4px;background:var(--surface);color:var(--ink-2);cursor:pointer;line-height:1;flex:none}
@@ -3605,7 +3605,8 @@ const TT_SELECTOR = "[data-tt]," + TT_ATTRS.map(([a]) => `[${a}]`).join(",");
 /* The longest the landing stays hidden while a table loads. */
 const TT_WAIT_MS = 400;
 
-let ttLang = "en", ttTable = null, ttSeq = 0;
+/* ttWant: the language on screen or on its way (setUiLang()). */
+let ttLang = "en", ttTable = null, ttSeq = 0, ttWant = "en";
 const ttListeners = [];
 const ttRules = new Map();
 const ttOrig = typeof WeakMap === "function" ? new WeakMap() : new Map();
@@ -3819,6 +3820,7 @@ function ttSetTable(lang, table){
      "$1.234" never stands beside an English sentence (as cli_ui_table()). */
   ttTable = ttLang !== "en" && table && typeof table === "object" && Object.keys(table).length ? table : null;
   if(!ttTable) ttLang = "en";
+  ttWant = ttLang;
   setUiLocale(ttLang);
   ttWhenDom(() => tApply());
   ttListeners.slice().forEach(fn => { try{ fn(ttLang); }catch(e){ console.error(e); } });
@@ -3840,9 +3842,10 @@ function ttLoad(lang){
 async function setUiLang(lang){
   if(!ttKnown(lang)) lang = "en";
   const seq = ++ttSeq;
+  ttWant = lang;
   let table = null;
   if(lang !== "en"){
-    try{ table = await ttLoad(lang); }catch(e){ return false; }
+    try{ table = await ttLoad(lang); }catch(e){ if(seq === ttSeq) ttWant = ttLang; return false; }
   }
   if(seq !== ttSeq) return false;
   ttSetTable(lang, table);
@@ -4584,7 +4587,7 @@ document.addEventListener('click', event => {
   <div class="map-dialog-head"><h2 id="locationMapTitle">Location map</h2><button type="button" id="closeLocationMap" class="ibtn" aria-label="Close map" data-tt-aria-label="nav.dlg.closemap" autofocus><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
   <div id="cityMapOverlay"></div>
 </dialog>
-<script>window.LEDGER_RELEASE = {"version":"405b5104c3","latest":{"pr":165,"date":"2026-09-27","title":"Big Copilot in your language","summary":"The footer's Game names setting is now Language, and it translates the whole page: Big Copilot comes in German, Spanish, French, Portuguese and Russian as well as English, with the game's names to match. The game's other languages still change the game's names, and the rest of the page stays English. Your choice is kept for your next visit. Most of the Spanish, French, Portuguese and Russian is machine-translated for now; if you speak one of them, the link under the picker shows how to help check it."}};</script>
+<script>window.LEDGER_RELEASE = {"version":"e33f971b1c","latest":{"pr":165,"date":"2026-09-27","title":"Big Copilot in your language","summary":"The footer's Game names setting is now Language, and it translates the whole page: Big Copilot comes in German, Spanish, French, Portuguese and Russian as well as English, with the game's names to match. The game's other languages still change the game's names, and the rest of the page stays English. Your choice is kept for your next visit. Most of the Spanish, French, Portuguese and Russian is machine-translated for now; if you speak one of them, the link under the picker shows how to help check it."}};</script>
 <script>/* Embedded in the browser shell so the loaded release is the baseline even
  * when the first version check happens after another deployment. */
 (() => {
@@ -4672,8 +4675,8 @@ document.addEventListener('click', event => {
   });
 })();
 </script>
-<script src="app.js?v=405b5104c3"></script>
-<script src="community.js?v=405b5104c3"></script>
+<script src="app.js?v=e33f971b1c"></script>
+<script src="community.js?v=e33f971b1c"></script>
 
 <script>
 
@@ -5123,7 +5126,7 @@ async function gnSwitch(lang){
   gnHold++;
   try{
     const [names] = await Promise.all([setGameNames(lang),
-      canUi && ui !== (typeof ttLang === "string" ? ttLang : "en") ? setUiLang(ui) : true]);
+      canUi && ui !== (typeof ttWant === "string" ? ttWant : "en") ? setUiLang(ui) : true]);
     return names;
   }finally{
     if(!--gnHold && gnPending){ gnPending = false; gnRedraw(); }

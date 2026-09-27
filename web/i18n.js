@@ -40,7 +40,8 @@ const TT_SELECTOR = "[data-tt]," + TT_ATTRS.map(([a]) => `[${a}]`).join(",");
 /* The longest the landing stays hidden while a table loads. */
 const TT_WAIT_MS = 400;
 
-let ttLang = "en", ttTable = null, ttSeq = 0;
+/* ttWant: the language on screen or on its way (setUiLang()). */
+let ttLang = "en", ttTable = null, ttSeq = 0, ttWant = "en";
 const ttListeners = [];
 const ttRules = new Map();
 const ttOrig = typeof WeakMap === "function" ? new WeakMap() : new Map();
@@ -254,6 +255,7 @@ function ttSetTable(lang, table){
      "$1.234" never stands beside an English sentence (as cli_ui_table()). */
   ttTable = ttLang !== "en" && table && typeof table === "object" && Object.keys(table).length ? table : null;
   if(!ttTable) ttLang = "en";
+  ttWant = ttLang;
   setUiLocale(ttLang);
   ttWhenDom(() => tApply());
   ttListeners.slice().forEach(fn => { try{ fn(ttLang); }catch(e){ console.error(e); } });
@@ -275,9 +277,10 @@ function ttLoad(lang){
 async function setUiLang(lang){
   if(!ttKnown(lang)) lang = "en";
   const seq = ++ttSeq;
+  ttWant = lang;
   let table = null;
   if(lang !== "en"){
-    try{ table = await ttLoad(lang); }catch(e){ return false; }
+    try{ table = await ttLoad(lang); }catch(e){ if(seq === ttSeq) ttWant = ttLang; return false; }
   }
   if(seq !== ttSeq) return false;
   ttSetTable(lang, table);

@@ -17135,7 +17135,7 @@ async function gnSwitch(lang){
   gnHold++;
   try{
     const [names] = await Promise.all([setGameNames(lang),
-      canUi && ui !== (typeof ttLang === "string" ? ttLang : "en") ? setUiLang(ui) : true]);
+      canUi && ui !== (typeof ttWant === "string" ? ttWant : "en") ? setUiLang(ui) : true]);
     return names;
   }finally{
     if(!--gnHold && gnPending){ gnPending = false; gnRedraw(); }
