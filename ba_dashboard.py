@@ -3785,6 +3785,7 @@ def _supply(
     )
 
     # --- 2. depots: does the holding reach the next delivery?
+    factory_keys = {b["key"] for b in businesses if b.get("typeSlug") in FACTORY_TYPES}
     import_rows = []
     weekly_use = {}  # (depot, item) -> a week of the draw the rows below judge
     route_week = {}  # (site index, item) -> a week of what routes bring, unrounded
@@ -3877,15 +3878,6 @@ def _supply(
             def until_drop(when):
                 return max(when - day - 1 + today + (1 if rounds else 0), 0.0)
 
-            due = until_drop(supply["arrives"]) if supply["active"] else None
-            # A paused backup beside a route that brings the week has no drop
-            # to reach; the shelf is judged over a week instead, which the
-            # route's few percent of drift cannot empty.
-            horizon = covered and due is None
-            week_on = day + (6 if rounds else 7)  # a week of rounds, or of days
-            if horizon:
-                due = until_drop(week_on)
-
             # Is the standing order the right size? Last week's draw is not the
             # test — an order that exactly matched last week's use is a well
             # sized order, not a warning. The test is the week the order has to
@@ -3902,13 +3894,28 @@ def _supply(
             # from what it holds. Each sender counts no more than its route can
             # bring in a week, a round a day up to the target. With a week of
             # the need behind the route, the import is not the whole supply, so
-            # its size is not judged; the shelf still is.
+            # its size is not judged; the shelf still is. Not where a factory
+            # line draws on the depot too: the shops' week leaves that need out.
             unmeasured = (
                 not routed and basis == "sales"
+                and not any(i == item and dest in factory_keys
+                            for dest, i, _amount in edges.get(business["key"], ()))
                 and sum(min(held.get(source, {}).get(item, 0), 7 * amount)
                         for source, amount in route_targets.get((business["key"], item), ()))
                 >= week_need > 0
             )
+
+            due = until_drop(supply["arrives"]) if supply["active"] else None
+            # A paused backup beside a route that brings the week has no drop
+            # to reach; the shelf is judged over a week instead, which the
+            # route's few percent of drift cannot empty. Beside a route the log
+            # cannot measure the week is walked without it, so the shelf has to
+            # hold the week on its own.
+            horizon = (covered or unmeasured) and due is None
+            week_on = day + (6 if rounds else 7)  # a week of rounds, or of days
+            if horizon:
+                due = until_drop(week_on)
+
             # Last week's order against this week's is a change of mind, not a
             # shortfall; without a measured draw the order is not judged.
             order_fit = (
