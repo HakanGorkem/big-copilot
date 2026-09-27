@@ -379,8 +379,8 @@ details.help[open] summary::after{content:"\2013"}
 <!-- One-time news strip. For the next announcement replace data-news-id and the
      copy, and give the copy a new data-tt key: a new id shows again to everyone
      who dismissed this one (web/update.js). -->
-<aside class="news-strip" id="newsStrip" data-news-id="link-0.2.0" aria-label="News" data-tt-aria-label="upd.news" hidden>
-  <p class="news-copy"><b class="news-tag" data-tt="upd.news.tag">New</b><span data-tt="upd.news.link-0-2-0">Big Copilot Link 0.2.0 lets the board make changes in your game: set uniforms, apply import amounts and write staffing plans, with a preview and one-step undo.</span><a id="newsLink" href="https://steamcommunity.com/sharedfiles/filedetails/?id=3806322395" target="_blank" rel="noopener" data-tt="upd.news.get-mod">Get the mod on the Steam Workshop</a></p>
+<aside class="news-strip" id="newsStrip" data-news-id="lang-ko" aria-label="News" data-tt-aria-label="upd.news" hidden>
+  <p class="news-copy"><b class="news-tag" data-tt="upd.news.tag">New</b><span data-tt="upd.news.lang-ko">Big Copilot now comes in Korean, thanks to Chanwoo Kim (kcw2034), who translated it. Thank you! Speak another language? Your translation is welcome too.</span><a id="newsLink" href="https://github.com/PeterHartwieg/big-copilot/blob/main/docs/translating.md" target="_blank" rel="noopener" data-tt="upd.news.help-translate">Help translate Big Copilot</a></p>
   <button type="button" class="news-dismiss" id="newsDismiss" aria-label="Dismiss this news" title="Dismiss this news" data-tt-aria-label="upd.news.dismiss" data-tt-title="upd.news.dismiss"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
 </aside>
 <section class="landing" id="landing">
