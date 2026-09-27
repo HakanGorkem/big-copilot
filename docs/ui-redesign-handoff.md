@@ -1,6 +1,16 @@
 # Big Copilot redesign — fresh-session handover
 
-## Current checkpoint — 26 September 2026, third handover (chunk 2 in progress)
+## Current checkpoint — 27 September 2026, chunk 2 accepted
+
+**This section is the current state; the checkpoints below are history.**
+
+- **Chunk 2 (Supply and Staffing) is ACCEPTED and merged locally** into `codex/ui-redesign-integration` as `bc7a425` (merging `1c8e6fc` from `codex/ui-redesign-chunk2`). Owner: the resumed Opus 5.5 session `880dde5a-f9e2-49f8-86e2-8a82410452de` (implementation `90a871e`, then three fix rounds `8a58886`, `51a95c6`, `1c8e6fc`). Its handoff is `docs/ui-chunk-2-handoff.md`; progress rules are in `docs/ui-progress-postconditions.md`.
+- **Review:** four rounds of the three-seat panel (`execution/c2-r1-*` to `c2-r4-*`). Round 4: Opus 5.5 code, GPT-6 Sol code and GPT-6 Sol QA all READY, models verified. Final gate on `1c8e6fc` (`execution/c2-final-gate`): Node 1,228/1,229 (1 skipped, 0 failed), Python 1,366 OK (1 skipped), `build_web.py --check` current.
+- **Carried into chunk 3 (LOW, not fixed):** a live refresh resets Goods flow's sideways scroll and snaps to the followed site; the Goods flow legend scrolls with the picture; with two tabs, an undo or clear is written back once the other tab has judged the record; the hours row's headline figure is the least-staffed machine's; German strings for chunk 2's reworded text need retranslating; one intermittent web-target failure of the older two-tab progress test. Accepted: Goods flow names at about 9.2 px at the 0.8 scale floor; a read already in flight at Apply judged as later.
+- **Still deferred to chunk 3 from before:** City map vs Finder history; phone Tab order in finding rows; a business's own page still carries the planner; uniform write progress; no Goods flow product filter; English-only hiring text.
+- **Next:** chunk 3 (Businesses, Expansion, references, utilities, full parity) in a fresh worktree from `bc7a425`, with a fresh Opus 5.5 owner from `execution/chunk3-implement-template.txt` plus the carried items above; same review panel. Boundaries unchanged: no push, deploy, main merge or TEMPLATE extraction E.
+
+## Third checkpoint — 26 September 2026, chunk 2 in progress (history)
 
 Peter ended the session to shut the PC down. **This section is the current state; the second and original handovers below are history.**
 
