@@ -239,7 +239,7 @@ button.btn{border:0;cursor:pointer}
 .strip .st .led.lg-dim{background:var(--ink-3)}
 .strip .file{text-transform:uppercase}
 .strip .file:empty,.strip #srcStatus:empty{display:none}
-.strip .btn2:disabled{opacity:.4;pointer-events:none}
+.strip .btn2:disabled,.mast .nx-src .btn2:disabled{opacity:.4;pointer-events:none}
 .strip .st{min-width:0;flex-wrap:wrap}
 /* All well on the board: Update and ··· alone; reading: the bar alone. */
 .strip.calm .st{display:none}
@@ -298,7 +298,7 @@ button.btn{border:0;cursor:pointer}
 .save-option-meta{display:block;margin-top:2px;font:400 10px/1.5 "IBM Plex Mono",monospace;color:var(--ink-2)}
 .menu-panel .save-picker{width:100%;margin-bottom:8px}
 .menu-panel .save-options{position:relative;top:auto;right:auto;width:100%;max-width:none;margin-top:6px;box-shadow:none}
-.strip .right .menu-panel{white-space:normal}
+.strip .right .menu-panel,.mast .nx-src .menu-panel{white-space:normal}
 .landing details.help{width:560px;margin-top:-8px}
 .landing details.help:not([open]){display:none}
 .landing details.help > summary{display:none}
@@ -351,6 +351,16 @@ details.help[open] summary::after{content:"\2013"}
 
 /* the More menu's panel ------------------------------------------------- */
 .menu{position:relative}
+/* Update and ··· in the board's masthead, beside Search. */
+.mast .nx-src{display:flex;align-items:center;gap:6px;flex:none}
+.mast .nx-src #updateBtn{white-space:nowrap}
+.mast .nx-src #updateBtn.busy{position:relative;overflow:hidden}
+.mast .nx-src #updateBtn.busy::after{content:"";position:absolute;left:0;bottom:0;height:2px;width:40%;background:var(--accent);animation:nx-read 1.1s ease-in-out infinite}
+@keyframes nx-read{from{left:-40%}to{left:100%}}
+/* On a narrow screen the menu hangs under the masthead, across the window
+   (its top is set as it opens: wireMenu()). */
+@media (max-width:760px){.mast .nx-src .menu-panel{position:fixed;left:12px;right:12px;width:auto;max-height:calc(100vh - 90px);overflow:auto}}
+@media (prefers-reduced-motion:reduce){.mast .nx-src #updateBtn.busy::after{animation:none;width:100%;left:0}}
 .menu-panel{display:none;position:absolute;right:0;top:calc(100% + 8px);width:320px;padding:10px;background:var(--surface);
   border:1px solid var(--rule);border-radius:10px;box-shadow:0 12px 32px color-mix(in srgb,var(--ink) 16%,transparent);z-index:40;
   max-height:min(650px,80vh);overflow:auto;text-align:left}

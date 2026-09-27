@@ -73,7 +73,9 @@ test('Results carries Company finances: cash beside profit, the loans and what t
   // The cash line is a comparison with a day, not where cash history starts (round 1, S4).
   assert.match(tiles[2], /cash compared with day 40/);
   assert.doesNotMatch(tiles[2], /watched from/);
-  assert.match(await page.locator('#dailyHead h2').innerText(), /Company results/);
+  // The chart's head, its window switch and "?", stands in the row beside the views (declutter round 2).
+  assert.match(await page.locator('#viewCtl [data-view-ctl="businesses/results"] h2').textContent(), /Company results/);
+  assert.equal(await page.locator('#viewCtl #chartTools').count(), 1);
   // Where the history is kept is Preferences' to say, and Payroll is a tab of
   // its own: no clause and no link repeat them here (declutter BV1, BV4).
   assert.doesNotMatch(tiles[2], /market_history\.json|kept in this browser/);
@@ -116,8 +118,8 @@ test('Standards compares every shop and office: satisfaction against the 80 line
 test('Products & prices: a shop picked shows its prices beside the market\'s lowest, and the pick survives Back, Forward and a reload', async t => {
   const page = await board(t, {hash: '#businesses/prices'});
   const k = await keys(page);
-  const picked = () => page.evaluate(() => (document.querySelector('#secPrices [data-price-pick][aria-pressed="true"]') || {}).dataset?.pricePick);
-  await page.locator(`#secPrices [data-price-pick="${k.gifts}"]`).click();
+  const picked = () => page.evaluate(() => (document.querySelector('#viewCtl [data-price-pick][aria-pressed="true"]') || {}).dataset?.pricePick);
+  await page.locator(`#viewCtl [data-price-pick="${k.gifts}"]`).click();
   assert.equal(await picked(), k.gifts);
   const head = await page.$$eval('#secPrices .bz-prices th', ths => ths.map(th => th.textContent.trim()).filter(Boolean));
   assert.deepEqual(head.slice(0, 5), ['Product', 'Your price', 'Lowest market price · Lower Manhattan', 'Average sold price', 'Sells / day']);
@@ -161,7 +163,7 @@ test('Products & prices: a shop picked shows its prices beside the market\'s low
   // The pick is the entry's: Back to Spirits' visit and Forward to Gifts'.
   await page.evaluate(() => openRoute('businesses/results'));
   await page.evaluate(() => openRoute('businesses/prices'));
-  await page.locator(`#secPrices [data-price-pick="${k.spirits}"]`).click();
+  await page.locator(`#viewCtl [data-price-pick="${k.spirits}"]`).click();
   await page.reload();
   await page.waitForFunction(() => typeof hasData === 'function' && hasData() && route === 'businesses/prices');
   assert.equal(await picked(), k.spirits, 'a reload keeps the shop on screen');
@@ -170,8 +172,10 @@ test('Products & prices: a shop picked shows its prices beside the market\'s low
 test('Plan a factory names itself so on its page, Demand\'s rows leave it to its tab; search knows Company results', async t => {
   const page = await board(t, {hash: '#expansion/factory'});
   // The heading is the lit tab's name, kept for screen readers (declutter G9).
-  assert.equal(await page.locator('#secPlan .sechead h2').first().textContent(), 'Plan a factory');
-  assert.equal(await page.locator('#secPlan .sechead h2.nx-sr').count(), 1);
+  // Its head, with the type picker, stands in the row beside the views.
+  assert.equal(await page.locator('#viewCtl [data-view-ctl="expansion/factory"] h2').textContent(), 'Plan a factory');
+  assert.equal(await page.locator('#viewCtl [data-view-ctl="expansion/factory"] h2.nx-sr').count(), 1);
+  assert.equal(await page.locator('#viewCtl #planPicker').count(), 1);
   await page.evaluate(() => openRoute('expansion/demand'));
   // Plan a factory is the next tab: no row links it again (declutter E2).
   assert.equal(await page.locator('#market .mk-plan').count(), 0);

@@ -416,3 +416,68 @@ These keys keep their names; their English changed:
   - an office's price tips;
   - the depot's empty blocks;
   - the verdicts' kept counts.
+
+## Round 2: one row of controls (27 September 2026)
+
+Peter, on the after screenshot of Supply › Imports: five rows of menus above the content, and
+a subtitle. They were the news strip, the masthead, the area tabs, a row holding only Update and
+···, the view tabs, the control row, and then "0 of 7 lines reach their next delivery with room."
+Three rules for every area:
+
+1. **Update and ··· live in the masthead, beside Search.**
+   - The row they sat on is gone (`#mastSrc`, placed by `place()` in `web/app.js`).
+   - The source strip is a full-width warning bar, shown only while something is wrong (its bad
+     state). It keeps the recovery actions: Choose the folder again, Get the mod, Reload app.
+   - A read in progress is the Update button, busy (a thin bar under it; still under reduced
+     motion).
+   - On a narrow screen the ··· menu hangs across the window under the masthead.
+2. **The view tabs and the view's controls share one row.** The tabs are on the left and the
+   controls on the right; below about 1100 px the controls take a line of their own under the
+   tabs.
+   - How: a view marks its control row with `data-view-ctl="<route>"`, and `ctlHoist()` moves it
+     into `#viewCtl` beside `#localNav` while that route is on screen. A comment keeps its place,
+     and it goes back when the route changes.
+   - A view that draws itself again releases its old copy first (`ctlRelease()`), so no id is
+     ever in the page twice; a `MutationObserver` hoists the new one.
+   - The Supply handlers (`[data-sb-mode]`, `select[data-sb-scope]`, `[data-sbf-unfollow]`) and
+     the CSS of the controls are no longer tied to `#pageSupply` or `#pageCompany`.
+   - The controls in the row:
+
+     | View | Controls in the row |
+     | --- | --- |
+     | Supply › Changes, Imports, Deliveries, Production | scope, Needs a change \| Everything, Full production \| Shop demand (each where the view has it) |
+     | Supply › Goods flow | the followed site's chip, when one is followed |
+     | Businesses › Results | the chart's window (30 days, All, By weekday) and its "?" |
+     | Businesses › Products & prices | the business chips |
+     | Staffing › Payroll | the satisfaction and trouble chips, and the "?" |
+     | Expansion › Demand | By type \| What I sell \| Not yet, "usual order", and the "?" |
+     | Expansion › Plan a factory | the type picker, the setup guide link, and the "?" |
+
+   - Views with no control row (Standards, Milestones, Schedules, Staff needs, Find a location)
+     show their tabs alone.
+3. **No summary line under the controls.**
+   - Supply's verdicts are removed as lines ("0 of 7 lines reach their next delivery with
+     room.", Deliveries' two group notes, Production's verdict). Their words are the view tab's
+     tip (`viewTip()`); the rows and their Status column show the state.
+   - A landing's crumb ("from Needs attention · … ×") and an empty view's "No shelf or
+     second-tier warehouse is on a delivery plan yet." still show.
+   - Plan a factory's "n products of m bought in · also sells … as services" is the type
+     picker's tip.
+
+Left as they were: the news strip and the masthead's clock.
+
+Screenshots, at 1440 light, of every page: `shots/after2-web/` and `shots/after2-cli/`, with the
+same file names as the folders above. For example, `shots/after2-web/07-supply_imports.png`
+shows the masthead, the area tabs, one row of tabs and controls, then the review card.
+
+Tests:
+
+- `shell_routes`: "a view shares one row with its tabs…" checks, on both targets:
+  - the controls in `#viewCtl` on one line with the tabs at 1440;
+  - no summary line, and the tab's tip;
+  - the row following the route, a control working where it stands, and a redraw replacing the
+    old row.
+- `restore`: "on the board Update and ··· sit in the masthead beside Search…": their order in
+  the masthead, no strip row while all is well, and the menu opening.
+- **Moved:** tests that found a control inside its section now find it in the row; tests that
+  read a verdict line read the tab's tip.

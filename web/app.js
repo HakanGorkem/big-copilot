@@ -408,6 +408,10 @@
     st.textContent = restoring ? tt("app.strip.restoring", "Loading your previous save…")
       : bad && noted.text ? `${strip.head}: ${noted.text.replace(/\.$/, "")}` : strip.head;
     $("srcProg").hidden = strip.tone !== "busy";
+    // On the board a read in progress is the masthead's Update button, busy.
+    const upd = $("updateBtn");
+    upd.classList.toggle("busy", board && strip.tone === "busy");
+    if (board && strip.tone === "busy") upd.setAttribute("aria-busy", "true"); else upd.removeAttribute("aria-busy");
     let meta = bad && noted.sub ? noted.sub
       : strip.tone === "busy" && lastGood ? tt("app.strip.kept", "last good board stays on screen")
       : strip.meta;
@@ -436,7 +440,9 @@
     // On the landing the strip only shows when it has something to say: a
     // remembered folder, a save being read, a folder that would not read.
     const quietLoad = strip.tone === "busy" && !lastFile && !dirHandle && !attempt;
-    $("srcStrip").hidden = !board && (strip.tone === "ready" || quietLoad);
+    /* On the board Update and ··· live in the masthead; the strip is a
+       full-width warning bar, there only while something is wrong. */
+    $("srcStrip").hidden = board ? !bad : (strip.tone === "ready" || quietLoad);
     const n = $("srcNote");
     const showNote = !!noted.text && !bad;
     n.hidden = !showNote;
@@ -505,6 +511,17 @@
       row.appendChild($("srcStrip"));
       $("sourceNote").appendChild($("srcNote"));
       $("srcActions").appendChild($("boardControls").content.cloneNode(true));
+      /* Update and ··· sit in the masthead, beside Search; the strip keeps
+         the recovery actions for its warning bar. */
+      const mast = $("mast");
+      if (mast) {
+        const slot = document.createElement("div");
+        slot.className = "nx-src"; slot.id = "mastSrc";
+        mast.insertBefore(slot, $("clock"));
+        slot.append($("updateBtn"), $("srcMenu"));
+        // The row is narrower now: fit it again, and the sphere's shelf with it.
+        if (typeof nxFitMast === "function") nxFitMast();
+      }
       const lb = $("linkBtn");
       fb.className = "lg-btn";
       if (lb) lb.className = "lg-btn";
@@ -569,6 +586,10 @@
     $("menuBtn").addEventListener("click", (e) => {
       e.stopPropagation();
       const open = !$("srcMenu").classList.contains("open");
+      // Under the masthead, where the narrow screen's CSS fixes the panel.
+      const panel = $("srcMenu").querySelector(".menu-panel"), mast = $("mast");
+      if (panel) panel.style.top = mast && $("srcMenu").closest("#mast") && window.matchMedia && matchMedia("(max-width:760px)").matches
+        ? `${Math.round(mast.getBoundingClientRect().bottom + 6)}px` : "";
       $("srcMenu").classList.toggle("open", open);
       $("menuBtn").setAttribute("aria-expanded", String(open));
       if (!open) closeSavePicker();

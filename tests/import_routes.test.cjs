@@ -81,6 +81,8 @@ const text = (page, sel) => page.$eval(sel, el => {
   while(w.nextNode()) bits.push(w.currentNode.textContent);
   return bits.join(' ').replace(/\s+/g, ' ').trim();
 });
+/* A view's summary: its tab's tip, not a line under the controls (declutter round 2). */
+const tabTip = (page, view) => page.evaluate(v => viewTips[`supply/${v}`] || '', view);
 /* Warehouses columns after the tick: Product, On hand, Draw, Busiest, Cover, Order / top-up, Uses / week, Status. */
 const WH = {item: 1, order: 6, uses: 7, status: 8};
 
@@ -107,12 +109,13 @@ test('Imports and Deliveries list every depot line, with the import lines\' Set 
     const tip = await page.locator('#secImports tr[data-slug="coffee"] .sb-uses').getAttribute('data-tip');
     assert.match(tip, /shops 420 a week/);
     // The verdict counts only what no tab count or status column says (declutter U6).
-    const verdict = await page.locator('#secImports .sb-verdict').textContent();
+    assert.equal(await page.locator('#secImports .sb-verdict').count(), 0, 'no summary line under the controls');
+    const verdict = await tabTip(page, 'imports');
     assert.match(verdict, /reach their next delivery with room/);
     assert.doesNotMatch(verdict, /inside the margin|fall short/);
     // Soda is held and imported by nobody: a delivery, on Deliveries, not an import.
     assert.ok(!(await bySlug(page, 'secImports', 0)).soda);
-    assert.match(await page.locator('#secDeliveries').textContent(), /2 lines sit idle/);
+    assert.match(await tabTip(page, 'deliveries'), /2 lines sit idle/);
     // The second-tier depot, fed each morning from the factory, is on Deliveries.
     const cd = await bySlug(page, 'secDeliveries', 5);
     assert.match(cd.cake.cells[WH.order], /^200 290 a day Bakery Factory's plan$/);
@@ -316,16 +319,16 @@ test('machines on a recipe not named yet are counted in the staffing card, and s
 test('under Demand the Factories verdict says, plainly, that fewer hours and workers would do', async () => {
   const page = await board(fixture(), {mode: 'dem'});
   try {
-    const verdict = await text(page, '#secProduction .sb-verdict');
+    const verdict = await tabTip(page, 'production');
     // Workers who could go are the staffing block's to count, below the lines.
     assert.match(verdict, /Current schedules cover the needed hours; 1 line could run fewer hours\./);
     assert.doesNotMatch(verdict, /could go|factory staffing below/);
-    assert.doesNotMatch(await page.locator('#secProduction .sb-verdict b').allTextContents().then(t => t.join(' ')), /could/);
+    assert.equal(await page.locator('#secProduction .sb-verdict').count(), 0, 'no summary line under the controls');
   } finally { await page.close(); }
   // At 24/7 the bakery has to hire: named, and no "Current rosters cover".
   const cap = await board(fixture());
   try {
-    const verdict = await text(cap, '#secProduction .sb-verdict');
+    const verdict = await tabTip(cap, 'production');
     // The hires are the staffing block's own figure.
     assert.doesNotMatch(verdict, /to hire|factory staffing below/);
     assert.doesNotMatch(verdict, /Current schedules cover/);
@@ -336,7 +339,7 @@ test('under Demand the Factories verdict says, plainly, that fewer hours and wor
     headcount: {needed: 700, min: 14, have: 10, spare: 0, hire: 4}, delta: {workers: 4, perDay: 720}});
   const mixed = await board(data, {mode: 'dem'});
   try {
-    assert.doesNotMatch(await text(mixed, '#secProduction .sb-verdict'), /could go|to hire/);
+    assert.doesNotMatch(await tabTip(mixed, 'production'), /could go|to hire/);
     // Spares are counted per factory, never netted against another factory's hires.
     assert.match(await text(mixed, '#sbStaff'), /2 could go: the week needs/);
     assert.match(await text(mixed, '#sbStaff'), /All factories:/);
@@ -345,7 +348,7 @@ test('under Demand the Factories verdict says, plainly, that fewer hours and wor
   delete data.factoryStaffing;
   const none = await board(data, {mode: 'dem'});
   try {
-    const verdict = await text(none, '#secProduction .sb-verdict');
+    const verdict = await tabTip(none, 'production');
     assert.match(verdict, /1 line could run fewer hours/);
     assert.doesNotMatch(verdict, /factory staffing below/);
   } finally { await none.close(); }
@@ -668,7 +671,7 @@ test('an unnamed line is on Production with its recipe picker', async () => {
   try {
     assert.equal(await page.locator('#secProduction select.linepick').count(), 1);
     assert.match(await page.locator('#sbcTop .sbc-n').getAttribute('data-tip'), /1 recipe to name/);
-    assert.match(await page.locator('#secProduction .sb-verdict').textContent(), /1 machine without usable recipe details/);
+    assert.match(await tabTip(page, 'production'), /1 machine without usable recipe details/);
   } finally { await page.close(); }
 });
 

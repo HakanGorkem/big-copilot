@@ -89,7 +89,7 @@ test('By weekday is offered only when a company series clears the weekly-cycle t
     assert.equal((await some.page.locator('#dailyBox .fv-basis').innerText()).replace(/\s+/g, ' ').trim(),
       'Company revenue · every site · 4 weeks');
     assert.equal(await readout(some.page), 'Peaks Friday +16 · lowest Sunday −18');
-    assert.match(await some.page.locator('#dailyHead .why').getAttribute('data-tip'), /from the company's last 4 weeks of daily results/);
+    assert.match(await some.page.locator('[data-view-ctl="businesses/results"] .why').getAttribute('data-tip'), /from the company's last 4 weeks of daily results/);
     // One run of text: the read-out's flex gap does not split "Peaks Friday +16".
     assert.equal(await some.page.locator('#dailyBox .fv-readout > *').count(), 1);
     // Day 73 is a Wednesday: its column is outlined, and the tooltip reads it.

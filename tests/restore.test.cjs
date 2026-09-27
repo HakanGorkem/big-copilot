@@ -214,6 +214,24 @@ test('the board footer offers the game, the channel and the Discord, and stays v
   assert.equal(await foot.locator('[data-vote-card]').isVisible(), false);
 });
 
+test('on the board Update and ··· sit in the masthead beside Search, and the strip takes no row until something is wrong', async t => {
+  const page = await setup(t);
+  await messages(page);
+  await page.evaluate(() => fixture.complete());
+  assert.equal(await hasBoard(page), true);
+  // Declutter round 2: no row of its own for the source controls.
+  assert.equal(await page.locator('#mast #mastSrc #updateBtn').count(), 1);
+  assert.equal(await page.locator('#mast #mastSrc #menuBtn').count(), 1);
+  const order = await page.evaluate(() => { const kids = [...document.getElementById('mast').children];
+    return [kids.indexOf(document.getElementById('ssFieldBtn')), kids.indexOf(document.getElementById('mastSrc')), kids.indexOf(document.getElementById('clock'))]; });
+  assert.ok(order[0] < order[1] && order[1] < order[2], `Search, then Update and ···, then the clock: ${order}`);
+  assert.equal(await page.locator('#srcStrip').isVisible(), false, 'all well: no strip row');
+  assert.equal(await page.locator('#sourceRow').evaluate(el => el.getBoundingClientRect().height), 0);
+  // The menu still opens from the masthead, with its source line.
+  await page.locator('#menuBtn').click();
+  assert.equal(await page.locator('#srcMenu.open .menu-panel').isVisible(), true);
+});
+
 test('URL destination wins over remembered page without adding a visit', async t => {
   const page = await setup(t, {hash:'#company'});
   await messages(page);

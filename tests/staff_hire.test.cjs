@@ -1234,7 +1234,7 @@ test('old Payroll links land on Payroll; old Staff links on Staff needs, which d
   for (const go of [() => openHash('payroll'), () => { showPage('today'); reveal('secPayroll'); }]) {
     await page.evaluate(go);
     assert.equal(await page.evaluate(() => `${page}/${sub.staffing} ${route}`), 'staffing/payroll staffing/payroll');
-    assert.equal(await page.locator('#secPayroll .sechead h2').textContent(), 'Payroll');
+    assert.equal(await page.locator('[data-view-ctl="staffing/payroll"] h2').textContent(), 'Payroll');
     assert.match(await page.locator('#secPayroll').textContent(), /People\d+/);
   }
 });

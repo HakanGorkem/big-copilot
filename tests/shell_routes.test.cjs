@@ -118,13 +118,13 @@ test('a promotion finding lands on Businesses › Standards, and Results gets it
 
 test('a shop opened from Products & prices stays under it: two shops, Back, Forward and a reload', async t => {
   const page = await board(t, {hash: '#businesses/prices'});
-  const shops = await page.$$eval('#secPrices [data-price-pick]', b => b.map(x => x.dataset.pricePick));
+  const shops = await page.$$eval('#viewCtl [data-price-pick]', b => b.map(x => x.dataset.pricePick));
   assert.ok(shops.length >= 2, 'the fixture runs two shops');
   for (const key of shops.slice(0, 2)) {
     await page.evaluate(() => openRoute('businesses/prices'));
     // Its prices beside the market's, then its shelves on its own page.
-    await page.locator(`#secPrices [data-price-pick="${key}"]`).click();
-    assert.equal(await page.locator(`#secPrices [data-price-pick="${key}"]`).getAttribute('aria-pressed'), 'true');
+    await page.locator(`#viewCtl [data-price-pick="${key}"]`).click();
+    assert.equal(await page.locator(`#viewCtl [data-price-pick="${key}"]`).getAttribute('aria-pressed'), 'true');
     await page.locator(`#secPrices [data-price-site="${key}"]`).click();
     await page.waitForFunction(() => siteOpen && !!document.querySelector('#sp-shelves'));
     const w = await where(page);
@@ -323,7 +323,7 @@ test('the critical count follows a refresh made away from the Overview, which wa
 
 test('Staffing › Payroll draws Payroll; Staff needs carries the demands and the hiring page', async t => {
   const page = await board(t, {hash: '#staffing/payroll'});
-  assert.equal(await page.locator('#secPayroll .sechead h2').textContent(), 'Payroll');
+  assert.equal(await page.locator('[data-view-ctl="staffing/payroll"] h2').textContent(), 'Payroll');
   await page.locator('#localNav a[data-route="staffing/needs"]').click();
   assert.equal(await page.locator('#secNeeds #nxDemands').isVisible(), true);
   assert.equal(await page.locator('#secStaff .hs-head h2').textContent(), 'Whom to hire');
@@ -655,4 +655,34 @@ test('Schedules keeps the business, its day and its now / plan view through Back
   await page.reload();
   await page.waitForFunction(() => typeof hasData === 'function' && hasData() && route === 'staffing/schedules');
   assert.deepEqual(await state(), want, 'a reload');
+});
+
+// --- declutter round 2: one row of views and controls ------------------------------------------
+
+test("a view shares one row with its tabs: Supply's scope, mode and basis beside its views, no summary line, the summary in the tab's tip", async t => {
+  const page = await board(t, {hash: '#supply/imports', width: 1440});
+  const bar = page.locator('#viewCtl .sbv-bar[data-view-ctl="supply/imports"]');
+  await bar.waitFor();
+  assert.equal(await bar.locator('select[data-sb-scope], [data-sb-mode]').count() >= 3, true);
+  // One line at 1440: the tabs and the controls overlap vertically.
+  const boxes = await page.evaluate(() => ['localNav', 'viewCtl'].map(id => { const r = document.getElementById(id).getBoundingClientRect(); return [r.top, r.bottom]; }));
+  assert.ok(boxes[1][0] < boxes[0][1] && boxes[0][0] < boxes[1][1], `one row: ${JSON.stringify(boxes)}`);
+  assert.equal(await page.locator('#secImports .sb-verdict, #secImports .sbv-bar').count(), 0);
+  assert.match(await page.locator('#localNav a[data-route="supply/imports"]').getAttribute('data-tip'), /next delivery with room/);
+  // Another view: its controls take the row, and the last view's go home.
+  await page.locator('#localNav a[data-route="supply/deliveries"]').click();
+  await page.locator('#viewCtl [data-view-ctl="supply/deliveries"]').waitFor();
+  assert.equal(await page.locator('#viewCtl [data-view-ctl]').count(), 1);
+  assert.equal(await page.locator('#secImports [data-view-ctl="supply/imports"]').count(), 1);
+  // A control in the row works where it stands.
+  await page.locator('#viewCtl [data-sb-mode="all"]').click();
+  assert.equal(await page.evaluate(() => sbMode.deliveries), 'all');
+  assert.equal(await page.locator('#viewCtl .sbv-mode a.on').textContent(), 'Everything');
+  assert.equal(await page.locator('#viewCtl [data-view-ctl]').count(), 1, 'the redrawn row replaces the old one');
+  // Another area: Businesses › Results keeps its chart switch beside its tabs.
+  await page.evaluate(() => openRoute('businesses/results'));
+  await page.locator('#viewCtl #chartTools').waitFor();
+  // A view with no controls: the row holds its tabs alone.
+  await page.evaluate(() => openRoute('businesses/milestones'));
+  assert.equal(await page.locator('#viewCtl').isHidden(), true);
 });
