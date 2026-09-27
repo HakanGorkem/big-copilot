@@ -256,28 +256,30 @@ test('the Results chart is drawn once its container is on screen, and only then'
   assert.ok(b.charts() > after, 'coming back redraws the chart that measured nothing while hidden');
 });
 
-test('Supply is three tabs, one per object', () => {
+test('Supply is five task views; shops, warehouses and factories are their scope', () => {
   const b = board();
   const items = vm.runInContext('SUBS.supply.items', b.context);
   assert.deepEqual([...items].map(([k, label, anchor]) => [k, label, anchor]),
-    [['shops', 'Shops', 'secShops'], ['warehouses', 'Warehouses', 'secWarehouses'], ['factories', 'Factories', 'secFactories']]);
-  b.context.showSub('supply', 'factories');
-  assert.match(b.$('supplyNav').innerHTML, /href="#secFactories" data-id="factories" class="on">/);
-  assert.match(b.$('supplyNav').innerHTML, /<span>Factories<\/span>/);
+    [['changes', 'Changes', 'secChanges'], ['imports', 'Imports', 'secImports'], ['deliveries', 'Deliveries', 'secDeliveries'],
+     ['production', 'Production', 'secProduction'], ['flow', 'Goods flow', 'secFlow']]);
+  b.context.showSub('supply', 'production');
+  assert.match(b.$('supplyNav').innerHTML, /href="#secProduction" data-id="production" class="on">/);
 });
 
-test('a Supply view remembered from before R13 opens the tab that took its place', () => {
-  const remembered = saved => {
-    const b = board({saved});
-    return {sub: b.sub('supply'), auto: vm.runInContext('supplyAuto', b.context)};
-  };
-  assert.deepEqual(remembered({ba_dash_supply: 'checks'}), {sub: 'shops', auto: false});
-  // Goods flow is Warehouses, with the diagram on (remembered under ba_dash_supply_view).
-  assert.deepEqual(remembered({ba_dash_supply: 'map'}), {sub: 'warehouses', auto: false});
-  // Orders, or no view at all: the tab with the most to type, picked when the checklist draws.
-  assert.equal(remembered({ba_dash_supply: 'orders'}).auto, true);
-  assert.equal(remembered({}).auto, true);
-  assert.deepEqual(remembered({ba_dash_supply: 'factories'}), {sub: 'factories', auto: false});
+test('a Supply view remembered from before the redesign opens the view that took its place', () => {
+  const remembered = saved => { const b = board({saved}); return {sub: b.sub('supply'), kept: saved.ba_dash_supply}; };
+  // The R13 tabs: Shops is Deliveries, Warehouses Imports, Factories Production.
+  assert.deepEqual(remembered({ba_dash_supply: 'shops'}), {sub: 'deliveries', kept: 'deliveries'});
+  assert.deepEqual(remembered({ba_dash_supply: 'warehouses'}), {sub: 'imports', kept: 'imports'});
+  assert.deepEqual(remembered({ba_dash_supply: 'factories'}), {sub: 'production', kept: 'production'});
+  // A tab left with the diagram on is Goods flow.
+  assert.equal(remembered({ba_dash_supply: 'warehouses', ba_dash_supply_view: 'diagram'}).sub, 'flow');
+  // Before R13: Checks, Goods flow and Orders.
+  assert.equal(remembered({ba_dash_supply: 'checks'}).sub, 'deliveries');
+  assert.equal(remembered({ba_dash_supply: 'map'}).sub, 'flow');
+  assert.equal(remembered({ba_dash_supply: 'orders'}).sub, 'changes');
+  // Nothing remembered: Changes, the area's first view.
+  assert.equal(remembered({}).sub, 'changes');
 });
 
 test('top menu preserves the sequence through Back and Forward without duplicates', () => {
@@ -307,7 +309,7 @@ test('replaying a section hash keeps that history entry intact', () => {
   b.context.history.pushState(null, '', '#secStock');
   b.move(0);
   assert.equal(b.page(), 'supply');
-  assert.equal(b.sub('supply'), 'shops', 'an old Checks link opens the tab that took its place');
+  assert.equal(b.sub('supply'), 'deliveries', 'an old Checks link opens the view that took its place');
   assert.equal(b.context.location.hash, '#secStock');
   assert.deepEqual(b.entries, ['#today', '#secStock']);
   b.move(-1);
@@ -315,8 +317,9 @@ test('replaying a section hash keeps that history entry intact', () => {
 });
 
 for (const [pageId, view, anchor, nav] of [
-  ['supply','shops','secShops','supplyNav'], ['supply','warehouses','secWarehouses','supplyNav'],
-  ['supply','factories','secFactories','supplyNav'],
+  ['supply','changes','secChanges','supplyNav'], ['supply','imports','secImports','supplyNav'],
+  ['supply','deliveries','secDeliveries','supplyNav'], ['supply','production','secProduction','supplyNav'],
+  ['supply','flow','secFlow','supplyNav'],
   ['growth','market','secMarket','growthNav'], ['growth','plan','secPlan','growthNav'],
   ['company','products','secProducts','companyNav'], ['staffing','payroll','secPayroll','staffingNav'],
   ['company','milestones','secGoals','companyNav'], ['company','standards','secStandards','companyNav'],
@@ -590,10 +593,10 @@ test('arriving from a finding names the page it was on, through Back, Forward an
   again.boot();
   assert.equal(again.from().label, 'Needs attention');
   // Anywhere else a finding is clicked: the view's own word.
-  b.context.showSub('supply', 'warehouses'); b.context.showPage('supply');
+  b.context.showSub('supply', 'imports'); b.context.showPage('supply');
   b.context.openSite(DEPOT, false, 'a2');
   assert.deepEqual({...b.from()}, {label: 'Imports', hash: '#supply/imports'},
-    'a Supply scope is read as the view it stands for');
+    'a Supply view is named as itself');
   // The picker, a name or a portfolio row is no finding: back to the portfolio.
   b.context.openSite(SHOP);
   assert.equal(b.from(), null);

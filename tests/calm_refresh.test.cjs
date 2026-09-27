@@ -160,10 +160,10 @@ test('a refresh leaves Today, an open site and Supply standing as they were', as
   assert.deepEqual(depot.now, still);
   assert.deepEqual(depot.later, still);
 
-  await page.evaluate(() => { showPage('supply'); showSub('supply', 'shops'); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'deliveries'); });
   await settle(page);
-  const supply = await refresh(page, '#secShops > *');
-  assert.ok(supply.rebuilt, 'the refresh rebuilt the Shops tab');
+  const supply = await refresh(page, '#secDeliveries > *');
+  assert.ok(supply.rebuilt, 'the refresh rebuilt Deliveries');
   assert.deepEqual(supply.now, still);
   assert.deepEqual(supply.later, still);
 });
@@ -190,9 +190,9 @@ test('going somewhere new and opening a site still arrive', async t => {
   await settle(page);
   await deliver(page);
   // A page not visited yet: its sections slide in.
-  await page.evaluate(() => { showPage('supply'); showSub('supply', 'warehouses'); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'imports'); });
   const supply = await motion(page);
-  assert.ok(supply.moving.some(m => /^opacity on section#secWarehouses\.sec\.rv\.sb-tab\.in$/.test(m)), supply.moving.join('\n'));
+  assert.ok(supply.moving.some(m => /^opacity on section#secImports\.sec\.rv\.sb-view\.in$/.test(m)), supply.moving.join('\n'));
   await settle(page);
   // A site opened: its head and blocks arrive, staggered.
   await page.evaluate(key => openSite(key, false), GIFTS);
@@ -221,7 +221,7 @@ test('a refresh on Today draws Today; every other page waits for its visit and o
   const page = await board(t);
   // Every view seen once, Staffing last on Staff needs and Supply on Shops.
   await page.evaluate(() => {
-    for (const [p, v] of [['growth', 'market'], ['supply', 'warehouses'], ['supply', 'shops'], ['company', 'results'], ['staffing', 'needs']]) {
+    for (const [p, v] of [['growth', 'market'], ['supply', 'imports'], ['supply', 'deliveries'], ['company', 'results'], ['staffing', 'needs']]) {
       showPage(p); showSub(p, v);
     }
   });
@@ -230,7 +230,7 @@ test('a refresh on Today draws Today; every other page waits for its visit and o
   // Blocks of each page as they stand now, to tell a redraw from none.
   const mark = () => page.evaluate(() => {
     window.calmOld = {kpis: '#kpis > *', payroll: '#secStaff > *', portfolio: '#portfolio tbody',
-      stock: '#secShops > *', market: '#market > *'};
+      stock: '#secDeliveries > *', market: '#market > *'};
     for (const k in calmOld) calmOld[k] = document.querySelector(calmOld[k]);
   });
   const standing = () => page.evaluate(() =>
@@ -453,9 +453,9 @@ test('a row drawn on every page that threw is tried again on the next page opene
 test('a refresh keeps a Set to figure being typed, and the focus on its box', async t => {
   const page = await board(t);
   // Every line shown: the depot's lines are all covered, so none would be by default.
-  await page.evaluate(() => { showPage('supply'); showSub('supply', 'warehouses'); sbWhich = 'all'; drawSupplyTab('warehouses'); wireAll(); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'imports'); sbMode.imports = 'all'; drawSupplyView('imports'); wireAll(); });
   const typed = await page.evaluate(() => {
-    const box = document.querySelector('#secWarehouses input[data-imp]');
+    const box = document.querySelector('#secImports input[data-imp]');
     if (!box) return null;
     box.focus();
     box.value = '1234';  // typed, not committed: no change event yet
@@ -477,9 +477,9 @@ test('a refresh keeps a Set to figure being typed, and the focus on its box', as
 
 test('Enter keeps a Set to figure put back by a refresh', async t => {
   const page = await board(t);
-  await page.evaluate(() => { showPage('supply'); showSub('supply', 'warehouses'); sbWhich = 'all'; drawSupplyTab('warehouses'); wireAll(); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'imports'); sbMode.imports = 'all'; drawSupplyView('imports'); wireAll(); });
   const typed = await page.evaluate(() => {
-    const box = document.querySelector('#secWarehouses input[data-imp]');
+    const box = document.querySelector('#secImports input[data-imp]');
     box.focus(); box.value = '4321';
     return box.dataset.imp;
   });
@@ -499,9 +499,9 @@ test('Enter keeps a Set to figure put back by a refresh', async t => {
 
 test('a Set to figure put back by a refresh and edited again is committed once', async t => {
   const page = await board(t);
-  await page.evaluate(() => { showPage('supply'); showSub('supply', 'warehouses'); sbWhich = 'all'; drawSupplyTab('warehouses'); wireAll(); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'imports'); sbMode.imports = 'all'; drawSupplyView('imports'); wireAll(); });
   const typed = await page.evaluate(() => {
-    const box = document.querySelector('#secWarehouses input[data-imp]');
+    const box = document.querySelector('#secImports input[data-imp]');
     box.focus(); box.value = '432';
     window.calmKept = 0;
     const keep = window.impSetKeep;

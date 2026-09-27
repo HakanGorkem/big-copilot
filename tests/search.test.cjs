@@ -401,7 +401,7 @@ test('a question lands on its answer, lit, and the questions are the palette\'s 
     await page.evaluate(() => ssOpen());
     await page.click('#ssRes .ss-q2 >> text=What should I import this week?');
     assert.equal(await page.evaluate(() => [page, route].join()), 'supply,supply/changes');
-    assert.equal(await page.locator('#sbStrip').evaluate(el => el.classList.contains('ss-lit')), true);
+    assert.equal(await page.locator('#sbcTop').evaluate(el => el.classList.contains('ss-lit')), true);
     await page.click('#nav a[data-id="expansion"]');
     await page.waitForFunction(() => !document.querySelector('.ss-asked'));
     assert.deepEqual(page.errors, []);
@@ -412,7 +412,7 @@ test('with storage refused, the questions and the palette still work and nothing
   const page = await board({storage: false});
   try {
     await page.evaluate(() => ssAsk('import'));
-    assert.equal(await page.locator('#sbStrip').evaluate(el => el.classList.contains('ss-lit')), true);
+    assert.equal(await page.locator('#sbcTop').evaluate(el => el.classList.contains('ss-lit')), true);
     await page.click('#nav a[data-id="overview"]');
     await page.keyboard.press('/');
     await typed(page, 'fitness');
@@ -545,6 +545,28 @@ test('"Are my prices right?" answers for each kind of shop the company runs', as
     assert.equal(await page.evaluate(() => SS_QUESTIONS.find(x => x.id === 'prices').choices()), null);
     await page.evaluate(() => { D.businesses = D.businesses.filter(b => b.status !== 'retail'); ssPrices(); });
     assert.equal(await page.evaluate(() => [page, ssBuild().filter(e => e.id.startsWith('view:prices')).map(e => e.id).join()].join('|')), 'wiki|view:prices');
+    assert.deepEqual(page.errors, []);
+  } finally { await page.close(); }
+});
+
+/* Asked while the first answer's own guide is already open, the question
+   lands on that page without a new visit: a re-pick is then a visit of its
+   own, and Back returns to the guide the reader was reading. */
+test('"Are my prices right?" asked on the first answer\'s own guide: a re-pick adds a visit, and Back is that guide', async () => {
+  const page = await board();
+  try {
+    await page.evaluate(() => { location.hash = '#wiki/businesstypes-clothingstore/prices'; });
+    await page.waitForFunction(() => page === 'wiki' && /clothingstore\/prices$/.test(location.hash));
+    const before = await page.evaluate(() => history.length);
+    await page.evaluate(() => ssAsk('prices'));
+    await page.waitForFunction(() => document.querySelector('#pageWiki .ss-asked'), null, {timeout: 5000});
+    assert.equal(await page.evaluate(() => history.length), before, 'asked on its own page: no visit');
+    await page.click('.ss-asked .ss-askpick a[data-pick="ba:businesstype_gym"]');
+    await page.waitForFunction(() => /businesstypes-gym\/prices$/.test(location.hash));
+    assert.equal(await page.evaluate(() => history.length), before + 1, 'the re-pick is a visit of its own');
+    await page.click('.ss-asked [data-ss="back"]');
+    await page.waitForFunction(() => /clothingstore\/prices$/.test(location.hash));
+    assert.equal(await page.evaluate(() => page), 'wiki');
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
 });
@@ -707,7 +729,7 @@ test('/ typed into an editable area stays there', async () => {
   } finally { await page.close(); }
 });
 
-test('a kind that lands on a site goes through the one way into a site; a preset opens on its neighbourhood', async () => {
+test('a staffing kind opens its business in Schedules; a preset opens on its neighbourhood', async () => {
   const page = await board();
   try {
     const got = await page.evaluate(() => {
@@ -715,13 +737,15 @@ test('a kind that lands on a site goes through the one way into a site; a preset
       const real = ssOpenSite;
       ssOpenSite = (...a) => { via.push(a); return real(...a); };
       ssKindGo('idlestaff');
+      const sched = [route, schedLit, siteOpen];
       let preset = null;
       openFinder = p => { preset = p; };
       ssBuild().find(e => e.id === 'finder:ba:businesstype_gym').go();
-      return {via, site: [siteOpen, siteKey, spArrived], preset};
+      return {via, sched, preset};
     });
-    assert.deepEqual(got.via, [[SHOP, '', {finding: 'idle-1'}]]);
-    assert.deepEqual(got.site, [true, SHOP, 'idle-1']);
+    // Overstaffed hours is a schedule's matter: Staffing › Schedules, on the business.
+    assert.deepEqual(got.via, []);
+    assert.deepEqual(got.sched, ['staffing/schedules', SHOP, false]);
     assert.deepEqual(got.preset, {cat: 'retail', type: 'ba:businesstype_gym', hoods: ['ba:neighborhood_hellskitchen']});
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
@@ -838,13 +862,13 @@ test('a touch never lights a row; the viewport is watched only while the palette
 
 // --- review round 3: one rule, the landing stays while its answer does ---------------------
 
-test('fed: switching Supply to another tab takes the landing down', async () => {
+test('fed: switching Supply to another view takes the landing down', async () => {
   const page = await board();
   try {
     await page.evaluate(() => ssAsk('fed'));
-    assert.equal(await page.locator('#secFactories.ss-lit').count(), 1);
-    assert.equal(await page.evaluate(() => sub.supply), 'factories');
-    await page.click('#supplyNav a[data-id="shops"]');
+    assert.equal(await page.locator('#secProduction.ss-lit').count(), 1);
+    assert.equal(await page.evaluate(() => sub.supply), 'production');
+    await page.click('#localNav a[data-route="supply/deliveries"]');
     await page.waitForFunction(() => !document.querySelector('.ss-asked, .ss-lit, .ss-dim'));
     assert.deepEqual(page.errors, []);
   } finally { await page.close(); }
@@ -867,7 +891,7 @@ test('profit: switching the portfolio to Operations takes the landing down', asy
 /* Everything renderAll() draws but the site panel and its picker, which the
    test board draws itself: a live refresh then runs as the app runs it. */
 const quietRender = page => page.evaluate(() => {
-  ['indexTrends', 'drawMast', 'drawKpis', 'drawAlerts', 'drawRhythm', 'drawSupplyStrip', 'drawShopsTab', 'drawWarehousesTab', 'drawFactoriesTab',
+  ['indexTrends', 'drawMast', 'drawKpis', 'drawAlerts', 'drawRhythm', 'drawSupplyStrip', 'drawChangesView', 'drawImportsView', 'drawDeliveriesView', 'drawProductionView', 'drawFlowView',
    'drawFlow', 'drawMovers', 'drawMarket', 'drawPlan', 'drawProducts', 'drawStaff', 'drawGoals', 'drawFindLocation',
    'drawOptimizeStaffing', 'drawFooter', 'wireAll', 'refreshCityMaps'].forEach(name => { window[name] = () => {}; });
 });
@@ -909,7 +933,7 @@ test('import: leaving Supply takes the change checklist\'s landing down', async 
   const page = await board();
   try {
     await page.evaluate(() => ssAsk('import'));
-    assert.equal(await page.locator('#sbStrip.ss-lit').count(), 1);
+    assert.equal(await page.locator('#sbcTop.ss-lit').count(), 1);
     await page.click('#nav a[data-id="overview"]');
     await page.waitForFunction(() => !document.querySelector('.ss-asked, .ss-lit, .ss-dim'));
     assert.deepEqual(page.errors, []);
@@ -1058,7 +1082,7 @@ test('a question names where it was asked from: a page, or a site\'s own page', 
     await page.evaluate(() => ssAsk('hire'));
     assert.match(await back(), /Back to Overview/);
     // Asked from another page, the strip names that page.
-    await page.evaluate(() => { ssClearAsked(); showSub('supply', 'shops'); showPage('supply'); });
+    await page.evaluate(() => { ssClearAsked(); showSub('supply', 'deliveries'); showPage('supply'); });
     await page.evaluate(() => ssAsk('hire'));
     assert.match(await back(), /Back to Supply/);
     // Asked on a site's page, it names the site.
@@ -1243,7 +1267,7 @@ test("a press on a site's name in the palette leaves focus in the field", async 
 test("a question's way back is the browser's Back, to the view and scope it was asked from", async () => {
   const page = await board();
   try {
-    await page.evaluate(() => { showSub('supply', 'shops'); showPage('supply'); });
+    await page.evaluate(() => { showSub('supply', 'deliveries'); showPage('supply'); });
     const before = await page.evaluate(() => history.length);
     // Asked from Supply's Shops, where the Ask row is the palette's.
     await page.evaluate(() => ssAsk('hire'));
@@ -1251,7 +1275,7 @@ test("a question's way back is the browser's Back, to the view and scope it was 
     assert.match(await strip.innerText(), /Back to Supply/);
     await strip.locator('[data-ss="back"]').click();
     await page.waitForFunction(() => page === 'supply');
-    assert.deepEqual(await page.evaluate(() => [location.hash, sub.supply]), ['#supply/deliveries', 'shops']);
+    assert.deepEqual(await page.evaluate(() => [location.hash, sub.supply]), ['#supply/deliveries', 'deliveries']);
     // Back, not a new visit: Forward reaches the answer again.
     assert.equal(await page.evaluate(() => history.length), before + 1);
     await page.goForward();

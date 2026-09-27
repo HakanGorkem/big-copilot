@@ -1527,9 +1527,9 @@ test('a row that says nothing about the shop\u2019s age does not call it new', a
 // --- reaching the block, and reading it without a pointer -------------------
 
 /* The Overview's "Build shop schedules" (the Optimize staffing card's row, by
-   its id) opens Staffing › Schedules on the shop it names; that shop's Open
-   schedule lands on the Roster itself, under the same route. */
-test('Build shop schedules opens its shop in Schedules, and Open schedule lands on the Roster itself', async () => {
+   its id) opens Staffing › Schedules on the shop it names, its planner beside
+   the list; the shop's Business page opens under the same route. */
+test('Build shop schedules opens its shop in Schedules, with its planner, and its Business page under the same route', async () => {
   const page = await shop('full');
   try {
     await page.evaluate(() => {
@@ -1541,29 +1541,17 @@ test('Build shop schedules opens its shop in Schedules, and Open schedule lands 
       wireAll();
       $('optimizeStaffingCard').click();
     });
-    assert.deepEqual(await page.evaluate(() => [route, page, !!q('#secSchedules .nx-row.lit [data-sched-open]')]),
-      ['staffing/schedules', 'staffing', true], 'the shop the task names is lit');
-    await page.evaluate(() => q('#secSchedules .nx-row.lit [data-sched-open]').click());
-    // The scroll's end state: the Roster near the top of the window, and
-    // still there over three frames in a row.
-    await page.waitForFunction(() => {
-      const top = Math.round(q('#sp-roster').getBoundingClientRect().top);
-      const mark = window.rosterLanding;
-      window.rosterLanding = {top, frames: mark && mark.top === top ? mark.frames + 1 : 0};
-      return top >= 0 && top < 200 && window.rosterLanding.frames >= 3;
-    }, null, {polling: 'raf'});
-    const where = await page.evaluate(() => {
-      return {top: Math.round(q('#sp-roster').getBoundingClientRect().top),
-        arrived: q('#sp-roster').classList.contains('xl-arrived'),
-        route,
-        page: [...document.querySelectorAll('.page')].filter(p => !p.hidden).map(p => p.id)};
-    });
+    assert.deepEqual(await page.evaluate(() => [route, page, (q('#secSchedules .sch-item.on') || {dataset: {}}).dataset.schedPick]),
+      ['staffing/schedules', 'staffing', KEY], 'the shop the task names is picked');
+    // The planner itself, the one the shop's own page carries, under its own id.
+    assert.equal(await page.locator('#schDetail #schRoster [data-plan]').count() > 0, true);
+    assert.equal(await page.locator('#schDetail #sp-roster').count(), 0);
+    await page.evaluate(() => q('#schDetail [data-sched-site]').click());
+    await page.waitForFunction(() => !$('pageCompany').hidden);
+    const where = await page.evaluate(() => ({route,
+      page: [...document.querySelectorAll('.page')].filter(p => !p.hidden).map(p => p.id)}));
     assert.deepEqual(where.page, ['pageCompany']);
     assert.equal(where.route, 'staffing/schedules', "the shop's page stands under Staffing › Schedules");
-    // At the top of the window, under the sticky head, rather than wherever
-    // the sections above it were estimated to end.
-    assert.ok(where.top >= 0 && where.top < 200, `the Roster landed at ${where.top}`);
-    assert.ok(where.arrived, 'and says it has been arrived at');
   } finally { await page.close(); }
 });
 
@@ -1910,8 +1898,8 @@ test('Staffing › Schedules summarises the plan the shop shows, and follows a c
       return `${c.now} entries now, ${c.staffed} in the plan`;
     }, [KEY, which]);
     const line = () => page.evaluate(k => {
-      const b = document.querySelector(`#secSchedules [data-sched-open="${CSS.escape(k)}"]`);
-      return b ? b.closest('.nx-row').querySelector('.st').textContent : null;
+      const b = document.querySelector(`#secSchedules [data-sched-pick="${CSS.escape(k)}"]`);
+      return b ? b.querySelector('.st').textContent : null;
     }, KEY);
     const demand = await counts('demand'), full = await counts('full');
     assert.notEqual(demand, full, 'the two plans differ, so the row can tell them apart');

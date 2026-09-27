@@ -1,7 +1,8 @@
 # UI redesign: routes, aliases and interim targets
 
 26 September 2026 · Established by chunk 1 of the [implementation plan](ui-implementation-plan.md),
-revised the same day for the merge of PR #121 (Staff hiring) and the chunk-1 correction pass.
+revised the same day for the merge of PR #121 (Staff hiring) and the chunk-1 correction pass, and
+on 27 September for chunk 2, which gives Supply and Staffing their final presentations.
 The route ids below are fixed. Chunks 2 and 3 replace what a route shows, never its id or its
 aliases. Code: `ROUTES`, `AREAS`, `REFS` and `HOST_ROUTES` in the board script
 (`ba_dashboard.py`, section "the shell's routes"), and `FINDING_ROUTES` beside `ALERT_LINKS`.
@@ -30,11 +31,11 @@ aliases. Code: `ROUTES`, `AREAS`, `REFS` and `HOST_ROUTES` in the board script
 - **Area entry.** A click on an area opens the view last shown in it during this visit, or its
   first view. The first view of Supply is Changes. An explicit task or finding always opens its
   own view.
-- **Supply scope.** The Shops / Warehouses / Factories tabs remain, labelled *Scope*. A Supply
-  route names the scopes it is read on (`scopes`). Changes and Goods flow keep their route on any
-  scope. Imports is read on Warehouses and Factories, Deliveries on Shops and Warehouses,
-  Production on Factories. Picking another scope switches the route in place. Chunk 2 turns this
-  into the final scope control.
+- **Supply scope.** Shops, warehouses and factories are no longer views: each Supply view has a
+  *Scope* select (`sbScope`: the whole company, every site of a kind, or one site) and a
+  Needs a change / Everything switch (`sbMode`). Both, with the reviewed import line and the
+  site Goods flow follows, ride on the history entry (`nxSb`), so Back, Forward and a reload give
+  a view back as it was left.
 
 ## Canonical routes and their interim targets
 
@@ -45,14 +46,14 @@ aliases. Code: `ROUTES`, `AREAS`, `REFS` and `HOST_ROUTES` in the board script
 | `businesses/prices` | Businesses › Products & prices | `company/products`: new `secPrices` (a shop's shelves, price guides) and `secProducts` | Each shop opens its own page on `#sp-shelves`; each owned type opens its guide's prices | Chunk 3 |
 | `businesses/standards` | Businesses › Standards | `company/standards`: new `secStandards` (four subjects), then `secPortfolio` in Operations | Portfolio switched to Operations; a subject opens the first business on its block | Chunk 3 |
 | `businesses/milestones` | Businesses › Milestones | `company/milestones`: `secGoals` | – | Chunk 3 |
-| `supply/changes` | Supply › Changes | `supply` host, list mode, the tab with the most still to type; lands on `#sbStrip` (the checklist) | Change checklist with Copy remaining and ticks | Chunk 2 |
-| `supply/imports` | Supply › Imports | `supply/warehouses` (Weekly imports, Set to boxes); factory-own contracts on the Factories scope | Scope Warehouses or Factories; a finding lights its row (`sbLand`) | Chunk 2 |
-| `supply/deliveries` | Supply › Deliveries | `supply/shops` (shelves, top-ups, wholesale); depot top-ups on the Warehouses scope | Scope Shops or Warehouses; a finding lights its row | Chunk 2 |
-| `supply/production` | Supply › Production | `supply/factories` (lines, hours, inputs, `#sbStaff` factory staffing) | Scope Factories | Chunk 2 |
-| `supply/flow` | Supply › Goods flow | The tab on screen in diagram mode (`svg#flow`, `#flowChain` when narrow). The List or Diagram switch moves the route between the tab's view and Goods flow | The scope on screen | Chunk 2 |
-| `staffing/schedules` | Staffing › Schedules | new `secSchedules`, "Shop and office schedules": every shop and office with its plan's state. A shop's line counts the plan its own Staffing shows and writes, full cover where the reader picked it (`spShownRow()`), and is drawn again after a pick (`nxSchedStale()`). An office's line counts the office default's staffed computers. A shop opens its page on `#sp-roster`; an office on `#sp-roster` where the office default plans it (its additive write is there), else on `#sp-crew` (`nxStaffInto()`). Factories open Supply › Production | The shop a task or search named is lit (`schedPick`) | Chunk 2 |
-| `staffing/needs` | Staffing › Staff needs | new `secNeeds`: staff demands (`#nxDemands`), each opening the crew that shows it; then `secStaff`, main's Staff page unchanged: open places by role, candidates, Mass and Quick hire, hire and move review and write (no undo), office plans, staff with no hours, and its short Payroll summary | – | Chunk 2 |
-| `staffing/payroll` | Staffing › Payroll | `staffing/payroll`: `secPayroll`, the full Payroll tables (`drawPayroll`), moved from Company | – | Chunk 2 |
+| `supply/changes` | Supply › Changes | `secChanges` (`drawChangesView`): the one change checklist, grouped Imports, Deliveries, Production, with the truck's road, Copy remaining, the copied text's preview, Apply N import amounts (game link), Clear my marks and the basis | Each row's state: Marked by you, Applied · awaiting refresh, Confirmed ([postconditions](ui-progress-postconditions.md)) | Chunk 2 (final) |
+| `supply/imports` | Supply › Imports | `secImports` (`drawImportsView`): the reviewed line's card (recurring order and one-time catch-up apart, Why, manual steps, Copy, Preview in the game, the factory hours it is planned on), then every import line, depots' and factories' own | Scope; Needs a change / Everything; the reviewed line (`sbSel`); a finding lights its row and card (`sbLand`) | Chunk 2 (final) |
+| `supply/deliveries` | Supply › Deliveries | `secDeliveries` (`drawDeliveriesView`): by destination: shops' shelves and top-ups, second-tier warehouses (route-fed top-ups, wholesale, idle, not routed), factory inputs | Scope; Needs a change / Everything; a finding lights its row | Chunk 2 (final) |
+| `supply/production` | Supply › Production | `secProduction` (`drawProductionView`): machine-hour tiles, each factory's lines, hours and inputs, then factory staffing (`#sbStaff`) | Scope; Needs a change / Everything | Chunk 2 (final) |
+| `supply/flow` | Supply › Goods flow | `secFlow` (`drawFlowView`): the picture (`svg#flow`, `#flowChain` when narrow), the site it follows and its panel; Table goes back to the view the reader came from | The followed site (`flowPickId`) | Chunk 2 (final) |
+| `staffing/schedules` | Staffing › Schedules | `secSchedules` (`drawSchedules`): every shop and office in a list with its plan's state and progress, the chosen one's planner beside it (`#schDetail`: the same `spRosterBlock()` or `spOfficeRoster()`, and write, a business's page carries). An office's line counts the office default's staffed computers. Factories open Supply › Production on their scope | The business on screen (`schedLit`): a task's, a finding's, the search's or the reader's; kept on the history entry (`nxSch`) | Chunk 2 (final) |
+| `staffing/needs` | Staffing › Staff needs | `secNeeds`: Unmet demands (`#nxDemands`), each opening the crew that shows it, and the last hire or move made from here with its state; then `secStaff`, main's Staff page under "Whom to hire": open places by role, candidates, Mass and Quick hire, hire and move review and write (no undo), office plans, staff with no hours ("Write their week" opens Schedules on the site), and its short current-staff summary | – | Chunk 2 (final) |
+| `staffing/payroll` | Staffing › Payroll | `secPayroll` (`drawPayroll`): rate and booked tiles, roles, and the sites whose books part from their rates, each opening its crew | – | Chunk 2 (final) |
 | `expansion/demand` | Expansion › Demand | `growth/market`: `secMarket` | – | Chunk 3 |
 | `expansion/finder` | Expansion › Find a location | `map` host with the finder on. A task or a Demand cell asks a question (`openFinder(preset)`); Back, Forward, a reload and the area's row switch it on as the reader left it (`showFinder()`). The finder's switch moves the page between this route and `map`, address and lit place included (`routeFor()`) | Finder filters and saved searches as before; the picked building rides on the history entry (`nxPick`), the source of truth: a new visit takes the pick on screen; Back, Forward and a reload show that entry's own pick where the results still hold it, and no pick where it has none or its building has left them | Chunk 3 |
 | `expansion/factory` | Expansion › Plan a factory | `growth/plan`: `secPlan`, `secIngredients` | – | Chunk 3 |
@@ -75,12 +76,18 @@ aliases. Code: `ROUTES`, `AREAS`, `REFS` and `HOST_ROUTES` in the board script
 | `#secDaily`, `#secPortfolio`, `#secDetail`, `#secRhythm` | Businesses › Results (`SEC_PAGE`, `SEC_MOVED`) |
 | `#secProducts` | Businesses › Products & prices |
 | `#secGoals` | Businesses › Milestones |
-| `#secShops`, `#secStock` | Supply › Deliveries (Shops scope) |
-| `#secWarehouses`, `#secLogistics`, `#secFlow` | Supply › Imports (Warehouses scope) |
+| `#secShops`, `#secStock` | Supply › Deliveries |
+| `#secWarehouses`, `#secLogistics` | Supply › Imports |
 | `#secFactories` | Supply › Production |
+| `#secFlow` | Supply › Goods flow |
+| `#sbStrip` | Supply › Changes |
 | `#secMarket` / `#secPlan`, `#secIngredients` | Expansion › Demand / Plan a factory |
 | `#alertSection`, `#secMoves` | Overview |
 | `#site/<slug>`, `#wiki/<page>` | unchanged contracts |
+
+A remembered `ba_dash_supply` of an old tab opens the view that took its place: `shops` and
+`checks` Deliveries, `warehouses` Imports, `factories` Production, `map` Goods flow, `orders`
+Changes, and any of them Goods flow where the diagram was the last mode shown (`SUPPLY_WAS`).
 
 A remembered `ba_dash_page` still works. A load with no hash opens the route last shown
 (`ba_dash_route`). A device that remembered Company on Payroll or Staff (`ba_dash_company`)
@@ -91,18 +98,19 @@ a route it already remembers.
 
 The action button names the fix. The route is the final home from
 [the structure proposal](ui-structure-proposal.md#7-every-finding-still-has-a-destination). The
-landing is today's `ALERT_LINKS` / `ALERT_EVIDENCE`, which is the interim target.
+landing is `ALERT_LINKS` / `ALERT_EVIDENCE`; since chunk 2 the Supply and Staffing landings are
+final, the Businesses ones still interim.
 
-| Kind (`group`) | Action | Route | Interim landing |
+| Kind (`group`) | Action | Route | Landing |
 | --- | --- | --- | --- |
 | `notrading` | Open readiness | `businesses/results` | its page, tiles block |
 | `vacant` | Review costs | `businesses/results` | `secPortfolio` |
 | `loss` | Review results | `businesses/results` | its page, tiles block |
 | `trend` | Review results | `businesses/results` | its page, profit block |
 | `atcap` | Review customer hours | `businesses/results` | its page, hours block |
-| `staff` at a factory | Plan factory hours | `supply/production` | Factories scope, the machine's row. A factory is known by its Supply tab, or without the supply facts by the finding's machine (`ev.slot`) or the site's type (`ovAtFactory()`) |
-| `staff` at a shop or office | Review schedule | `staffing/schedules` | its page: a shop's `#sp-roster`; an office's `#sp-roster` where the office default plans it, else `#sp-crew` (`nxStaffInto()`) |
-| `idlestaff` | Review schedule | `staffing/schedules` | its page, hours block, idle hours lit |
+| `staff` at a factory | Plan factory hours | `supply/production` | Production, the machine's row. A factory is known by its kind of site (`sbTabOf()`), or without the supply facts by the finding's machine (`ev.slot`) or the site's type (`ovAtFactory()`) |
+| `staff` at a shop or office | Review schedule | `staffing/schedules` | Schedules with the business picked, its planner beside the list and the finding named above it |
+| `idlestaff` | Review schedule | `staffing/schedules` | Schedules with the business picked; its customer hours one link away, on its page |
 | `satisfaction` | Review satisfaction | `businesses/standards` | its page, standards block |
 | `promotion` | Review promotion | `businesses/standards` | the portfolio in Operations, on Standards (`reveal()` takes the route's view when the section is on it); Results gets back the portfolio view it had |
 | `uniform` | Review uniforms | `businesses/standards` | its page, standards block; game-link uniform write in the row unchanged |
@@ -110,16 +118,16 @@ landing is today's `ALERT_LINKS` / `ALERT_EVIDENCE`, which is the interim target
 | `jobdemand` | Resolve staff demand | `staffing/needs` | its page, crew block |
 | `companydemand` | Resolve staff demand | `staffing/needs` | the site that shows it most (`ALERT_SITE_PICK`), crew block; else Staff needs (`secNeeds`) |
 | `hype` | Review demand wave | `expansion/demand` | `secMarket` |
-| `unplanned`, `outruns` | Review delivery | `supply/deliveries` | Shops scope, the shelf's row |
-| `topup` | Review delivery | `supply/deliveries` | the depot's page, stock row |
-| `wholesale` | Review delivery | `supply/deliveries` | its page, shelves or stock row |
-| `target` | Review target | `supply/deliveries` | the site's scope, its row |
-| `dead` | Review idle stock | `supply/deliveries` | the site's scope, its row |
-| `notrouted` | Review routes | `supply/deliveries` | the site's scope, its row |
-| `shortfall` | Review import | `supply/imports`; route-fed (key `f.shortfall.route` or `f.shortfall.route.…`, nothing else): `supply/deliveries` | the site's scope, its row |
-| `order`, `paused` | Review import | `supply/imports` | the site's scope, its row |
-| `feed` | Review factory input | `supply/production` | Factories scope, the input's row |
-| `unnamed`, `unset` | Identify recipe | `supply/production` | Factories scope |
+| `unplanned`, `outruns` | Review delivery | `supply/deliveries` | Deliveries, the shelf's row, lit |
+| `topup` | Review delivery | `supply/deliveries` | Deliveries, the depot's row, lit (the depot's page still lights its stock row from its own findings) |
+| `wholesale` | Review delivery | `supply/deliveries` | Deliveries, the shop's or depot's row, lit |
+| `target` | Review target | `supply/deliveries` | Deliveries, its row |
+| `dead` | Review idle stock | `supply/deliveries` | Deliveries, its row (Everything where the row is no change) |
+| `notrouted` | Review routes | `supply/deliveries` | Deliveries, its row |
+| `shortfall` | Review import | `supply/imports`; route-fed (key `f.shortfall.route` or `f.shortfall.route.…`, nothing else): `supply/deliveries` | the route's view, its row; on Imports the line's card too |
+| `order`, `paused` | Review import | `supply/imports` | Imports, the line's card and row |
+| `feed` | Review factory input | `supply/production` | Production, the input's row |
+| `unnamed`, `unset` | Identify recipe | `supply/production` | Production, the factory |
 
 When a landing ends on a page the route cannot show (a factory row for a delivery kind), the
 shell shows the page's own route. It never shows a route that is not on screen.

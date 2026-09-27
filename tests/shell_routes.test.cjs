@@ -135,10 +135,17 @@ test('a shop opened from Products & prices stays under it: two shops, Back, Forw
   assert.deepEqual([w.route, w.site, w.lit], ['businesses/prices', shops[1], 'businesses/prices'], 'a reload keeps it');
 });
 
-test('a schedule opened from Staffing › Schedules, and a wholesale finding, keep their routes on the shop\'s page', async t => {
+test('Staffing › Schedules keeps the business picked through a reload, its page keeps the route, and a wholesale finding lands on Deliveries', async t => {
   const page = await board(t, {hash: '#staffing/schedules'});
-  const key = await page.getAttribute('#secSchedules [data-sched-open]', 'data-sched-open');
-  await page.locator(`#secSchedules [data-sched-open="${key}"]`).click();
+  const keys = await page.$$eval('#secSchedules [data-sched-pick]', bs => bs.map(b => b.dataset.schedPick));
+  const key = keys.at(-1);
+  await page.locator(`#secSchedules [data-sched-pick="${key}"]`).click();
+  assert.equal(await page.locator(`#secSchedules [data-sched-pick="${key}"]`).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.evaluate(() => (history.state || {}).nxSch.pick), key, 'the entry keeps the pick');
+  await page.reload();
+  await page.waitForFunction(() => typeof hasData === 'function' && hasData());
+  assert.equal(await page.locator(`#secSchedules [data-sched-pick="${key}"]`).getAttribute('aria-pressed'), 'true', 'a reload keeps it');
+  await page.locator('#schDetail [data-sched-site]').click();
   await page.waitForFunction(() => siteOpen);
   let w = await where(page);
   assert.deepEqual([w.route, w.site, w.lit], ['staffing/schedules', key, 'staffing/schedules']);
@@ -146,9 +153,10 @@ test('a schedule opened from Staffing › Schedules, and a wholesale finding, ke
   await page.waitForFunction(() => !siteOpen);
   await page.evaluate(() => { openRoute('overview'); ovShowAll = true; drawAlerts(); });
   await page.locator('#alerts .find[data-kind="wholesale"] .ov-act').click();
-  await page.waitForFunction(() => siteOpen);
+  await page.waitForFunction(() => route === 'supply/deliveries');
   w = await where(page);
-  assert.deepEqual([w.route, w.lit], ['supply/deliveries', 'supply/deliveries']);
+  assert.deepEqual([w.route, w.lit, w.site], ['supply/deliveries', 'supply/deliveries', null]);
+  assert.equal(await page.locator('#secDeliveries tr.sb-arrived').count(), 1, 'on its row');
   await back(page); await forward(page);
   w = await where(page);
   assert.deepEqual([w.route, w.lit], ['supply/deliveries', 'supply/deliveries'], 'Forward keeps it');
@@ -197,17 +205,19 @@ test('Find a location opened without a preset keeps the reader\'s filters throug
 
 // --- Supply: the diagram is Goods flow -----------------------------------------------------
 
-test('the List or Diagram switch moves Supply between its view and Goods flow, and a reload keeps it', async t => {
+test('Goods flow and its Table move Supply between a view and the picture, and a reload keeps both', async t => {
   const page = await board(t, {hash: '#supply/imports'});
-  await page.locator('#sbView a[data-id="diagram"]').click();
+  await page.locator('#secImports [data-sb-toflow]').first().click();
   let w = await where(page);
   assert.deepEqual([w.route, w.hash, w.lit], ['supply/flow', '#supply/flow', 'supply/flow']);
+  assert.equal(await page.locator('#secFlow .sb-diag #flow').count(), 1);
   await page.reload();
   await page.waitForFunction(() => typeof hasData === 'function' && hasData());
-  assert.deepEqual([(await where(page)).route, await page.evaluate(() => sbViewMode())], ['supply/flow', 'diagram']);
-  await page.locator('#sbView a[data-id="list"]').click();
+  assert.equal((await where(page)).route, 'supply/flow');
+  assert.equal(await page.locator('#secFlow .sb-diag #flow').count(), 1);
+  await page.locator('#secFlow [data-sb-totable]').click();
   w = await where(page);
-  assert.equal(w.route, 'supply/imports', 'the list of the Warehouses scope is Imports again');
+  assert.equal(w.route, 'supply/imports', 'Table goes back to the view the reader came from');
   assert.equal(w.lit, 'supply/imports');
 });
 
@@ -306,7 +316,7 @@ test('Staffing › Payroll draws Payroll; Staff needs carries the demands and th
   assert.equal(await page.locator('#secPayroll .sechead h2').textContent(), 'Payroll');
   await page.locator('#localNav a[data-route="staffing/needs"]').click();
   assert.equal(await page.locator('#secNeeds #nxDemands').isVisible(), true);
-  assert.equal(await page.locator('#secStaff .hs-head h2').textContent(), 'Staff');
+  assert.equal(await page.locator('#secStaff .hs-head h2').textContent(), 'Whom to hire');
   assert.equal(await page.locator('#secPayroll').isHidden(), true);
 });
 
@@ -420,10 +430,66 @@ test('on a 320 x 568 phone, and at 130% on 390 x 844, the first critical finding
 
 test('Staffing › Schedules is named for shops and offices, in the board\'s words', async t => {
   const page = await board(t, {hash: '#staffing/schedules'});
-  const head = await page.locator('#secSchedules .sechead').innerText();
+  const head = await page.locator('#secSchedules > .sechead').innerText();
   assert.match(head, /Shop and office schedules/);
   assert.match(head, /each office/);
   assert.doesNotMatch(head, /\b(roster|shifts?|posts?)\b/i);
+});
+
+/* Chunk 1's office line (review note 2): the plural follows the computers. */
+test('Staffing › Schedules counts an office default\'s computers in the right number', async t => {
+  const page = await board(t, {hash: '#staffing/schedules'});
+  const line = n => page.evaluate(n => {
+    const key = 'ba:street_testoffice#1';
+    if(!D.businesses.some(b => b.key === key))
+      D.businesses.push({key, status: 'office', name: 'Test Office', code: 'TO', type: 'Office', neighbourhood: null, lines: [], people: [], crew: []});
+    D.officeStaffing = [{key, computers: n, staffedComputers: 1, shifts: [{d: 1, f: 8, t: 16, s: 0, p: 0}], roles: [], stations: [], people: []}];
+    drawSchedules();
+    return document.querySelector(`#secSchedules [data-sched-pick="${key}"] .st`).textContent;
+  }, n);
+  assert.equal(await line(1), 'Office default: 1 of 1 computer staffed');
+  assert.equal(await line(3), 'Office default: 1 of 3 computers staffed');
+});
+
+/* The attention journey of the redesign's acceptance: a finding opens its
+   import on Imports, Goods flow follows the depot, and the way back finds
+   the finding where the reader left it. */
+test('a finding opens Imports on its line, Goods flow follows the depot, and the way back finds the finding', async t => {
+  const page = await board(t);
+  const hub = 'ba:street_eighthavenue#4';
+  await page.evaluate(hub => {
+    D.alerts.unshift({id: 'jny-order', level: 'critical', group: 'order', site: 'HART. Hub', siteKey: hub,
+      text: 'Water: the weekly order brings 3,000 against 16,800', ev: {slug: 'ba:itemname_water'}});
+    ovForget(); drawAlerts();
+  }, hub);
+  await page.locator('#alerts .find[data-id="jny-order"] .ov-act').click();
+  await page.waitForFunction(() => route === 'supply/imports');
+  // The card reviews the line, lit, and the strip says why the reader is here.
+  assert.match(await page.locator('#sbCard[data-sb-at] .sbi-title').textContent(), /Water · HART\. Hub/);
+  assert.match(await page.locator('#arrive').textContent(), /Water · HART\. Hub, Weekly order too small/);
+  // Its supply route, followed.
+  await page.locator('#sbCard [data-sb-toflow]').click();
+  await page.waitForFunction(() => route === 'supply/flow');
+  assert.equal(await page.evaluate(() => flowPickId), hub);
+  assert.match(await page.locator('#sbFlowPanel').textContent(), /HART\. Hub/);
+  assert.match(await page.locator('#arrive').textContent(), /Water · HART\. Hub/, 'the arrival rides along');
+  // Back: Imports, the card as it was.
+  await back(page);
+  assert.equal((await where(page)).route, 'supply/imports');
+  assert.match(await page.locator('#sbCard .sbi-title').textContent(), /Water · HART\. Hub/);
+  await forward(page);
+  assert.equal((await where(page)).route, 'supply/flow');
+  // The strip's way back: the Overview, the finding in its place, with the focus.
+  await page.locator('#arrive [data-nx="back"]').click();
+  await page.waitForFunction(() => route === 'overview');
+  await page.waitForFunction(() => document.activeElement && document.activeElement.closest && document.activeElement.closest('.find[data-id="jny-order"]'));
+  // A reload of Imports keeps its line, its scope and its filter.
+  await page.goto('https://shell.test/#supply/imports', {waitUntil: 'load'});
+  await page.waitForFunction(() => typeof hasData === 'function' && hasData());
+  await page.evaluate(() => { sbScope.imports = 'warehouses'; sbMode.imports = 'all'; sbAgain('imports'); });
+  await page.reload();
+  await page.waitForFunction(() => typeof hasData === 'function' && hasData() && route === 'supply/imports');
+  assert.deepEqual(await page.evaluate(() => [sbScope.imports, sbMode.imports]), ['warehouses', 'all']);
 });
 
 test('the building picked in Find a location comes back after a reload; one no longer in the results is dropped', async t => {

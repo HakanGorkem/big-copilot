@@ -270,7 +270,7 @@ test('netting: the bench a plan counts on, then spare people, then hires, best f
   assert.match(await order.locator('.hs-sum').textContent(), /^Added wages\+\$[\d,]+\/day$/);
   assert.equal((await page.locator(REVIEW).textContent()).trim(), 'Review and hire 7');
   assert.equal(await order.locator('.hs-note').textContent(), 'Picked for you. You confirm next.');
-  assert.equal(await page.locator('#secStaff .hs-head h2').textContent(), 'Staff');
+  assert.equal(await page.locator('#secStaff .hs-head h2').textContent(), 'Whom to hire');
   assert.equal(await page.locator('#secStaff .hs-link').textContent(), 'Game linked');
 
   // Unticking the reassign returns its week to hiring: Bram now takes Gifts'
@@ -653,6 +653,10 @@ test('Review: the dry run, who goes where, one confirm with no undo, and a parti
   await phase(page, 'done');
   const writes = await page.evaluate(() => window.hrWrites.map(w => [w.kind, w.dryRun]));
   assert.deepEqual(writes, [['hire', true], ['hire', false]]);
+  // Applied from the answer: everyone the game hired or moved, and where to;
+  // Ada, whose application expired, is not in it. There is no undo to drop it.
+  assert.deepEqual(await page.evaluate(() => pgOfFamily('hire').map(r => [r.state, r.expect.hired, r.expect.moved, r.expect.skipped,
+    r.expect.people.length, r.expect.people.some(p => p.id === 'c1')])), [['applied', 6, 2, 1, 8, false]]);
   // No Undo, and where to let someone go instead; Ada's application expired
   // before the game reached her.
   assert.equal(await dlg.locator('[data-gw-b="undo"]').count(), 0);
@@ -1237,7 +1241,7 @@ test('old Payroll links land on Payroll; old Staff links on Staff needs, with Pa
     await page.evaluate(go);
     assert.equal(await page.evaluate(() => `${page}/${sub.staffing} ${route}`), 'staffing/payroll staffing/payroll');
     assert.equal(await page.locator('#secPayroll .sechead h2').textContent(), 'Payroll');
-    assert.match(await page.locator('#secPayroll').textContent(), /\d+ (person|people)/);
+    assert.match(await page.locator('#secPayroll').textContent(), /People\d+on the payroll/);
   }
 });
 
@@ -1546,10 +1550,10 @@ test('Staff with no hours: a site whose own staff the plan counts on have no hou
   }, [G, CS]);
   assert.deepEqual(text, ['HART. Gifts | 168 h with nobody on · your 4 Customer Service staff have no hours | Write their week']);
   const link = page.locator('#secStaff .hs-idle a[data-hr-roster]');
-  assert.match(await link.getAttribute('href'), /^#site\//);
+  // Their week is Staffing › Schedules', with the site picked and its planner beside the list.
   await link.click();
-  await page.waitForSelector('#sp-roster.sp-arrived');
-  assert.equal(await page.evaluate(() => !!document.querySelector('#secDetail #sp-roster')), true);
+  await page.waitForFunction(() => route === 'staffing/schedules');
+  assert.deepEqual(await page.evaluate(() => [schedLit, !!document.querySelector('#schDetail #schRoster')]), [G, true]);
   // Not counted in the order: nobody is hired for those hours.
   assert.equal(await page.evaluate(() => hrTotals(hrModel()).hire), 7);
 });
