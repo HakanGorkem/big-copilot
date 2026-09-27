@@ -2,8 +2,8 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script>window.LEDGER_BUILD = "c6657bc7e2";</script>
-<link rel="stylesheet" href="community.css?v=c6657bc7e2">
+<script>window.LEDGER_BUILD = "52716b1bfd";</script>
+<link rel="stylesheet" href="community.css?v=52716b1bfd">
 <title>Big Copilot</title>
 <script>
 /* The remembered theme, before anything paints. It has to be an inline, blocking
@@ -15,7 +15,7 @@
 try{ var t = localStorage.getItem("ba_dash_theme"); if(t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); }catch(e){}
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d100f'/%3E%3Ccircle cx='16' cy='16' r='8' fill='%2343c07a'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="fonts/fonts.css?v=c6657bc7e2">
+<link rel="stylesheet" href="fonts/fonts.css?v=52716b1bfd">
 <style>
 /* The map artwork keeps its approved dark palette in either dashboard theme. */
 .map-shortcut{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-left:5px;padding:4px;border:1px solid var(--rule);border-radius:4px;background:var(--surface);color:var(--ink-2);cursor:pointer;line-height:1;flex:none}
@@ -2116,6 +2116,9 @@ html:has(dialog:modal){overflow:hidden}
 #pageSupply .sb-flowbox svg{width:100%;display:block}
 #pageSupply .sb-flowbox.sb-flow-scroll{overflow-x:auto}
 #pageSupply .sb-flowbox.sb-flow-scroll svg{max-width:none}
+#pageSupply .sb-flowbox.sb-flow-more-r{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent)}
+#pageSupply .sb-flowbox.sb-flow-more-l{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to left,#000 calc(100% - 56px),transparent)}
+#pageSupply .sb-flowbox.sb-flow-more-l.sb-flow-more-r{-webkit-mask-image:linear-gradient(to right,transparent,#000 56px,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to right,transparent,#000 56px,#000 calc(100% - 56px),transparent)}
 #pageSupply .sb-flowleg{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;font:500 11px/1 "IBM Plex Mono",monospace;color:var(--ink-3)}
 #pageSupply .sb-flowleg span{display:inline-flex;align-items:center;gap:7px}
 #pageSupply .sb-flowleg i{width:9px;height:9px;border-radius:50%;display:inline-block}
@@ -5332,7 +5335,7 @@ document.addEventListener('click', event => {
   <div class="map-dialog-head"><h2 id="locationMapTitle">Location map</h2><button type="button" id="closeLocationMap" class="ibtn" aria-label="Close map" data-tt-aria-label="nav.dlg.closemap" autofocus><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
   <div id="cityMapOverlay"></div>
 </dialog>
-<script>window.LEDGER_RELEASE = {"version":"c6657bc7e2","latest":{"pr":121,"date":"2026-09-25","title":"Hire and place staff for every site at once","summary":"Company › Payroll is now Staff. It adds up what each shop, office and factory still needs by role, moves spare people between sites first, and picks the most skilled of your headhunters' candidates, with filters for the demands you want to avoid. One confirm hires them, puts them at their sites and writes their hours, through the Big Copilot Link mod 0.3.0. Hires cannot be undone."}};</script>
+<script>window.LEDGER_RELEASE = {"version":"52716b1bfd","latest":{"pr":121,"date":"2026-09-25","title":"Hire and place staff for every site at once","summary":"Company › Payroll is now Staff. It adds up what each shop, office and factory still needs by role, moves spare people between sites first, and picks the most skilled of your headhunters' candidates, with filters for the demands you want to avoid. One confirm hires them, puts them at their sites and writes their hours, through the Big Copilot Link mod 0.3.0. Hires cannot be undone."}};</script>
 <script>/* Embedded in the browser shell so the loaded release is the baseline even
  * when the first version check happens after another deployment. */
 (() => {
@@ -5420,8 +5423,8 @@ document.addEventListener('click', event => {
   });
 })();
 </script>
-<script src="app.js?v=c6657bc7e2"></script>
-<script src="community.js?v=c6657bc7e2"></script>
+<script src="app.js?v=52716b1bfd"></script>
+<script src="community.js?v=52716b1bfd"></script>
 
 <script>
 
@@ -6506,7 +6509,7 @@ function drawFlow(){
   box.classList.toggle("sb-fc-focus", !empty && narrow && !!flowPickId);
   box.classList.toggle("sb-fc-wide", box.getBoundingClientRect().width >= 600);
   svg.style.display = flowChainDrawn ? "none" : "";
-  if(flowChainDrawn){ flowWide = false; box.classList.remove("sb-flow-scroll"); }
+  if(flowChainDrawn){ flowWide = false; flowDims = null; box.classList.remove("sb-flow-scroll", "sb-flow-more-l", "sb-flow-more-r"); }
   if(chain) chain.hidden = !flowChainDrawn;
   if(flowChainDrawn){
     svg.innerHTML = "";
@@ -6568,24 +6571,56 @@ function drawFlow(){
     if(flag) dots.push(`<circle class="${flag[0]}" cx="${x + NODE_W - 10}" cy="${y + 10}" r="4"><title>${flag[1]}</title></circle>`);
   });
 
-  /* Always 1:1, so the names stay legible: a chain of more stages than
-     the box holds (a second depot and factory tier) scrolls sideways inside
-     the box rather than shrinking into it. */
-  flowWide = flowTooWide(width);
-  box.classList.toggle("sb-flow-scroll", flowWide);
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.style.width = flowWide ? `${width}px` : "100%"; svg.style.height = height + "px";
   svg.innerHTML = heads.concat(pipes, boxes, dots, cargo).join("");
+  flowDims = {width, height};
+  flowFit();
 }
-/* Whether the picture is wider than the box's room for it (a box waiting
-   at home, width 0, is never too narrow). */
-let flowWide = false;
-function flowTooWide(width){
+/* How the picture meets its box. It shrinks to fit down to FLOW_MIN_SCALE,
+   where the names still read (their 11.5 px at 9.2), its height shrinking with it
+   so no blank band is left above or below; a chain wider than that (a second
+   depot and factory tier on a laptop's width) is drawn at full size and
+   scrolls sideways inside the box, the followed site brought into view and
+   an edge faded where the picture goes on. A box waiting at home (width 0)
+   is drawn to fit. */
+const FLOW_MIN_SCALE = 0.8;
+let flowWide = false, flowDims = null;
+function flowRoom(){
   const box = $("sbFlowBox");
-  if(!box) return false;
+  if(!box) return 0;
   const cs = getComputedStyle(box);
-  const room = box.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
-  return room > 0 && width > room;
+  return box.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+}
+function flowFit(){
+  const svg = $("flow"), box = $("sbFlowBox");
+  if(!svg || !box || !flowDims || flowChainDrawn) return;
+  const {width, height} = flowDims, room = flowRoom();
+  const scale = room > 0 ? Math.min(1, room / width) : 1;
+  flowWide = scale < FLOW_MIN_SCALE;
+  box.classList.toggle("sb-flow-scroll", flowWide);
+  svg.style.width = flowWide ? `${width}px` : "100%";
+  svg.style.height = `${Math.round(height * (flowWide ? 1 : scale))}px`;
+  if(flowWide) flowScrollToPick(); else box.scrollLeft = 0;
+  flowEdges();
+}
+/* The followed site in view, where the picture scrolls. */
+function flowScrollToPick(){
+  const box = $("sbFlowBox"), svg = $("flow");
+  if(!flowWide || !box || !svg || !flowPickId) return;
+  const node = q(`.node[data-id="${CSS.escape(flowPickId)}"] rect`, svg);
+  if(!node) return;
+  const x = Number(node.getAttribute("x")) + NODE_W / 2 + svg.getBoundingClientRect().left - box.getBoundingClientRect().left + box.scrollLeft;
+  box.scrollLeft = Math.max(0, x - box.clientWidth / 2);
+  flowEdges();
+}
+/* Which edges the picture goes on past: faded there (flowWatch() keeps it
+   as the box scrolls). */
+function flowEdges(){
+  const box = $("sbFlowBox");
+  if(!box) return;
+  const more = flowWide && box.scrollWidth - box.clientWidth > 1;
+  box.classList.toggle("sb-flow-more-r", more && box.scrollLeft < box.scrollWidth - box.clientWidth - 1);
+  box.classList.toggle("sb-flow-more-l", more && box.scrollLeft > 1);
 }
 
 /* --- the chain on a narrow screen (#148) ----------------------------------
@@ -6631,13 +6666,14 @@ function flowWatch(){
     last = w;
     const narrow = flowNarrow() || !flowHasPipes(D.supply.graph);
     if(turned && narrow !== flowChainDrawn){ drawFlow(); if(!narrow) applyFlow(); return; }
-    /* The picture fits the box again, or no longer does. */
-    if(turned && !narrow && flowTooWide(flowLayout().width) !== flowWide){ drawFlow(); applyFlow(); return; }
+    /* The picture meets the new width: shrunk to fit, or scrolled. */
+    if(turned && !narrow){ flowFit(); return; }
     /* Any other tick (a card grew a line at the same width, say) re-lays
        the pipes, so their ends stay on the cards. */
     if(narrow){ box.classList.toggle("sb-fc-wide", w >= 600); flowChainPipes(); }
   });
   flowObs.observe(box);
+  box.addEventListener("scroll", () => flowEdges(), {passive: true});
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if(flowChainDrawn) flowChainPipes(); });
 }
 const flowHasPipes = g => !!((g && g.links) || []).length;
@@ -12623,32 +12659,42 @@ function pgStore(){
       const saved = JSON.parse(localStorage.getItem(PG_KEY + who));
       if(saved && saved.v === 1 && saved.recs && typeof saved.recs === "object"){ recs = saved.recs; n = Number(saved.n) || 0; }
     }catch(e){}
-    pgMemo.set(who, {recs, n, gone: new Set()});
+    pgMemo.set(who, {recs, n, gone: new Set(), mine: new Set()});
   }
   const m = pgMemo.get(who);
   return {who, recs: m.recs, memo: m};
 }
 /* The store as saved: another tab of the same company may have written it
-   since this page read it. */
+   since this page read it. Nothing stored reads as an empty store; storage
+   that cannot be read, as undefined. */
 function pgSaved(who){
+  let raw;
+  try{ raw = localStorage.getItem(PG_KEY + who); }catch(e){ return undefined; }
   try{
-    const saved = JSON.parse(localStorage.getItem(PG_KEY + who));
-    return saved && saved.v === 1 && saved.recs && typeof saved.recs === "object" ? saved : null;
-  }catch(e){ return null; }
+    const saved = JSON.parse(raw);
+    if(saved && saved.v === 1 && saved.recs && typeof saved.recs === "object") return saved;
+  }catch(e){}
+  return raw === null ? {v: 1, n: 0, recs: {}} : null;
 }
-/* Written over what is stored, not in place of it: a record another tab
-   wrote since stays, unless this page took it away (`gone`: an undo, a
-   clear, an expiry); the count is the higher of the two. */
+/* Written over what is stored, not in place of it. What is stored stands,
+   less what this page took away (`gone`: an undo, a clear, an expiry), with
+   this page's own records over it (`mine`: made or judged here since it
+   loaded). A record this page only loaded that is no longer stored was taken
+   away in another tab, and goes here too. The page's copy then follows the
+   store, and the count is the higher of the two. */
 function pgSave(){
   const {who, recs, memo} = pgStore();
   if(!who) return;
   const saved = pgSaved(who);
+  if(saved === undefined){ try{ localStorage.setItem(PG_KEY + who, JSON.stringify({v: 1, n: memo.n, recs})); }catch(e){} return; }
   const all = {};
   if(saved){
-    Object.entries(saved.recs).forEach(([id, rec]) => { if(!memo.gone.has(id)) all[id] = rec; });
     memo.n = Math.max(memo.n, Number(saved.n) || 0);
-  }
-  Object.assign(all, recs);
+    Object.entries(saved.recs).forEach(([id, rec]) => { if(!memo.gone.has(id)) all[id] = rec; });
+  } else Object.entries(recs).forEach(([id, rec]) => { all[id] = rec; });
+  memo.mine.forEach(id => { if(recs[id]) all[id] = recs[id]; });
+  Object.keys(recs).forEach(id => { if(!(id in all)) delete recs[id]; });
+  Object.assign(recs, all);
   try{ localStorage.setItem(PG_KEY + who, JSON.stringify({v: 1, n: memo.n, recs: all})); }catch(e){}
 }
 /* A board taken in for this company (takeData()): one more on its count,
@@ -12656,7 +12702,7 @@ function pgSave(){
 function pgBoard(){
   const {who, recs, memo} = pgStore();
   memo.n++;
-  if(Object.keys(recs).length || (who && pgSaved(who))) pgSave();
+  if(Object.keys(recs).length || (who && pgSaved(who) && Object.keys(pgSaved(who).recs).length)) pgSave();
 }
 /* The game's clock as minutes: the link's, where it reads one, else the board's. */
 const pgMinutes = c => c && Number.isFinite(Number(c.day)) ? (Number(c.day) * 24 + (Number(c.hour) || 0)) * 60 + (Number(c.minute) || 0) : null;
@@ -12669,7 +12715,7 @@ function pgClockNow(){
    and the rows it answers; it is Applied until a later board judges it. */
 function pgRecord(rec){
   const {recs, memo} = pgStore();
-  memo.gone.delete(rec.id);
+  memo.gone.delete(rec.id); memo.mine.add(rec.id);
   recs[rec.id] = Object.assign({}, rec, {state: "applied", at: Date.now(), seq: memo.n, load: PG_LOAD, clock: pgClockNow()});
   pgSave();
   if(typeof sbStamp !== "undefined") sbStamp++;
@@ -12734,13 +12780,14 @@ function pgEvaluate(){
   let touched = false;
   Object.entries(recs).forEach(([id, rec]) => {
     const made = pgMinutes(rec.clock);
-    if(now !== null && made !== null && now - made > PG_KEEP_DAYS * 1440){ delete recs[id]; memo.gone.add(id); touched = true; return; }
+    if(now !== null && made !== null && now - made > PG_KEEP_DAYS * 1440){ delete recs[id]; memo.gone.add(id); memo.mine.delete(id); touched = true; return; }
     if(!["applied", "partly", "unseen"].includes(rec.state) || !(memo.n > rec.seq)) return;
     if(now !== null && made !== null && (now < made || (now === made && rec.load !== PG_LOAD))) return;
     let v = null;
     try{ v = PG_CHECK[rec.family] ? PG_CHECK[rec.family](rec) : null; }catch(e){ v = null; }
     if(!v) return;
     Object.assign(rec, v, {seen: {day: D.meta.day, hour: D.meta.hour, minute: D.meta.minute}});
+    memo.mine.add(id);
     touched = true;
   });
   if(touched) pgSave();
@@ -12780,7 +12827,7 @@ const pgSettled = family => Object.values(pgStore().recs).filter(r => (!family |
    judged records by this. */
 function pgClearSettled(){
   const {recs, memo} = pgStore();
-  Object.keys(recs).forEach(id => { if(recs[id].state === "confirmed" || recs[id].state === "changed"){ delete recs[id]; memo.gone.add(id); } });
+  Object.keys(recs).forEach(id => { if(recs[id].state === "confirmed" || recs[id].state === "changed"){ delete recs[id]; memo.gone.add(id); memo.mine.delete(id); } });
   pgSave();
 }
 /* A write's records, by family. Imports: one a line written, its contracts'
@@ -12843,7 +12890,7 @@ function pgHireDone(body, answer){
 function pgDrop(ids){
   if(!ids || !ids.length) return;
   const {recs, memo} = pgStore();
-  ids.forEach(id => { delete recs[id]; memo.gone.add(id); });
+  ids.forEach(id => { delete recs[id]; memo.gone.add(id); memo.mine.delete(id); });
   pgSave();
   if(typeof sbStamp !== "undefined") sbStamp++;
   pgSupplyStale();
@@ -13308,9 +13355,11 @@ const sbHoursWords = each => each.length && each.every(h => h === each[0])
    hours now and `week` the line's staffed machine-hours a week; `perHour`
    what one machine eats of the material in an hour, from the recipe (null
    without one, and the words say it without a figure). The figure itself is
-   Python's; nothing here sizes anything. */
+   Python's; nothing here sizes anything. `feeds` lists every line the depot
+   feeds with the material, its draw a machine-hour and its staffed
+   machine-hours a week, planned on its hours or not: what the lines draw now. */
 function sbDeps(f, r){
-  const out = [];
+  const out = [], feeds = [];
   const basis = r.basis === "cap" || r.basis === "dem" ? r.basis : sizing;
   const recipes = {};
   ((D.plan || {}).recipes || []).forEach(x => { recipes[x.slug] = x; });
@@ -13321,14 +13370,17 @@ function sbDeps(f, r){
     if(n.from !== r.s && own !== r.s) return;
     site.lines.filter(l => (n.lineSlugs || []).includes(l.slug)).forEach(l => {
       const need = (l.needHours || {})[basis], each = sbMachineHours(l);
-      if(!Number.isFinite(need) || !each.length || each.every(h => h === need)) return;
-      if(out.some(x => x.s === site.s && x.rid === l.rid && x.slug === l.slug)) return;
       const ing = ((recipes[l.slug] || {}).ingredients || []).find(i => (aliases[i.slug] || i.slug) === r.slug);
       const week = Number.isFinite(l.hoursWeek) && Array.isArray(l.gaps) ? l.hoursWeek : Math.round(each.reduce((a, h) => a + h, 0) * 7);
+      if(!feeds.some(x => x.s === site.s && x.rid === l.rid && x.slug === l.slug))
+        feeds.push({s: site.s, rid: l.rid, slug: l.slug, week, perHour: ing ? ing.per : null});
+      if(!Number.isFinite(need) || !each.length || each.every(h => h === need)) return;
+      if(out.some(x => x.s === site.s && x.rid === l.rid && x.slug === l.slug)) return;
       out.push({s: site.s, item: l.item, slug: l.slug, rid: l.rid, machines: l.machines, now: l.hoursNow, each, week, need, basis,
                 thinDay: l.thinDay || null, perHour: ing ? ing.per : null, material: r.item, depot: r.s});
     });
   }));
+  out.feeds = feeds;
   return out;
 }
 /* A factory line's own verdict under the sizing on screen: too few hours is
@@ -14531,18 +14583,25 @@ function sbDepWords(r, deps){
   });
   /* The consequence from the machine-hours staffed now against the plan's:
      what the lines draw at these hours, more or less than the figure was
-     planned on. The figure runs short only where it is under the week the
-     depot sends at these hours (the week it was planned for, with the lines'
-     difference); a Smart Delivery level is stock, not a week, and is not
-     weighed. Machines split unevenly that draw the plan's total draw it. */
+     planned on. The figure is weighed against the week the depot sends at
+     these hours: what the week it was planned for sends beyond the lines
+     (its shops, less a route), plus what every line it feeds with the
+     material draws at its staffed machine-hours. Where a line's rate is not
+     known the figure is not weighed; nor is a Smart Delivery level, which is
+     stock, not a week. Machines split unevenly that draw the plan's total
+     draw it. */
   const known = deps.every(x => Number.isFinite(x.perHour));
   const gap = x => x.week - x.need * 7 * x.machines;
   const more = deps.filter(x => gap(x) > 0), less = deps.filter(x => gap(x) < 0);
   const diff = Math.round(deps.reduce((n, x) => n + (Number.isFinite(x.perHour) ? x.perHour * gap(x) : 0), 0));
   const depot = D.businesses[r.s] ? spEsc(shortName(D.businesses[r.s])) : "";
   const value = num(r.value ?? 0);
-  const pf = szFactFor(r.s, r.slug, deps[0].basis || sizing), pUse = pf ? (pf.import || pf).use : null;
-  const week = !r.smart && Number.isFinite(pUse) && Number.isFinite(r.value) ? pUse + diff : null;
+  const pf = szFactFor(r.s, r.slug, deps[0].basis || sizing), plan = pf ? pf.import || pf : null;
+  const feeds = deps.feeds || [], planLines = plan && plan.parts ? plan.parts.lines : null;
+  const drawn = feeds.length && feeds.every(x => Number.isFinite(x.perHour) && Number.isFinite(x.week))
+    ? feeds.reduce((n, x) => n + x.perHour * x.week, 0) : null;
+  const week = !r.smart && Number.isFinite(r.value) && plan && Number.isFinite(plan.use) && Number.isFinite(planLines) && drawn !== null
+    ? Math.round(plan.use - planLines + drawn) : null;
   const drawMore = () => {
     const lead = tt("sb.dep.more.draw", "Until they do, the lines draw about {n} a week more than planned.", {n: num(diff)});
     if(week === null) return lead;

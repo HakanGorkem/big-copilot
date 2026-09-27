@@ -193,3 +193,38 @@ Validation, in the foreground, Edge, `--test-concurrency=2`, on the final source
 | `python -m unittest tests.test_css_integrity tests.test_doc_registries` | 6 tests, OK |
 | `python -m unittest discover -s tests -p "test_i18n*.py"` | 35 tests, OK |
 | `python build_web.py`, then `python build_web.py --check` | exit 0, "web/ is up to date" |
+
+## Round 3 fixes (27 September 2026)
+
+The scoped recheck of `51a95c6`: Sol code READY (LOW: two-tab undo); Opus code and Sol QA HOLD.
+Each fix below has a test that fails on `51a95c6` (run on a `git archive 51a95c6` copy, for the
+defect it targets) and passes now.
+
+| # | Finding | Fix | Test |
+| --- | --- | --- | --- |
+| 1 | Opus SHOULD 1: drawn 1:1 and scrolled the moment it was 1 px too wide, a common five-stage chain (importer, depot, factory, depot, shops) opened at 1280-1536 with its Shops out of view, and following a shop landed on a shop off screen | `flowFit()`: the picture shrinks to fit down to `FLOW_MIN_SCALE` 0.8 (the stage's 11.5 px names read 9.2 px at the floor; the review's ~10.5 px assumed 13 px names), its height shrinking with it so no blank band returns; below the floor it is drawn at full size and the box scrolls sideways, with the followed site (`flowPickId`) scrolled into view (`flowScrollToPick()`) and the edge where the picture goes on faded (`sb-flow-more-r`/`-l`, kept by a scroll listener). A resize refits without redrawing | `flow_chain`: "the five-stage fixture chain fits a 1366 box: …" (scale 0.8-1, SHOPS inside the box, no band); "a six-stage chain past the floor … faded where it goes on" (the round-2 test, to the new rule, and refit at 1900); "following a shop on a chain that scrolls brings the shop into view" |
+| 2 | Opus SHOULD 2 = QA SHOULD: "still covers the N a week" added the lines' difference to Python's shop-demand week, which is below the rounded hours' draw, so 3,650-4,199 read as covering a 4,200 draw | The week at the staffed hours is the planned week beyond the lines (`use - parts.lines`) plus what every line the depot feeds with the material draws at its staffed machine-hours (`sbDeps()` now also returns those lines as `feeds`); where a rate is not known, or the fact has no `parts.lines`, only the lead sentence shows | `progress`: "lines drawing more than planned: the figure is weighed against what the staffed machines draw" (day 47 as the game's recipes make it: 50 Water a machine-hour, 4 h planned, Python's 2,250: 4,000 runs short of 4,200, 5,000 covers it, an unknown rate says only "check that 4,100 covers it"); the round-2 test's hand-set `use` is gone |
+| 3 | Opus LOW 1 + Sol LOW 1: a record both tabs held, undone in one, came back from the other's next board | `pgSave()` overlays only the records this page made or judged since it loaded (`mine`); a record it only loaded that is no longer stored was taken away elsewhere and goes from this page too; the page's copy then follows the store. Unreadable storage keeps the page's copy | `progress`: "two tabs that both hold a record: an undo in one is not written back by the other's next board" |
+
+Note on item 2: the draw is summed over every line the depot feeds with the material, the lines on
+the plan's hours included, rather than falling back to the lead whenever the listed deps are not
+all of those lines. With every line's staffed machine-hours and rate known, the sum is complete
+either way; an unknown rate is the case that falls back.
+
+Files: `ba_dashboard.py`; `docs/ui-chunk-2-handoff.md`, `docs/ui-progress-postconditions.md`,
+`docs/dashboard-reference.md`; `tests/flow_chain.test.cjs`, `tests/progress.test.cjs`;
+generated `web/index.html`, `web/py/ba_dashboard.py`, `web/version.json`.
+
+Validation, in the foreground, Edge, `--test-concurrency=2`:
+
+| Command | Result |
+| --- | --- |
+| `node --test` (CLI target) on `flow_chain`, `progress`, `import_routes`, `import_setto`, `supply_sort`, `game_link_write`, `shell_routes`, `navigation` | 292 tests, 292 pass |
+| `BOARD_TARGET=web` on `progress`, `flow_chain`, `import_routes` (after the last build) | 85 tests, 85 pass |
+| The five new or changed tests on a `git archive 51a95c6` copy | 5 run, 5 fail, each on its defect |
+| `python -m unittest tests.test_css_integrity tests.test_doc_registries` | 6 tests, OK |
+| `python -m unittest discover -s tests -p "test_i18n*.py"` | 35 tests, OK |
+| `python build_web.py`, then `python build_web.py --check` | exit 0, "web/ is up to date" |
+
+The CLI run preceded a one-line comment correction in `flowFit()`'s block (no code change); the
+build, `--check` and the web-target run are after it.

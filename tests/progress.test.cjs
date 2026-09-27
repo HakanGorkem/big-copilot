@@ -538,16 +538,20 @@ test('two tabs of one company: a board in one keeps the other\'s records, and an
   assert.equal(await a.evaluate(() => JSON.parse(localStorage.getItem('ba_progress_v1:r8-fixture')).n), Math.max(...n));
 });
 
-/* Day 47 with a shop demand plan of 4 h a machine: the brewery's machines at
-   12 h and 0 h draw 84 machine-hours of Water (25 each) a week against the
-   plan's 56, 700 more; the week the Hub sends at these hours is the plan's
-   1,400 plus that. */
-test('lines drawing more than planned: a figure that covers the draw says so, one under it runs short', async t => {
+/* Day 47 as the installed game's recipes make it (the review's): Beer eats 50
+   Water a machine-hour and shop demand plans 4 h a machine. Python's
+   shop-demand week for the Hub's Water is 2,250, all of it lines, the draw
+   before the hours are rounded up and without the margin. The machines at
+   12 h and 0 h are 84 machine-hours a week: they draw 4,200 now, 1,400 more
+   than the plan's 56 hours. The figure is weighed against those 4,200, not
+   against the plan's week plus the difference (3,650). */
+test('lines drawing more than planned: the figure is weighed against what the staffed machines draw', async t => {
   const data = DAY47();
   const brewery = data.supply.factories.sites[0];
   brewery.lines[0].needHours.dem = 4;
+  data.plan.recipes.find(r => r.slug === brewery.lines[0].slug).ingredients.find(i => i.slug === WATER).per = 50;
   const hub = data.businesses.findIndex(b => b.key === HUB47);
-  Object.assign(data.supply.facts[hub][WATER].dem, {use: 1400, need: 1610});
+  Object.assign(data.supply.facts[hub][WATER].dem, {use: 2250, need: 2588, parts: {lines: 2250, sites: 0, route: 0}});
   const page = await board(t, {data, mode: 'dem'});
   const said = value => page.evaluate(([s, slug, k, value]) => {
     impSetKeep(impSetId(k, slug), {value, inGame: 3000, basis: 'dem'}); sbStamp++;
@@ -556,9 +560,14 @@ test('lines drawing more than planned: a figure that covers the draw says so, on
   }, [hub, WATER, HUB47, value]);
   const covers = await said(5000);
   assert.match(covers, /staffed 12 h and 0 h a day → 4 h a day each/);
-  assert.match(covers, /the lines draw about 700 a week more than planned\. 5,000 still covers the 2,100 a week that takes\./);
+  assert.match(covers, /the lines draw about 1,400 a week more than planned\. 5,000 still covers the 4,200 a week that takes\./);
   assert.doesNotMatch(covers, /runs short/);
-  assert.match(await said(2000), /2,000 runs short of the 2,100 a week that takes\./);
+  assert.match(await said(4000), /4,000 runs short of the 4,200 a week that takes\./);
+  // A line whose rate the board does not know: the lead alone, no verdict.
+  await page.evaluate(slug => { D.plan.recipes.find(r => r.slug === slug).ingredients = []; }, brewery.lines[0].slug);
+  const unknown = await said(4100);
+  assert.match(unknown, /the lines draw more than planned: check that 4,100 covers it/);
+  assert.doesNotMatch(unknown, /runs short|still covers/);
 });
 
 test('machines split unevenly that draw the plan\'s total read as uneven, not as a draw that differs', async t => {
@@ -575,4 +584,38 @@ test('machines split unevenly that draw the plan\'s total read as uneven, not as
   assert.match(text, /staffed 24 h and 0 h a day → 12 h a day each/);
   assert.match(text, /The machines' hours are uneven, but together they draw what 12,000 is planned on\./);
   assert.doesNotMatch(text, /is not what|more than planned|less than planned/);
+});
+
+// --- round 3 of the chunk's review -------------------------------------------
+
+test('two tabs that both hold a record: an undo in one is not written back by the other\'s next board', async t => {
+  const context = await browser.newContext({viewport: {width: 1280, height: 900}});
+  t.after(() => context.close());
+  await context.route('https://**', r => r.abort());
+  await context.route('http://progress.test/**', r => {
+    const rel = decodeURIComponent(new URL(r.request().url()).pathname.slice(1));
+    if(!rel) return r.fulfill({contentType: 'text/html', body: html});
+    const f = path.join(root, 'web', rel);
+    return fs.existsSync(f) && fs.statSync(f).isFile() ? r.fulfill({path: f}) : r.fulfill({status: 404, body: ''});
+  });
+  const open = async () => { const p = await context.newPage(); await p.goto('http://progress.test/'); return p; };
+  const a = await open();
+  await a.evaluate(() => localStorage.clear());
+  await a.evaluate(d => { takeData(d); pgRecord({id: 'X', family: 'imports', target: {depot: 'hub#1', slug: 'flour'}, expect: {contracts: [], inGame: 1}, rowKeys: [], label: 'X'}); }, fixture());
+  // Tab B opens after the write: it holds X as loaded.
+  const b = await open();
+  await b.evaluate(d => { takeData(d); }, fixture());
+  assert.equal(await b.evaluate(() => 'X' in pgStore().recs), true);
+  const stored = () => a.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('ba_progress_v1:r8-fixture')).recs));
+  // Tab A undoes it.
+  await a.evaluate(() => pgDrop(['X']));
+  assert.deepEqual(await stored(), []);
+  // Tab B's next board keeps it undone, and drops it from its own copy too.
+  await b.evaluate(() => takeData(JSON.parse(JSON.stringify(D))));
+  assert.deepEqual(await stored(), []);
+  assert.equal(await b.evaluate(() => 'X' in pgStore().recs), false);
+  // A record B judges on a later board is B's own and is kept, over what A stored.
+  await a.evaluate(() => pgRecord({id: 'Y', family: 'schedule', target: {site: 'shop#3'}, expect: {print: 'p'}, rowKeys: [], label: 'Y'}));
+  await b.evaluate(() => { pgMemo.clear(); pgStore(); pgStore().recs.Y.state = 'confirmed'; pgStore().memo.mine.add('Y'); pgSave(); });
+  assert.equal(await a.evaluate(() => JSON.parse(localStorage.getItem('ba_progress_v1:r8-fixture')).recs.Y.state), 'confirmed');
 });

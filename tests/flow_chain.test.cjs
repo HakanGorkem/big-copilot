@@ -442,37 +442,77 @@ test('a live refresh keeps the site followed and the open group, and lays the pi
   assert.ok((await state(page)).pipes.length >= 2);
 });
 
-/* A chain of more stages than a desk box holds (importer, depot, factory,
-   depot, factory, shops: a second tier of each) is drawn 1:1 and scrolls
-   sideways inside its box, rather than shrinking its names past reading
-   into a box as tall as the unscaled picture. */
-test('a six-stage chain keeps its names at full size and scrolls inside the box, with no blank band', async t => {
+/* How the picture meets a desk box (round 2 and 3 of the chunk's review):
+   it shrinks to fit down to 0.8 of its size, where the names still read,
+   its height shrinking with it; a chain wider than that scrolls sideways
+   inside the box at full size, the followed site in view and the edge where
+   it goes on faded. */
+const measure = page => page.evaluate(() => {
+  const svg = document.getElementById('flow'), box = document.getElementById('sbFlowBox');
+  const s = svg.getBoundingClientRect(), b = box.getBoundingClientRect();
+  const heads = [...svg.querySelectorAll('text.col')];
+  const bottom = Math.max(...[...svg.querySelectorAll('.node rect')].map(r => r.getBoundingClientRect().bottom));
+  const text = svg.querySelector('.node text:not(.s)');
+  return {heads: heads.map(x => x.textContent), scale: svg.getScreenCTM().a,
+    headGap: heads[0].getBoundingClientRect().top - s.top, bottomGap: s.bottom - bottom,
+    lastHeadRight: heads[heads.length - 1].getBoundingClientRect().right, boxRight: b.right,
+    font: parseFloat(getComputedStyle(text).fontSize) * svg.getScreenCTM().a,
+    scrolls: box.scrollWidth > box.clientWidth, fade: box.classList.contains('sb-flow-more-r'),
+    page: document.documentElement.scrollWidth - document.documentElement.clientWidth};
+});
+/* The chain with a second factory tier: importer, depot, factory, depot, factory, shops. */
+function sixStages(){
   const data = fixture();
   const g = data.supply.graph;
   g.nodes.push({...g.nodes.find(n => n.id === 'factory#2'), id: 'factory#7', name: '[BF] Bread Works', tag: 'BF', site: null, items: []});
   g.links.push({from: 'dist#6', to: 'factory#7', perDay: 200, items: 1, slugs: ['cake'], cadence: 'daily', paused: false},
     {from: 'factory#7', to: 'shop#4', perDay: 150, items: 1, slugs: ['bread'], cadence: 'daily', paused: false});
-  const page = await board(t, data, 1280);
-  const m = await page.evaluate(() => {
-    const svg = document.getElementById('flow'), box = document.getElementById('sbFlowBox');
-    const top = svg.getBoundingClientRect().top;
-    const text = svg.querySelector('.node text:not(.s)');
-    return {heads: [...svg.querySelectorAll('text.col')].map(x => x.textContent),
-      scale: svg.getScreenCTM().a,
-      headGap: svg.querySelector('text.col').getBoundingClientRect().top - top,
-      font: parseFloat(getComputedStyle(text).fontSize) * svg.getScreenCTM().a,
-      scrolls: box.scrollWidth > box.clientWidth,
-      page: document.documentElement.scrollWidth - document.documentElement.clientWidth};
-  });
+  return data;
+}
+
+test('the five-stage fixture chain fits a 1366 box: shrunk no further than 0.8, its Shops in the box, no blank band', async t => {
+  const page = await board(t, fixture(), 1366);
+  const m = await measure(page);
+  assert.deepEqual(m.heads, ['IMPORTERS', 'DEPOTS', 'FACTORIES', 'DEPOTS', 'SHOPS']);
+  assert.ok(m.scale >= 0.8 && m.scale < 1, `scaled to ${m.scale.toFixed(2)}`);
+  assert.ok(m.lastHeadRight <= m.boxRight, `SHOPS ends at ${m.lastHeadRight.toFixed(0)}, the box at ${m.boxRight.toFixed(0)}`);
+  assert.equal(m.scrolls, false);
+  assert.ok(m.headGap < 30, `the heads start ${m.headGap.toFixed(0)} px under the top`);
+  assert.ok(m.bottomGap < 30, `${m.bottomGap.toFixed(0)} px under the last site`);
+  assert.ok(m.font >= 9.2, `names at ${m.font.toFixed(1)} px`);
+});
+
+test('a six-stage chain past the floor keeps its names at full size and scrolls inside the box, faded where it goes on', async t => {
+  const page = await board(t, sixStages(), 1280);
+  const m = await measure(page);
   assert.deepEqual(m.heads, ['IMPORTERS', 'DEPOTS', 'FACTORIES', 'DEPOTS', 'FACTORIES', 'SHOPS']);
   assert.ok(m.scale > 0.99, `drawn 1:1, not at ${m.scale.toFixed(2)}`);
   assert.ok(m.headGap < 30, `the heads start ${m.headGap.toFixed(0)} px under the top`);
+  assert.ok(m.bottomGap < 30, `${m.bottomGap.toFixed(0)} px under the last site`);
   // The names at the stage's own 11.5 px (.flow .node text), not shrunk.
   assert.ok(m.font >= 11.5, `names at ${m.font.toFixed(1)} px`);
   assert.equal(m.scrolls, true, 'the box scrolls sideways');
+  assert.equal(m.fade, true, 'the right edge says the picture goes on');
   assert.ok(m.page <= 0, 'the page itself does not');
-  // The box grown wide enough draws it to fit again, with no scroll.
-  await page.setViewportSize({width: 2200, height: 1000});
+  // Scrolled to its end, the fade moves to the left edge.
+  await page.evaluate(() => { const b = document.getElementById('sbFlowBox'); b.scrollLeft = b.scrollWidth; b.dispatchEvent(new Event('scroll')); });
+  assert.deepEqual(await page.evaluate(() => ['sb-flow-more-l', 'sb-flow-more-r'].map(c => document.getElementById('sbFlowBox').classList.contains(c))), [true, false]);
+  // A box grown past the floor shrinks it to fit again, with no scroll and no fade.
+  await page.setViewportSize({width: 1900, height: 1000});
   await page.waitForFunction(() => !document.getElementById('sbFlowBox').classList.contains('sb-flow-scroll'));
+  const w = await measure(page);
   assert.equal(await page.evaluate(() => document.getElementById('flow').style.width), '100%');
+  assert.ok(w.scale >= 0.8 && w.lastHeadRight <= w.boxRight && w.bottomGap < 30 && !w.fade, JSON.stringify(w));
+});
+
+test('following a shop on a chain that scrolls brings the shop into view', async t => {
+  const page = await board(t, sixStages(), 1280);
+  await page.evaluate(() => { flowPickId = 'shop#4'; drawFlowView(); drawFlow(); applyFlow(); });
+  const got = await page.evaluate(() => {
+    const box = document.getElementById('sbFlowBox').getBoundingClientRect();
+    const r = document.querySelector('#flow .node[data-id="shop#4"] rect').getBoundingClientRect();
+    return {left: r.left, right: r.right, boxLeft: box.left, boxRight: box.right, scrolled: document.getElementById('sbFlowBox').scrollLeft};
+  });
+  assert.ok(got.scrolled > 0, 'the box scrolled');
+  assert.ok(got.left >= got.boxLeft && got.right <= got.boxRight, JSON.stringify(got));
 });

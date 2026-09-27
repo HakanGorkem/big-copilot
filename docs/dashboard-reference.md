@@ -158,8 +158,9 @@ the map.
     does not sort.
   - *Goods flow*: the chain drawn as a flow diagram, a column a stage in the order the goods
     travel (a depot an importer fills stands before the factory it feeds, one a factory fills
-    after it), shops last, line width for daily volume. Always drawn at full size: a chain of
-    more stages than the box holds scrolls sideways inside it. Click a site to follow it: a panel says what it holds and
+    after it), shops last, line width for daily volume. A chain wider than the box shrinks to
+    fit down to 0.8 of its size; one wider still is drawn at full size and scrolls sideways inside
+    the box, the followed site in view and a faded edge where it goes on. Click a site to follow it: a panel says what it holds and
     lists the changes on its route; *Table* goes back to the view you came from. A finding
     on the Overview lands on its view, on its row, lit, with a way back.
     On a phone or a portrait tablet (a diagram box under about 950 px) the diagram is the
