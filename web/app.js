@@ -511,15 +511,17 @@
       row.appendChild($("srcStrip"));
       $("sourceNote").appendChild($("srcNote"));
       $("srcActions").appendChild($("boardControls").content.cloneNode(true));
-      /* Update and ··· sit in the masthead, beside Search; the strip keeps
-         the recovery actions for its warning bar. */
-      const mast = $("mast");
-      if (mast) {
+      /* Update and ··· sit at the sidebar's foot, and this ··· is the
+         sidebar's only one: it takes the board's utilities in under the save
+         source (nxMenuInto()). The strip keeps the recovery actions for its
+         warning bar. */
+      const foot = $("sdRow");
+      if (foot) {
         const slot = document.createElement("div");
         slot.className = "nx-src"; slot.id = "mastSrc";
-        mast.insertBefore(slot, $("clock"));
+        foot.insertBefore(slot, foot.firstChild);
         slot.append($("updateBtn"), $("srcMenu"));
-        // The row is narrower now: fit it again, and the sphere's shelf with it.
+        if (typeof nxMenuInto === "function") nxMenuInto($("menuUtilSlot"));
         if (typeof nxFitMast === "function") nxFitMast();
       }
       const lb = $("linkBtn");
@@ -586,16 +588,32 @@
     $("menuBtn").addEventListener("click", (e) => {
       e.stopPropagation();
       const open = !$("srcMenu").classList.contains("open");
-      // Under the masthead, where the narrow screen's CSS fixes the panel.
+      /* From the sidebar's foot the panel opens beside the sidebar, its foot
+         level with the button's; in a phone's drawer, across the window above
+         the button. */
       const panel = $("srcMenu").querySelector(".menu-panel"), mast = $("mast");
-      if (panel) panel.style.top = mast && $("srcMenu").closest("#mast") && window.matchMedia && matchMedia("(max-width:760px)").matches
-        ? `${Math.round(mast.getBoundingClientRect().bottom + 6)}px` : "";
+      if (panel && open && mast && $("srcMenu").closest("#mast")) {
+        const r = $("menuBtn").getBoundingClientRect(), vh = window.innerHeight || 800;
+        const phone = window.matchMedia && matchMedia("(max-width:560px)").matches;
+        panel.style.left = phone ? "12px" : `${Math.round(mast.getBoundingClientRect().right + 8)}px`;
+        panel.style.right = phone ? "12px" : "auto";
+        panel.style.top = "auto";
+        panel.style.bottom = `${Math.max(8, Math.round(vh - (phone ? r.top - 8 : r.bottom)))}px`;
+      }
       $("srcMenu").classList.toggle("open", open);
       $("menuBtn").setAttribute("aria-expanded", String(open));
       if (!open) closeSavePicker();
       if (typeof window.hideTip === "function") window.hideTip();
     });
     $("srcMenu").addEventListener("click", (e) => e.stopPropagation());
+    // The board's utilities in this menu: each closes it and does its thing.
+    const util = $("menuUtilSlot");
+    if (util) util.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-nx-item]");
+      if (!b || typeof nxMenuDo !== "function") return;
+      closeMenu();
+      nxMenuDo(b.dataset.nxItem, $("menuBtn"));
+    });
   }
   function closeMenu() {
     const m = $("srcMenu");

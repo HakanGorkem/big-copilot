@@ -23,7 +23,7 @@ function currentPage() {
     }
     throw new Error('the generated page no longer embeds the wiki the way this test splices it');
   };
-  let out = swap(html, '.wiki{margin-top:28px}', '#nav a .feature-new{display:none!important}\n}',
+  let out = swap(html, '.wiki{margin-top:28px}', '.wiki .wk-cat{transform:none}\n}',
     fs.readFileSync(path.join(root, 'wiki.css'), 'utf8').trim());
   return swap(out, "/* The Wiki page: the game's own help", 'ready: () => wikiStatus === "ready",\n};',
     fs.readFileSync(path.join(root, 'wiki.js'), 'utf8').trim());
@@ -342,10 +342,12 @@ test('phone layouts fit in dark and light, with a single row of nav icons', asyn
     await page.getByRole('heading', {name:'Gift Shop',exact:true,level:1}).waitFor();
     const geometry = await page.evaluate(() => ({
       overflow:document.documentElement.scrollWidth > document.documentElement.clientWidth,
-      rows:[...document.querySelectorAll('#nav a[data-id]')].map(el=>Math.round(el.getBoundingClientRect().top)),
+      // A phone's places are its bottom bar (the sidebar is a drawer there),
+      // which a board with no save leaves out altogether.
+      rows:[...document.querySelectorAll('#phoneNav a[data-id]')].filter(el=>el.getClientRects().length).map(el=>Math.round(el.getBoundingClientRect().top)),
     }));
     assert.equal(geometry.overflow, false, `${width}px ${theme} overflow`);
-    assert.equal(new Set(geometry.rows).size, 1, `${width}px ${theme} nav wraps`);
+    assert.ok(new Set(geometry.rows).size <= 1, `${width}px ${theme} nav wraps`);
     await graphNode(page, 'Gift (Cheap)').click();
     assert.equal(await page.locator('#wikiGraph .wk-wires path').count(), 0);
     assert.equal(await graphNode(page, 'Gift (Cheap)').getAttribute('aria-pressed'), 'true');

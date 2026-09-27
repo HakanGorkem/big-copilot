@@ -255,10 +255,11 @@ test('a big role in a narrow Crew block keeps its name, its count and its dots i
       }
       assert.match(rows[1].count, /^80\s·\s4 off\s·\s\$64,000\/day$/);
       // Eighty dots at 16px a dot (11 and a 5px gap) fill the block's whole
-      // width: a handful of lines, not eighty. Six from 768px up; the block is
-      // barely 200px wide at 700px, which holds twelve a line.
+      // width: a handful of lines, not eighty. Six where the block is 220px or
+      // wider; about 200px wide (768px beside the sidebar's rail) it holds
+      // twelve or thirteen a line, and at 700px, 185px, eleven.
       const perLine = Math.floor((rows[1].width + 5) / 16);
-      assert.ok(rows[1].lines <= Math.min(Math.ceil(80 / perLine), width >= 768 ? 6 : 7),
+      assert.ok(rows[1].lines <= Math.min(Math.ceil(80 / perLine), rows[1].width >= 220 ? 6 : rows[1].width >= 195 ? 7 : 8),
         `${at}: ${rows[1].lines} lines of dots in ${rows[1].width.toFixed(0)}px`);
     } finally { await page.close(); }
   }

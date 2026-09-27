@@ -105,7 +105,7 @@ test('factory metrics fit at desktop widths without crushing line names', async 
       await factory(page);
       const sizes = await page.evaluate(() => {
         const table = document.querySelector('#secProduction [data-sb-table="factory-lines"] table');
-        return {viewport: innerWidth, wrap: document.querySelector('.wrap').clientWidth,
+        return {viewport: innerWidth, wrap: document.querySelector('.wrap').clientWidth, side: document.getElementById('mast').offsetWidth,
           table: table.getBoundingClientRect().width, container: table.parentElement.clientWidth,
           line: table.rows[1].cells[1].getBoundingClientRect().width,
           rowHeight: table.rows[1].getBoundingClientRect().height};
@@ -113,7 +113,8 @@ test('factory metrics fit at desktop widths without crushing line names', async 
       assert.ok(sizes.table <= sizes.container + 1, JSON.stringify(sizes));
       assert.ok(sizes.line >= 220, JSON.stringify(sizes));
       assert.ok(sizes.rowHeight < 150, JSON.stringify(sizes));
-      assert.ok(sizes.wrap >= width - 100, JSON.stringify(sizes));
+      // The page takes the window beside the sidebar.
+      assert.ok(sizes.wrap >= width - sizes.side - 100, JSON.stringify(sizes));
     } finally { await page.close(); }
   }
 });

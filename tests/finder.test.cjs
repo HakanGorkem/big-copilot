@@ -1577,7 +1577,7 @@ test("the finder's demand figure leads back to that type's Growth row", async ()
   } finally { await page.close(); }
 });
 
-test('a row the demand figure leads back to clears the sticky masthead', async () => {
+test('a row the demand figure leads back to clears whatever stays at the top of the window', async () => {
   const {page, errors} = await fixture();
   try{
     await page.setViewportSize({width: 1440, height: 500});
@@ -1598,8 +1598,8 @@ test('a row the demand figure leads back to clears the sticky masthead', async (
       return scrollY > 0 && window.pageRest.frames >= 3;
     }, `#market .r[data-slug="${LAW}"]`, {polling: 'raf'});
     const [top, mast] = await page.evaluate(sel => [document.querySelector(sel).getBoundingClientRect().top,
-      document.getElementById('mast').getBoundingClientRect().bottom], `#market .r[data-slug="${LAW}"]`);
-    assert.ok(top >= mast, `row top ${top} is under the masthead (${mast})`);
+      nxTopLine()], `#market .r[data-slug="${LAW}"]`);
+    assert.ok(top >= mast, `row top ${top} is under the top line (${mast})`);
     assert.ok(await page.evaluate(() => scrollY) > 0, 'the page scrolled');
     // The focus follows, to the office row's cell that opens the finder.
     assert.equal(await page.evaluate(() => document.activeElement?.matches('#market .cell[role=button][data-r="1"]')), true);

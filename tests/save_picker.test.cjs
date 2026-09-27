@@ -31,6 +31,9 @@ async function fixture(width = 1280, theme = 'dark') {
   await page.addScriptTag({path:path.join(root, 'web/app.js')});
   await page.evaluate(() => window.dispatchEvent(new Event('DOMContentLoaded')));
   await loadFiles(page);
+  // On a phone ··· is in the sidebar's drawer: open it, as Map & more does
+  // (the board script, which wires that button, is not on this page).
+  if (width <= 560) await page.evaluate(() => document.body.classList.add('sd-open'));
   await page.locator('#menuBtn').click();
   return page;
 }

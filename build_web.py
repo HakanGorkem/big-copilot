@@ -144,7 +144,7 @@ ICON_MORE = '<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.4"></circle><c
 BANNER = r"""<style>
 [hidden]{display:none!important}
 body.has-board .landing{display:none}
-body:not(.has-board) .wrap{display:none}
+body:not(.has-board) .wrap,body:not(.has-board) .sd-app{display:none}
 button.btn,button.btn2,button.ibtn{font-family:inherit;line-height:inherit}
 .release-banner{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:16px;padding:5px clamp(16px,2.5vw,40px);border-bottom:1px solid var(--rule-soft);background:color-mix(in srgb,var(--accent) 5%,var(--ground));color:var(--ink-2);font-size:12px;line-height:1.5}
 .release-copy{display:flex;align-items:baseline;gap:12px;flex:1;min-width:0}
@@ -167,7 +167,6 @@ button.btn,button.btn2,button.ibtn{font-family:inherit;line-height:inherit}
 .release-actions .release-dismiss:hover{background:var(--raised);color:var(--ink)}
 .release-actions svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .release-banner :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-body .mast{top:var(--release-height,0px)}
 @media(max-width:540px){.release-banner{gap:10px;padding-top:6px;padding-bottom:6px}.release-copy{display:block;font-size:11px}.release-copy details{margin-top:1px;border-left:0;padding-left:13px}}
 /* One-time news strip under the update banner; web/update.js shows it. It
    sits in the flow, so it pushes the page down and scrolls away beneath the sticky
@@ -239,7 +238,7 @@ button.btn{border:0;cursor:pointer}
 .strip .st .led.lg-dim{background:var(--ink-3)}
 .strip .file{text-transform:uppercase}
 .strip .file:empty,.strip #srcStatus:empty{display:none}
-.strip .btn2:disabled,.mast .nx-src .btn2:disabled{opacity:.4;pointer-events:none}
+.strip .btn2:disabled,.sd .nx-src .btn2:disabled{opacity:.4;pointer-events:none}
 .strip .st{min-width:0;flex-wrap:wrap}
 /* All well on the board: Update and ··· alone; reading: the bar alone. */
 .strip.calm .st{display:none}
@@ -298,7 +297,7 @@ button.btn{border:0;cursor:pointer}
 .save-option-meta{display:block;margin-top:2px;font:400 10px/1.5 "IBM Plex Mono",monospace;color:var(--ink-2)}
 .menu-panel .save-picker{width:100%;margin-bottom:8px}
 .menu-panel .save-options{position:relative;top:auto;right:auto;width:100%;max-width:none;margin-top:6px;box-shadow:none}
-.strip .right .menu-panel,.mast .nx-src .menu-panel{white-space:normal}
+.strip .right .menu-panel,.sd .nx-src .menu-panel{white-space:normal}
 .landing details.help{width:560px;margin-top:-8px}
 .landing details.help:not([open]){display:none}
 .landing details.help > summary{display:none}
@@ -351,16 +350,18 @@ details.help[open] summary::after{content:"\2013"}
 
 /* the More menu's panel ------------------------------------------------- */
 .menu{position:relative}
-/* Update and ··· in the board's masthead, beside Search. */
-.mast .nx-src{display:flex;align-items:center;gap:6px;flex:none}
-.mast .nx-src #updateBtn{white-space:nowrap}
-.mast .nx-src #updateBtn.busy{position:relative;overflow:hidden}
-.mast .nx-src #updateBtn.busy::after{content:"";position:absolute;left:0;bottom:0;height:2px;width:40%;background:var(--accent);animation:nx-read 1.1s ease-in-out infinite}
+/* Update and ··· at the board's sidebar foot. The panel opens beside the
+   sidebar, its foot level with the button's (wireMenu() places it); on a
+   phone, across the window above the button. The board's utilities end it. */
+.sd .nx-src #updateBtn{white-space:nowrap}
+.sd .nx-src #updateBtn.busy{position:relative;overflow:hidden}
+.sd .nx-src #updateBtn.busy::after{content:"";position:absolute;left:0;bottom:0;height:2px;width:40%;background:var(--accent);animation:nx-read 1.1s ease-in-out infinite}
 @keyframes nx-read{from{left:-40%}to{left:100%}}
-/* On a narrow screen the menu hangs under the masthead, across the window
-   (its top is set as it opens: wireMenu()). */
-@media (max-width:760px){.mast .nx-src .menu-panel{position:fixed;left:12px;right:12px;width:auto;max-height:calc(100vh - 90px);overflow:auto}}
-@media (prefers-reduced-motion:reduce){.mast .nx-src #updateBtn.busy::after{animation:none;width:100%;left:0}}
+.sd .nx-src .menu-panel{position:fixed;right:auto;top:auto;max-height:calc(100vh - 24px)}
+@media (max-width:560px){.sd .nx-src .menu-panel{width:auto;max-height:calc(100vh - 90px);overflow:auto}}
+@media (prefers-reduced-motion:reduce){.sd .nx-src #updateBtn.busy::after{animation:none;width:100%;left:0}}
+.menu-panel .nx-util{gap:10px;align-items:center}
+.menu-panel .nx-util svg{width:16px;height:16px;stroke:var(--ink-3);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .menu-panel{display:none;position:absolute;right:0;top:calc(100% + 8px);width:320px;padding:10px;background:var(--surface);
   border:1px solid var(--rule);border-radius:10px;box-shadow:0 12px 32px color-mix(in srgb,var(--ink) 16%,transparent);z-index:40;
   max-height:min(650px,80vh);overflow:auto;text-align:left}
@@ -466,16 +467,18 @@ details.help[open] summary::after{content:"\2013"}
     <button type="button" class="ibtn tr" id="menuBtn" aria-haspopup="true" aria-expanded="false" aria-label="More" data-tip="Change folder · one file · watch the game" data-tt-aria-label="app.menu.more" data-tt-tip="app.menu.tip2">__ICON_MORE__</button>
     <div class="menu-panel">
       <div class="menu-heading" data-tt="app.menu.source">Save source</div>
+      <p class="menu-src" id="menuSrcLine"></p>
       <div id="menuSourceSlot"></div>
       <button type="button" class="lg-btn lg-watch" id="watchBtn" hidden>Watch</button>
-      <p class="menu-src" id="menuSrcLine"></p>
-      <div class="menu-divider"></div>
       <!-- Game text and Forget history are Preferences' (declutter X5): their
            controls wait here, out of sight, for its rows to drive them. -->
       <div id="menuChipSlot" hidden></div>
       <p class="menu-hint" id="menuChipHint" hidden></p>
       <div id="menuHelpSlot"></div>
       <div class="menu-foot" hidden><div id="menuFootSlot" class="foot-links"></div></div>
+      <!-- The board's utilities (What's new, Preferences, Help & feedback),
+           drawn by its nxMenuInto(): the sidebar has this one ···. -->
+      <div id="menuUtilSlot"></div>
     </div>
   </div>
 </template>

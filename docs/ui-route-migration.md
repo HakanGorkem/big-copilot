@@ -12,8 +12,10 @@ aliases. Code: `ROUTES`, `AREAS`, `REFS` and `HOST_ROUTES` in the board script
 ## How the shell works
 
 - **A route is the address.** `#overview`, `#supply/imports`, `#staffing/needs` and so on. The
-  masthead lights the route's area and the row under it lights its view. Browser Back, Forward and
-  a reload replay the route.
+  sidebar lights the route's area and, under it, its view; folded to its rail (or on a phone) the
+  views are a row at the top of the page instead ([architecture.md](architecture.md), "The
+  sidebar"). The sidebar only renders the routes: their ids, aliases and history are as below.
+  Browser Back, Forward and a reload replay the route.
 - **A host is what draws it today.** The old pages (`PAGES`: `today`, `company`, `supply`,
   `staffing`, `growth`, `map`, `wiki`) and their views (`SUBS`) are now hosts. Their DOM ids and
   `PAGE_DRAWS` tags are unchanged, so lazy and stale drawing and calm refresh work as before. The
@@ -24,7 +26,7 @@ aliases. Code: `ROUTES`, `AREAS`, `REFS` and `HOST_ROUTES` in the board script
   Businesses by default, or for example Staffing › Schedules when a schedule was opened from there.
   That route is stored in the history entry as `nxRoute`, so Back, Forward and a reload keep it.
 - **Arrival.** A finding's action or a task in All tools stores why the reader came in the new
-  entry's state (`nxArr`: what, position, way back). The strip under the area's row shows it with
+  entry's state (`nxArr`: what, position, way back). The strip at the top of the page shows it with
   a way back. The Overview's own state when it was left (filters, "Show N more", open Details,
   the row and its screen position) is stored on the Overview's entry (`nxOv`). Returning through
   the strip is the browser's Back when the Overview is the entry right behind. Otherwise it is a
@@ -59,7 +61,7 @@ aliases. Code: `ROUTES`, `AREAS`, `REFS` and `HOST_ROUTES` in the board script
 | `expansion/demand` | Expansion › Demand | `growth/market`: `secMarket` (market changes, By type / What I sell / Not yet) | A cell asks the finder its own question and is kept on Demand's entry (`nxDem`): Back or a reload rings its row and focuses the cell (`demArrive()`) | Chunk 3 (final) |
 | `expansion/finder` | Expansion › Find a location | `map` host with the finder on, headed Find a location (`#mapHead`), its ways on under it (`#finderCtx`: the type's demand, its setup guide, Plan a factory). A task or a Demand cell asks a question (`openFinder(preset)`), the cell with an arrival that names its type and neighbourhood; the finder's switch on the City map is a new visit | Each visit keeps its own filters (`nxFs`, written by `saveFinder()`) and its picked building (`nxPick`): Back, Forward and a reload show the entry's own, so two cells' questions keep their own answers; a new visit keeps the filters on screen | Chunk 3 (final) |
 | `expansion/factory` | Expansion › Plan a factory | `growth/plan`: `secPlan`, `secIngredients` | – | Chunk 3 (final) |
-| `map` | City map (reference) | `map` host, always with the finder off, headed City map. Reached with the finder on (the masthead, Back from Find a location) it switches the finder off; the finder's switch opens Find a location as a new visit, and Back comes back here | – | Chunk 3 (final) |
+| `map` | City map (reference) | `map` host, always with the finder off, headed City map. Reached with the finder on (the sidebar, Back from Find a location) it switches the finder off; the finder's switch opens Find a location as a new visit, and Back comes back here | – | Chunk 3 (final) |
 | `wiki` | Game guide (reference) | `wiki` host; `#wiki/<page>` is still the wiki's own route; opens with no save | – | Chunk 3 (final) |
 | `#site/<slug>` | a business's page | `company/results` + `secDetail`: its findings, tiles, satisfaction, promotion, customers by hour, a Schedule summary (`spSchedSummary()`; the planner itself is Staffing › Schedules'), crew, shelves or fees, profit, its week; a depot's stock and feeds, a factory's lines and inputs. Its head carries the ways to its planners (`spActs()`): Schedule, Deliveries and Prices for a shop; Schedule and Fees for an office; Imports and Deliveries for a depot; Production for a factory, each with the business picked or in scope and the page as the way back | Under the route that opened it (`nxRoute`) | Chunk 3 (final) |
 
@@ -192,6 +194,6 @@ the hiring page on its route.
   `expansion/finder`. The finder's switch opens the other route as a new visit, so Back undoes it.
 - **Per-visit state:** the finder's filters (`nxFs`) beside its pick (`nxPick`); Demand's cell on
   its own entry (`nxDem`); the prices' business (`nxPrice`).
-- **Utilities.** Preferences and Help & feedback are sheets over the board (`pxOpen()`), from ···
-  (and Map & more on a phone), no longer a scroll to the footer. Company finances links to
+- **Utilities.** Preferences and Help & feedback are sheets over the board (`pxOpen()`), from the
+  sidebar's ··· (on the hosted board, its save-source menu), no longer a scroll to the footer. Company finances links to
   Preferences' History row (`data-open-prefs`).

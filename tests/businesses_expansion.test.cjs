@@ -405,10 +405,24 @@ test('the City map is the plain map: the masthead switches the finder off, and t
 
 // --- the utilities -----------------------------------------------------------------------
 
+/* The sidebar has one ···: the board's own (#navMore) on the local server
+   page, and on the hosted board its save-source menu (#menuBtn), which takes
+   the utilities in once the page has placed it. Opens it and picks `item`;
+   gives back the id of the button the keyboard returns to. */
+async function utility(page, item) {
+  if (await page.locator('#navMore').isVisible()) {
+    await page.locator('#navMore').click();
+    await page.locator(`#nxMenu [data-nx-item="${item}"]`).click();
+    return 'navMore';
+  }
+  await page.locator('#menuBtn').click();
+  await page.locator(`#menuUtilSlot [data-nx-item="${item}"]`).click();
+  return 'menuBtn';
+}
+
 test('Preferences is a sheet: the checks panel over it, Escape in order, and the keyboard back on ···; theme and language are the footer\'s', async t => {
   const page = await board(t);
-  await page.locator('#navMore').click();
-  await page.locator('#nxMenu [data-nx-item="prefs"]').click();
+  const opener = await utility(page, 'prefs');
   assert.equal(await page.locator('#pxSheet').isVisible(), true);
   assert.equal(await page.evaluate(() => document.activeElement.id), 'pxTitle');
   const rows = await page.$$eval('#pxSheet .px-row', rs => rs.map(r => r.dataset.px));
@@ -425,7 +439,7 @@ test('Preferences is a sheet: the checks panel over it, Escape in order, and the
   assert.equal(await page.locator('#pxSheet').isVisible(), true, 'the first Escape closes the panel only');
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#pxSheet').isVisible(), false);
-  assert.equal(await page.evaluate(() => document.activeElement.id), 'navMore');
+  assert.equal(await page.evaluate(() => document.activeElement.id), opener);
   // The footer's theme switch is the one there is.
   await page.locator('.sitefoot [data-theme-set="light"]').click();
   assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-theme')), 'light');
@@ -456,12 +470,11 @@ test('an open Preferences sheet is drawn again in a language picked, the keyboar
 
 test('Help & feedback is a sheet with the way to ask; the changelog and the project\'s links are the footer\'s', async t => {
   const page = await board(t);
-  await page.locator('#navMore').click();
-  await page.locator('#nxMenu [data-nx-item="help"]').click();
+  await utility(page, 'help');
   const text = await page.locator('#pxSheet').innerText();
   assert.match(text, /Can.t find something\?/);
   assert.match(text, /Bugs and feedback/);
-  // The footer under the sheet, the masthead and the ··· menu carry the rest (declutter X6).
+  // The footer under the sheet, the sidebar and the ··· menu carry the rest (declutter X6).
   assert.doesNotMatch(text, /Source code|Search the board|Where is my save/);
   assert.equal(await page.locator('#pxSheet [data-changelog]').count(), 0);
   await page.keyboard.press('Escape');

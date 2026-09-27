@@ -13729,7 +13729,8 @@ svg{display:block}
    honest. */
 section{content-visibility:auto; contain-intrinsic-size:auto 620px}
 section.measured{content-visibility:visible}
-/* A finding's link scrolls to a section; the sticky masthead must not cover it. */
+/* A finding's link scrolls to a section, clear of the top of the window (the
+   sidebar's own block at the end of this sheet sets the margin). */
 section,.sitehead{scroll-margin-top:116px}
 
 /* ===== kept from the old board: what the artboards could not show ==========
@@ -13777,11 +13778,9 @@ button.unname:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .rv.in{opacity:1}
 .rv.in:not(.move){transform:none}
 
-/* masthead: wordmark, five places, the clock ------------------------------ */
-.mast{display:flex;align-items:center;gap:40px;height:100px;border-bottom:1px solid var(--rule);position:sticky;top:0;z-index:5;background:var(--ground)}
 .brand{display:flex;align-items:baseline;gap:2px;user-select:none;flex:none}
 .wordmark{font-size:30px;font-weight:800;letter-spacing:-.045em;line-height:1;cursor:pointer}
-.mast .wordmark{max-width:180px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
 .brand .dot{
   display:inline-block;flex:none;width:11px;height:11px;border-radius:50%;background:var(--accent);
   transform-origin:50% 100%;transition:transform .25s cubic-bezier(.34,1.56,.64,1);cursor:pointer;
@@ -13796,52 +13795,7 @@ button.unname:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   pointer-events:none;animation:fall 1.1s cubic-bezier(.2,.7,.4,1) forwards;z-index:9;
 }
 @keyframes fall{0%{transform:translate(0,0) scale(1);opacity:1}100%{transform:translate(var(--dx),var(--dy)) scale(.6);opacity:0}}
-.nav{position:relative;display:flex;gap:4px;margin-left:8px}
-.nav a{
-  display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:6px;
-  color:var(--ink-2);text-decoration:none;font-weight:500;font-size:13.5px;transition:color .15s;
-}
-.nav a svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
-.nav a:hover svg{transform:translateY(-2px) rotate(-6deg)}
-.nav a:hover,.nav a.on{color:var(--ink)}
-/* Before a save is open only the Wiki has anything to show. The rest stay
-   legible and say why on hover rather than opening an empty page. */
-.nav a.off{color:var(--ink-3);opacity:.55;cursor:default}
-.nav a.off:hover{color:var(--ink-3)}
-.nav a.off:hover svg{transform:none}
-/* On a phone the top row keeps its icons only, as the canvas draws it, and the
-   page you are on keeps its word. The others' words are hidden from the eye,
-   never from a screen reader, so every link still has its name. */
-@media(max-width:560px){
-  .mast{gap:14px;height:64px}
-  .mast .wordmark{font-size:22px;max-width:120px}
-  .nav{gap:0;margin-left:0}
-  .nav a{padding:8px 6px;gap:6px}
-  .nav a > span:not(.feature-new){position:absolute;width:1px;height:1px;margin:-1px;padding:0;
-    overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
-  .nav a.on > span:not(.feature-new){position:static;width:auto;height:auto;margin:0;clip-path:none}
-}
-/* Narrower than this the six icons and the wordmark take the whole rule, and
-   the clock would be squeezed into two lines of nothing, so it steps out as the
-   canvas has it. The sphere is absolutely positioned and takes no room, so it
-   stays where it is: hiding it would leave wireSphere waiting for a layout that
-   never comes. */
-@media(max-width:500px){
-  .mast .clock{display:none}
-}
-/* At the narrowest phone the six icons still have to share one rule with the
-   wordmark, so both give up what they can rather than the row wrapping or the
-   page growing sideways. */
-@media(max-width:400px){
-  .mast{gap:8px}
-  .mast .wordmark{font-size:19px;max-width:88px}
-  .nav a{padding:8px 4px}
-  .nav a svg{width:17px;height:17px}
-}
-.nav .ink{
-  position:absolute;bottom:-1px;height:2px;background:var(--accent);border-radius:2px;
-  left:var(--nx,0);width:var(--nw,0);transition:left .28s cubic-bezier(.4,0,.2,1),width .28s cubic-bezier(.4,0,.2,1);
-}
+
 /* The balls may roll behind the clock, so it sits above them. Each line of
    text carries its own faint glow of the ground colour: blurred, so it has no
    edge, only as wide as the words, and light enough that a ball still shows
@@ -14970,6 +14924,13 @@ html:has(dialog:modal){overflow:hidden}
 #pageSupply .sb-day i.slack{background:repeating-linear-gradient(135deg,var(--accent) 0 1.5px,transparent 1.5px 3.5px);opacity:.75}
 #pageSupply .sb-day i.miss{background:none;box-shadow:inset 0 0 0 1px var(--neg)}
 #pageSupply .sb-hrs{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+/* The line's name keeps a readable width beside the sidebar (a 1280 px window
+   leaves the table about 890 px); the status and the figures' second lines
+   give instead. */
+#pageSupply [data-sb-table="factory-lines"] .sb-t tr > :nth-child(2){min-width:220px}
+#pageSupply [data-sb-table="factory-lines"] .sb-t td.st{min-width:120px}
+#pageSupply [data-sb-table="factory-lines"] .sb-t td .sub{white-space:normal}
+#pageSupply [data-sb-table="factory-lines"] .sb-t thead th{white-space:normal;vertical-align:bottom}
 #pageSupply .sb-hrs .n{font:500 12px/1 "IBM Plex Mono",monospace;color:var(--ink-2)}
 #pageSupply .sb-hrs .n b{color:var(--ink);font-weight:500}
 #pageSupply .sb-t .sp-mach{gap:4px;flex-wrap:nowrap}
@@ -15292,7 +15253,7 @@ g[data-series].off{opacity:0}
    finder's Demand figure lands on rings once */
 .heat .r .mk-plan{font-size:11px;white-space:nowrap}
 .heat .mk-arrive{border-radius:6px;animation:sp-arrive 2.4s ease-out}
-.heat .r{scroll-margin-top:116px}  /* clears the sticky masthead, as a section does */
+.heat .r{scroll-margin-top:116px}  /* a row landed on sits well below the top, as a section does */
 
 /* waves ------------------------------------------------------------------ */
 .waves{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px}
@@ -15329,6 +15290,10 @@ g[data-series].off{opacity:0}
    column only exists once one ingredient has a price. */
 .ingtable .usedby{display:block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2);font-family:Archivo,sans-serif}
 .ingtable.nocash .cash{display:none}
+/* Beside the sidebar a 1280 px window leaves it about 950 px: the heads and the
+   names wrap (a longer language most of all) rather than push past the page. */
+.ingtable thead th{white-space:normal;vertical-align:bottom}
+.ingtable td:first-child{white-space:normal}
 .planstat{padding:14px 16px;border-radius:10px;background:var(--surface);border:1px solid var(--rule-soft)}
 .planstat .lab{font:500 10.5px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
 .planstat .v{font-family:"IBM Plex Mono",monospace;font-size:24px;font-weight:500;margin-top:8px;letter-spacing:-.02em}
@@ -15980,13 +15945,13 @@ select.linepick.sp-pick{border-color:var(--warn);font-size:12.5px;padding:5px 8p
 .mile.done .box{background:var(--accent);border-color:var(--accent)}
 .mile .c{margin-left:auto;font:500 12px "IBM Plex Mono",monospace;color:var(--ink-3)}
 
-/* the sphere: the dot grown up. It rolls out of the wordmark onto the masthead
-   rule and sits there; it watches the pointer, squishes when clicked and rolls
-   along its shelf as the page scrolls ---------------------------------------- */
+/* the sphere: the dot grown up. It rolls out of the wordmark onto the sidebar
+   head's rule and sits there; it watches the pointer, squishes when clicked and
+   rolls along its shelf as the page scrolls ----------------------------------- */
 .orb{position:absolute;left:0;top:0;width:100px;height:100px;z-index:6;cursor:pointer;will-change:transform;opacity:0}
 .orb.live{opacity:1}
 /* Until the sphere is wired it is invisible, and it must not take a click
-   meant for the masthead under it. */
+   meant for the sidebar's head under it. */
 .orb:not(.live),.orb.nx-off{pointer-events:none}
 .orb.nx-off{visibility:hidden}
 .orb i{
@@ -16004,32 +15969,10 @@ select.linepick.sp-pick{border-color:var(--warn);font-size:12.5px;padding:5px 8p
 .ring{position:absolute;border-radius:50%;border:2px solid var(--accent);pointer-events:none;animation:ring .8s ease-out forwards;z-index:0}
 @keyframes ring{from{transform:scale(.6);opacity:.8}to{transform:scale(1.6);opacity:0}}
 
-/* search the board: one field in the masthead, between the nav and the clock.
-   Where the nav leaves no room for it and the sphere both, the field steps down
-   to its icon (.ss-tight, set by ssFitMast()); on a phone the icon opens the
-   palette as a whole-screen sheet. Every class here is ss-, after the canvas. */
-.mast .ss-q{margin-left:auto;display:flex;align-items:center;gap:9px;flex:none;width:236px;height:38px;padding:0 7px 0 12px;border:1px solid var(--rule);border-radius:9px;background:var(--surface);color:var(--ink-3);font:inherit;font-size:13px;text-align:left;cursor:text;transition:border-color .15s,color .15s,box-shadow .2s;position:relative;z-index:7}
-.mast .ss-q .ss-ql{flex:1;white-space:nowrap}
-.mast .ss-q:hover{border-color:var(--ink-3);color:var(--ink-2)}
-.mast .ss-q:hover .ss-lens{animation:ss-peek .6s ease-in-out}
-.mast .ss-q.on{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);color:var(--ink)}
-.mast .ss-q:focus-visible,.mast .ss-qbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @keyframes ss-peek{30%{transform:translate(-2px,-1px) rotate(-12deg)}70%{transform:translate(2px,1px) rotate(8deg)}}
 .ss-lens{display:inline-grid;place-items:center;flex:none}
 .ss-lens svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.mast .ss-new{position:absolute;margin:0;pointer-events:none}
-.mast .ss-q .ss-new{top:-9px;right:10px}
-.mast .ss-qbtn .ss-new{top:-13px;left:50%;transform:translateX(-50%)}
-/* A phone's masthead is too short to carry it above the icon: beside it. */
-@media(max-width:760px){ .mast .ss-qbtn .ss-new{top:50%;left:auto;right:calc(100% + 6px);transform:translateY(-50%)} }
-.mast .ss-qbtn{display:none;margin-left:auto;width:36px;height:36px;border-radius:9px;flex:none;position:relative;z-index:7}
-.mast .ss-q ~ .clock{margin-left:0}
-.mast.ss-tight .ss-q{display:none}
-.mast.ss-tight .ss-qbtn{display:grid}
-@media(max-width:760px){
-  .mast .ss-q{display:none}
-  .mast .ss-qbtn{display:grid}
-}
+
 .ss-kbd{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border:1px solid var(--rule);border-bottom-width:2px;border-radius:5px;background:var(--raised);font:500 10.5px/1 "IBM Plex Mono",monospace;color:var(--ink-2);flex:none}
 
 /* the palette hangs off <body>, like #tip: a section's content-visibility
@@ -16308,7 +16251,7 @@ tr.ss-ring > td{animation:ss-flash 2.4s ease-out}
   .sf-who{flex-direction:column;align-items:flex-start;gap:8px}
 }
 .feature-new{display:inline-block;flex:none;margin-left:6px;padding:2px 5px;border-radius:4px;background:var(--accent-soft);color:var(--accent);font:600 9px/1.2 "IBM Plex Mono",monospace;letter-spacing:.04em;text-transform:uppercase;vertical-align:middle}
-.nav .feature-new{margin-left:0}
+
 .changelog-dialog a:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
 body:has(#changelogDialog[open]){overflow:hidden}
 .changelog-dialog{width:min(640px,calc(100vw - 32px));max-width:none;max-height: min(780px,calc(100dvh - 48px));padding:0;border:1px solid var(--rule);border-radius:14px;background:var(--ground);color:var(--ink);box-shadow:0 24px 80px #00000055;overflow:auto;overscroll-behavior:contain}
@@ -16446,8 +16389,9 @@ body:has(#changelogDialog[open]){overflow:hidden}
   #sp-shelves td.l{white-space:nowrap}
 }
 /* ===== the redesign's shell and Overview (docs/ui-route-migration.md) =========
-   Five destinations in the masthead, City map and Game guide beside them, the
-   area's own views in a row under it, a strip that says why the reader
+   Five destinations in the sidebar, City map and Game guide under them, the
+   area's own views (under its place, or in a row on top of the page on the
+   rail; the sidebar's own rules are at the end of this sheet), a strip that says why the reader
    arrived, and the Overview: company figures, Needs attention first, then the
    thirteen tasks. Every class is nx- (shell) or ov- (Overview), because the
    board's classes are global. */
@@ -16456,35 +16400,21 @@ body:has(#changelogDialog[open]){overflow:hidden}
 :root[data-theme="light"]{--neg-soft:#cc2a201a;--warn-soft:#b34d001a;--info-soft:#2a5ea81a;--ink-3:#636c71;--warn:#b34d00}
 .nx-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .nx-i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
-/* the masthead: 76 px, the five places labelled, the two references after a rule */
-.mast{height:76px;gap:18px}
+
 .wordmark{font-size:24px}
-.mast .wordmark{max-width:220px}
+
 .brand{align-items:center}
 .brand .dot{align-self:flex-end;margin-bottom:5px}
 .nx-co{display:inline-grid;place-items:center;width:26px;height:26px;margin-left:4px;border-radius:6px;border:0;background:none;color:var(--ink-3);cursor:pointer;padding:0}
 .nx-co:hover,.nx-co[aria-expanded="true"]{color:var(--ink);background:var(--surface)}
 .nx-co:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.nav{gap:2px;margin-left:4px;align-items:center}
-.nav a{position:relative;height:40px;padding:0 10px;gap:7px;border-radius:7px;font-size:14px}
-.nav a:hover{background:var(--surface)}
-.nav a:focus-visible,.nx-more:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.nav .ink{bottom:-19px}
+
 .nx-n{font:600 10.5px/1 "IBM Plex Mono",monospace;padding:3px 6px;border-radius:9px;background:var(--neg);color:#fff}
-.nx-refs{display:flex;align-items:center;gap:0;margin-left:auto;padding-left:8px;border-left:1px solid var(--rule);flex:none}
-.nx-refs a{position:relative;display:flex;align-items:center;gap:6px;height:36px;padding:0 8px;border-radius:7px;font-size:13px;font-weight:500;color:var(--ink-3);text-decoration:none;transition:color .15s}
-.nx-refs a:hover,.nx-refs a.on{color:var(--ink);background:var(--surface)}
-.nx-refs a.on{box-shadow:inset 0 -2px 0 var(--accent)}
-.nx-refs a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.nx-refs a svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.nx-refs a.off{opacity:.55}
-.mast .ss-q,.mast .ss-qbtn{margin-left:0}
-.nx-more{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:7px;border:0;background:none;color:var(--ink-3);cursor:pointer;padding:0}
-.nx-more:hover,.nx-more[aria-expanded="true"]{color:var(--ink);background:var(--surface)}
-.nx-more svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8}
+
 section,.sitehead{scroll-margin-top:140px}
-/* the area's own views, one row under the masthead; on a phone a row of pills
-   that scrolls sideways inside itself */
+/* the area's own views, a row on top of the page on the rail (and in the
+   sidebar, a column: .sd .nx-local); on a phone a row of pills that scrolls
+   sideways inside itself */
 .nx-local{display:flex;align-items:center;gap:4px;min-height:52px;border-bottom:1px solid var(--rule-soft);overflow-x:auto;scrollbar-width:none}
 .nx-local::-webkit-scrollbar{display:none}
 /* One row: the area's views on the left, the view's controls on the right
@@ -16558,59 +16488,8 @@ body.px-on{overflow:hidden}
 .nx-menu svg{width:16px;height:16px;stroke:var(--ink-3);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
 /* the phone's bar: the five places, labelled, and Map & more */
 .nx-tabs{display:none}
-/* Narrower windows. web/map.css and web/wiki.css still carry the old
-   masthead's rules for these widths (a six-tab row that wraps); the shell's
-   own rules below are written as specifically (.wrap .mast) and come later,
-   so they decide. */
-@media (max-width:1420px){
-  .wrap .mast .nav a > svg{display:none}
-  .wrap .mast .nav a{padding:0 8px;font-size:13.5px}
-  .wrap .mast .nx-refs a{padding:0 6px}
-  .wrap .mast .nx-refs a > svg{display:none}
-}
-/* A tablet: the places take a row of their own under the brand, labelled
-   with their icons; the references, the search button and the clock stay up
-   top. The sphere steps out: its shelf is the one-row masthead's gap. */
-@media (max-width:1279px){
-  .wrap .mast{flex-wrap:wrap;height:auto;min-height:0;row-gap:0;padding:8px 0 0;gap:0 14px}
-  .wrap .mast .brand{max-width:none;min-width:0;height:48px}
-  .wrap .mast .clock{max-width:none}
-  .wrap .mast .clock b{font-size:14px}
-  .wrap .mast .nav a.on{background:none}
-  .wrap .mast .ss-q{display:none}
-  .wrap .mast .ss-qbtn{display:grid}
-  .wrap .mast .nav{order:5;flex-basis:100%;width:100%;margin:0;border-top:1px solid var(--rule-soft)}
-  .wrap .mast .nav a{height:46px;flex:1;justify-content:center;padding:0 4px}
-  .wrap .mast .nav a > svg{display:block}
-  .wrap .mast .nav .ink{display:block;bottom:-1px}
-  .wrap .mast .orb{display:block}
-  section,.sitehead{scroll-margin-top:170px}
-  .ov-sticky{top:112px}
-}
-.wrap .mast.nx-measure > *{flex-shrink:0}
-/* The same two rows wherever the one row would not fit: a long company name,
-   a longer translation (nxFitMast() sets nx-wrap). */
-.wrap .mast.nx-wrap{flex-wrap:wrap;height:auto;min-height:0;row-gap:0;padding:8px 0 0;gap:0 14px}
-.wrap .mast.nx-wrap .brand{max-width:none;min-width:0;height:48px}
-.wrap .mast.nx-wrap .clock{max-width:none}
-.wrap .mast.nx-wrap .clock b{font-size:14px}
-.wrap .mast.nx-wrap .nav a.on{background:none}
-.wrap .mast.nx-wrap .ss-q{display:none}
-.wrap .mast.nx-wrap .ss-qbtn{display:grid}
-.wrap .mast.nx-wrap .nav{order:5;flex-basis:100%;width:100%;margin:0;border-top:1px solid var(--rule-soft)}
-.wrap .mast.nx-wrap .nav a{height:46px;flex:1;justify-content:center;padding:0 4px}
-.wrap .mast.nx-wrap .nav a > svg{display:block}
-.wrap .mast.nx-wrap .nav .ink{display:block;bottom:-1px}
-.wrap .mast.nx-wrap .orb{display:block}
-body:has(.mast.nx-wrap) .ov-sticky{top:112px}
+
 @media (max-width:560px){
-  .wrap .mast{flex-wrap:nowrap;height:58px;padding:0;gap:10px}
-  .wrap .mast .brand{height:auto}
-  .wrap .mast .wordmark{font-size:21px;max-width:190px}
-  .wrap .mast .nav,.wrap .mast .nx-refs,.wrap .mast .orb{display:none}
-  .wrap .mast .ss-qbtn{margin-left:auto}
-  section,.sitehead{scroll-margin-top:76px}
-  .ov-sticky{top:58px}
   .ov-sticky b,.ov-sticky .quiet{display:none}
   .nx-btn{white-space:normal;text-align:left}
   .wrap{padding-bottom:96px}
@@ -16667,17 +16546,7 @@ body:has(.mast.nx-wrap) .ov-sticky{top:112px}
   #pageToday.ov-kopen #kpis.kpis{margin-top:10px}
   #alertSection{margin-top:14px}
   .ov-head h2{font-size:22px}
-  /* The masthead keeps the day and the source's word, and wraps rather than
-     push the page sideways when a name is long or the text is large. */
-  .wrap .mast{flex-wrap:wrap;height:auto;min-height:58px;padding:6px 0;row-gap:2px}
-  .wrap .mast .brand{min-width:0;flex:0 1 auto}
-  .wrap .mast .wordmark{max-width:100%;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;line-height:1.1}
-  .wrap .mast .clock{display:block;margin-left:0;flex:none}
-  .wrap .mast .clock > b{font-size:12px}
-  .wrap .mast .clock > small{display:none}
-  .wrap .mast .clock > small:has(.live){display:block;font-size:0;margin-top:1px}
-  .wrap .mast .clock > small:has(.live) .live{font-size:10px}
-  .wrap .mast .clock > small:has(.live) .flag,.wrap .mast .clock > small:has(.live) .fv-diff{display:none}
+
   /* The source strip of the site in one line: its word, its buttons; the
      file line keeps one line and says the rest on the menu. */
   .wrap .source-row .strip{margin-top:6px;padding:6px 10px;gap:8px;flex-wrap:nowrap}
@@ -16709,9 +16578,7 @@ body:has(.mast.nx-wrap) .ov-sticky{top:112px}
   .ov-metafoot .ov-meta{margin:14px 0 4px}
   #pageToday #alertSection{margin-top:8px}
   #pageToday #alerts .ov-band{margin-top:4px;padding-top:8px}
-  /* The day and the source's word on one line under the name. */
-  .wrap .mast .clock{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:12px;flex:1 1 100%;text-align:left;margin:0}
-  .wrap .mast .clock > small:has(.live){margin-top:0}
+
   /* Customize checks is its icon here (its words stay its name and its tip),
      so it and All tools share the row with the severity filters. */
   #alertKindsToggle > span{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
@@ -17325,22 +17192,191 @@ dialog.hs-sheet::backdrop{background:#000;opacity:.45}
 }
 @media (prefers-reduced-motion:reduce){#secStaff *,.gw-dlg.hr-wide *,.hs-sheet *{animation:none!important;transition:none!important}}
 
+/* ----- the sidebar (the navigation canvas's variant B) -----------------------
+   The places run down the left: the company and its sphere, Search, the five
+   areas with the open one's views under it, the City map and the Game guide,
+   and at the foot the clock, Update (the hosted board's) and one ···. The page
+   beside it starts with the view's own controls, or with its content when the
+   view has none. Folded (the foot's button, or a window under 1100 px) the
+   sidebar is a 64 px rail of icons and the views return to the top of the
+   page, beside the controls; on a phone it is a drawer. Every class is sd-;
+   the old masthead's .mast, .nav and .nx-refs rules no longer match. */
+html{--ss-mast:var(--release-height,0px)}
+.sd-app{--sd-w:256px;display:grid;grid-template-columns:var(--sd-w) minmax(0,1fr);align-items:start}
+body.sd-rail .sd-app{--sd-w:64px}
+.sd{position:sticky;top:var(--release-height,0px);z-index:6;height:calc(100vh - var(--release-height,0px) - var(--sd-cut,0px));min-width:0;
+  border-right:1px solid var(--rule);background:var(--ground)}
+.sd-in{display:flex;flex-direction:column;height:100%;padding:22px 14px 16px}
+/* A short window scrolls the sidebar rather than cutting its foot off. */
+@media (max-height:760px){.sd-in{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}}
+.sd-head{position:relative;flex:none;display:flex;align-items:flex-start;height:62px;padding:6px 8px 0;border-bottom:1px solid var(--rule)}
+.sd .brand{min-width:0}
+.sd .wordmark{font-size:21px;max-width:calc(var(--sd-w) - 64px);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.sd .brand .dot{width:8px;height:8px}
+/* Search: the field, a row of its own; the rail's icon */
+.sd .ss-q{display:flex;align-items:center;gap:9px;flex:none;width:100%;height:36px;margin:14px 0 6px;padding:0 7px 0 10px;border:1px solid var(--rule);
+  border-radius:8px;background:var(--surface);color:var(--ink-2);font:inherit;font-size:13px;text-align:left;cursor:text;position:relative;
+  transition:border-color .15s,color .15s,box-shadow .2s}
+.sd .ss-q .ss-ql{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sd .ss-q:hover{border-color:var(--ink-3);color:var(--ink)}
+.sd .ss-q:hover .ss-lens{animation:ss-peek .6s ease-in-out}
+.sd .ss-q.on{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);color:var(--ink)}
+.sd .ss-q:focus-visible,.sd .ss-qbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sd .ss-new{position:absolute;margin:0;pointer-events:none}
+.sd .ss-q .ss-new{top:-8px;right:34px}
+.sd .ss-qbtn{display:none;position:relative;width:44px;height:42px;margin:10px 0 4px;border-radius:9px;flex:none}
+/* the five places */
+.sd-areas{display:flex;flex-direction:column;gap:1px;margin-top:8px}
+.sd-areas > a{position:relative;display:flex;align-items:center;gap:10px;min-height:38px;padding:0 10px;border-radius:8px;color:var(--ink-2);
+  font-size:14px;font-weight:500;text-decoration:none;transition:color .15s,background .15s}
+.sd-areas > a > svg:first-child{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.sd-areas > a > span:not(.nx-n){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sd-areas > a:hover{color:var(--ink);background:var(--surface)}
+.sd-areas > a.on{color:var(--ink);background:var(--surface);box-shadow:inset 3px 0 0 var(--accent)}
+.sd-areas > a.on.sd-open{background:none;box-shadow:none}
+.sd-areas > a:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.sd-areas > a.off{color:var(--ink-3);opacity:.55;cursor:default;background:none}
+.sd-areas .nx-n,.sd-areas .sd-cv{margin-left:auto}
+.sd-areas .sd-cv{width:13px;height:13px;flex:none;stroke:var(--ink-3);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sd-areas > a.sd-open .sd-cv,.sd-areas > a.on .sd-cv{display:none}
+/* the open area's views, under its place */
+.sd .nx-local{flex-direction:column;align-items:stretch;gap:1px;min-height:0;margin:2px 0 6px 19px;padding:0 0 0 12px;border:0;
+  border-left:1px solid var(--rule);overflow:visible}
+.sd .nx-local a{height:31px;padding:0 10px;border-radius:6px;font-size:13.5px}
+.sd .nx-local a small{margin-left:auto}
+/* the two references */
+.sd-refs{display:flex;flex-direction:column;gap:1px;margin-top:12px;padding-top:12px;border-top:1px solid var(--rule-soft)}
+.sd-refs a{position:relative;display:flex;align-items:center;gap:10px;min-height:34px;padding:0 10px;border-radius:8px;color:var(--ink-2);font-size:13.5px;font-weight:500;text-decoration:none}
+.sd-refs a > svg{width:17px;height:17px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.sd-refs a:hover,.sd-refs a.on{color:var(--ink);background:var(--surface)}
+.sd-refs a.on{box-shadow:inset 3px 0 0 var(--accent)}
+.sd-refs a:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.sd-refs a.off{opacity:.55}
+.sd-refs .feature-new,.sd-areas .feature-new{margin-left:auto}
+/* the foot: the clock, then Update, ··· and the fold */
+.sd-foot{margin-top:auto;padding-top:14px;border-top:1px solid var(--rule)}
+.sd .clock{margin:0;padding:0 8px;text-align:left;z-index:auto}
+.sd .clock > b,.sd .clock > small{text-shadow:none}
+.sd .clock > b::before,.sd .clock > small::before{display:none}
+.sd .clock b{font-size:14.5px}
+.sd .clock small{margin-left:0}
+.sd .clock small.fv-diffline{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
+@media(min-width:1501px){.sd .clock .fv-diff{margin:0}}
+.sd-clk{display:none}
+.sd-row{display:flex;align-items:center;gap:8px;margin-top:12px}
+.sd-ib{display:inline-grid;place-items:center;flex:none;width:36px;height:36px;padding:0;border:1px solid var(--rule);border-radius:8px;
+  background:var(--surface);color:var(--ink-2);cursor:pointer}
+.sd-ib:hover,.sd-ib[aria-expanded="true"]:not(.sd-tog){color:var(--ink);border-color:var(--ink-3)}
+.sd-ib:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sd-ib svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.sd-ib[hidden]{display:none}
+.sd-tog{margin-left:auto}
+/* A host's Update and ··· (web/app.js place()): Update takes the width. */
+.sd .nx-src{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.sd .nx-src #updateBtn{flex:1;min-width:0;height:36px;justify-content:center}
+.sd .nx-src #updateBtn{display:inline-flex;align-items:center;gap:7px}
+.sd .nx-src #updateBtn::before{content:"";flex:none;width:15px;height:15px;background:currentColor;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 12a8 8 0 1 1-2.3-5.7'/%3E%3Cpath d='M20 4v5h-5'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 12a8 8 0 1 1-2.3-5.7'/%3E%3Cpath d='M20 4v5h-5'/%3E%3C/svg%3E") center/contain no-repeat}
+.sd .nx-src .menu > .ibtn{width:36px;height:36px}
+/* the page beside it: the view's controls, from the left */
+body:not(.sd-rail) .nx-ctl{margin-left:0;justify-content:flex-start}
+.nx-localrow{min-height:58px}
+section,.sitehead{scroll-margin-top:calc(var(--release-height,0px) + 20px)}
+.ov-sticky{top:var(--release-height,0px)}
+@media (min-width:641px){#sitePanel [data-block]{scroll-margin-top:calc(var(--release-height,0px) + 24px)}}
+/* ----- the rail ----- */
+body.sd-rail .sd-in{align-items:center;padding:18px 10px 14px}
+body.sd-rail .sd-head{justify-content:center;width:44px;height:58px;padding:0}
+body.sd-rail .sd .brand{display:none}
+body.sd-rail .sd .ss-q{display:none}
+body.sd-rail .sd .ss-qbtn{display:grid}
+body.sd-rail .sd .ss-qbtn .ss-new,body.sd-rail .sd-refs .feature-new{position:absolute;top:7px;right:7px;width:7px;height:7px;padding:0;
+  border-radius:50%;background:var(--accent);font-size:0;transform:none;left:auto}
+body.sd-rail .sd-areas,body.sd-rail .sd-refs{align-items:center;gap:3px}
+body.sd-rail .sd-areas > a,body.sd-rail .sd-refs a{justify-content:center;width:44px;min-height:42px;padding:0;border-radius:9px}
+body.sd-rail .sd-areas > a > span:not(.nx-n),body.sd-rail .sd-refs a > span:not(.feature-new){position:absolute;width:1px;height:1px;margin:-1px;
+  overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+body.sd-rail .sd-areas > a > svg:first-child{width:19px;height:19px}
+body.sd-rail .sd-areas .sd-cv{display:none}
+body.sd-rail .sd-areas .nx-n{position:absolute;top:3px;right:1px;min-width:15px;height:15px;padding:0 4px;font-size:9px}
+body.sd-rail .sd-refs{margin-top:10px;padding-top:10px;width:44px}
+body.sd-rail .sd-foot{display:flex;flex-direction:column;align-items:center;width:44px}
+body.sd-rail .sd .clock{display:none}
+body.sd-rail .sd-clk{display:flex;flex-direction:column;align-items:center;font:500 12px/1.3 "IBM Plex Mono",monospace;color:var(--ink);text-align:center;cursor:default}
+body.sd-rail .sd-clk b{font-weight:500}
+body.sd-rail .sd-clk small{font-size:9.5px;color:var(--ink-3)}
+body.sd-rail .sd-row{flex-direction:column;gap:6px;margin-top:10px}
+body.sd-rail .sd-tog{margin-left:0}
+body.sd-rail .sd-ib,body.sd-rail .sd .nx-src .menu > .ibtn{width:44px;height:40px;border-color:transparent;background:none}
+body.sd-rail .sd-ib:hover,body.sd-rail .sd .nx-src .menu > .ibtn:hover{background:var(--surface)}
+body.sd-rail .sd .nx-src{flex-direction:column;gap:6px}
+body.sd-rail .sd .nx-src #updateBtn{flex:none;width:44px;height:40px;padding:0;border-color:transparent;background:none;font-size:0;gap:0}
+body.sd-rail .sd .nx-src #updateBtn::before{width:18px;height:18px}
+/* Folded, the difficulty chip is the footer's at every width. */
+body.sd-rail .clock .fv-diff{display:none}
+body.sd-rail .fv-footdiff{display:inline-flex}
+/* The views at the top of the page wrap before their controls do, and the
+   controls keep to the right on a line of their own when they must. */
+body.sd-rail .nx-ctl{margin-left:auto;flex-basis:auto;justify-content:flex-end}
+/* ----- the phone: a drawer from the bar's Map & more ----- */
+.sd-scrim{display:none}
+@media (max-width:560px){
+  .sd-app{display:block}
+  .sd{position:fixed;left:0;top:0;bottom:0;height:auto;width:min(300px,86vw);z-index:46;transform:translateX(-102%);visibility:hidden;
+    transition:transform .22s cubic-bezier(.2,.7,.2,1),visibility 0s linear .22s;box-shadow:0 20px 60px #0007}
+  body.sd-open .sd{transform:none;visibility:visible;transition:transform .22s cubic-bezier(.2,.7,.2,1)}
+  .sd-in{overflow-y:auto;overflow-x:hidden}
+  .sd .nx-local{display:none}
+  .sd #sdToggle{display:none}
+  .sd-scrim{display:block;position:fixed;inset:0;z-index:45;background:#0008;opacity:0;pointer-events:none;transition:opacity .2s}
+  body.sd-open .sd-scrim{opacity:1;pointer-events:auto}
+  body.sd-open{overflow:hidden}
+  /* Search opened from the drawer covers it: the palette is the whole screen here. */
+  .ss-pal{z-index:50}
+  body:not(.sd-rail) .nx-ctl{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){.sd,body.sd-open .sd,.sd-scrim,.sd .ss-q{transition:none}.sd .ss-q:hover .ss-lens{animation:none}}
+
 </style>
 <script>
 /*__I18N_SCRIPT__*/
 </script>
 <!--__BANNER__-->
+<!-- The sidebar and the page beside it (docs/ui-declutter.md, "Sidebar"). -->
+<div class="sd-app" id="sdApp">
+<script>
+/* Collapsed to its rail before the first paint: the reader's choice on this
+   device, else a window 1100 px wide or less. sdLayout() keeps it from here. */
+(function(){ var w = window.innerWidth, rail = w <= 1100;
+  try{ var v = localStorage.getItem("ba_dash_sidebar"); if(v === "rail" || v === "full") rail = v === "rail"; }catch(e){}
+  if(rail && w > 560) document.body.classList.add("sd-rail"); })();
+</script>
+<nav class="sd" id="mast" aria-label="Main" data-tt-aria-label="nav.label">
+  <div class="sd-in" id="sdIn">
+    <div class="sd-head" id="sdHead">
+      <div class="brand" id="brand"><span class="wordmark" id="title"></span><span class="dot" id="dot"></span></div>
+      <div class="orb" id="orb" aria-hidden="true"><i></i><u></u></div>
+    </div>
+    <!-- Search goes here (ssField); then the five places, the open one's
+         views under it (#localNav), and the two references, built by the
+         board script from AREAS and REFS. -->
+    <div class="sd-areas" id="nav"></div>
+    <div class="sd-refs" id="navRefs" role="group" aria-label="Reference" data-tt-aria-label="nav.more.refs"></div>
+    <div class="sd-foot">
+      <div class="clock tr" id="clock" tabindex="0"
+        data-tip="Game time when the save was written. Day 1 was a Monday."></div>
+      <div class="sd-clk" id="sdClk" aria-hidden="true"></div>
+      <!-- A host page puts its Update and ··· here (#mastSrc) and its ···
+           takes the utilities in; the local server page keeps the board's. -->
+      <div class="sd-row" id="sdRow">
+        <button type="button" class="sd-ib" id="navMore" aria-haspopup="true" aria-expanded="false"></button>
+        <button type="button" class="sd-ib sd-tog" id="sdToggle" aria-expanded="true"></button>
+      </div>
+    </div>
+  </div>
+</nav>
 <div class="wrap">
-  <header class="mast" id="mast">
-    <div class="brand" id="brand"><span class="wordmark" id="title"></span><span class="dot" id="dot"></span></div>
-    <!-- The five places and the two references, built by the board script
-         from AREAS and REFS; the utilities menu hangs off <body>. -->
-    <nav class="nav" id="nav" aria-label="Main" data-tt-aria-label="nav.label"></nav>
-    <nav class="nx-refs" id="navRefs" aria-label="Reference and utilities" data-tt-aria-label="nav.refs.label"></nav>
-    <div class="clock tr" id="clock" tabindex="0"
-      data-tip="Game time when the save was written. Day 1 was a Monday."></div>
-    <div class="orb" id="orb" aria-hidden="true"><i></i><u></u></div>
-  </header>
   <!-- A host page (the in-browser board) fills these with its source controls;
        the local server page leaves them empty and they take no room. -->
   <div class="source-row" id="sourceRow"></div>
@@ -17507,6 +17543,7 @@ dialog.hs-sheet::backdrop{background:#000;opacity:.45}
   </div>
 <!--__FOOTER__-->
   <nav class="nx-tabs" id="phoneNav" aria-label="Main" data-tt-aria-label="nav.label"></nav>
+</div>
 </div>
 <dialog class="changelog-dialog" id="changelogDialog" aria-labelledby="changelogTitle">
   <div class="changelog-head"><div><h2 id="changelogTitle" data-tt="nav.dlg.changelog.title">Changelog</h2></div><button type="button" class="btn2" id="closeChangelog" autofocus data-tt="nav.dlg.close">Close</button></div>
@@ -18875,8 +18912,10 @@ function flowEdges(){
    Below FLOW_CHAIN_MAX px of box the four columns shrink past reading, so
    drawFlow() draws #flowChain instead: the stages down the page in the order
    the goods travel, pipes between them, and a tap follows one site (its
-   focus is flowPickId, which the desktop picture lights as its pick). */
-const FLOW_CHAIN_MAX = 950, FLOW_FOLD = 4, FLOW_GUT = 36, FLOW_LANE = 20, FLOW_BACK_LANE = 4;
+   focus is flowPickId, which the desktop picture lights as its pick). 900
+   keeps the picture in a 1280 px window beside the full sidebar, where it
+   shrinks or scrolls inside its box as on any desk. */
+const FLOW_CHAIN_MAX = 900, FLOW_FOLD = 4, FLOW_GUT = 36, FLOW_LANE = 20, FLOW_BACK_LANE = 4;
 const FLOW_KIND_ORDER = {import: 0, factory: 1, depot: 2, shop: 3};
 const SB_FC_ICON = {
   import: '<path d="M4 15l1.5 5h13L20 15z"></path><path d="M6 15V9h12v6M12 9V4M9 6h6"></path>',
@@ -19870,6 +19909,14 @@ function drawMast(){
     + (k.vacant ? " " + tt("nav.clock.vacant", {one: "{n} lease vacant on top of the {b}.",
         other: "{n} leases vacant on top of the {b}."}, {n: k.vacant,
         b: tt("nav.clock.sites", {one: "{n} site", other: "{n} sites"}, {n: k.businesses})}) : "");
+  /* The rail's clock, short: the day, the time, the year. The flags and the
+     live dot stay the full clock's (the footer carries the difficulty). */
+  const clk = $("sdClk");
+  if(clk){
+    clk.innerHTML = `<b>${tt("nav.mast.dayshort", "D{d}", {d: m.day})}</b><b>${String(m.hour).padStart(2,"0")}:${String(m.minute).padStart(2,"0")}</b>${
+      year ? `<small>${tt("nav.mast.year", "YEAR {y}", {y: year})}</small>` : ""}`;
+    clk.dataset.tip = clock.dataset.tip;
+  }
   window.BigCopilotCommunity?.paintOnline();
 }
 
@@ -20601,7 +20648,7 @@ function ovArrange(list){
    adds or drops rows above it leaves it where it was. */
 function ovHold(){
   if(page !== "today" || !(window.scrollY > 0)) return null;
-  const top = ($("mast") ? $("mast").getBoundingClientRect().bottom : 0);
+  const top = nxTopLine();
   const row = $$("#alerts .find[data-id]").find(f => f.getClientRects().length && f.getBoundingClientRect().bottom > top);
   return row ? {id: row.dataset.id, top: row.getBoundingClientRect().top} : null;
 }
@@ -21100,7 +21147,7 @@ function ovStickyPaint(n){
 function ovStickyCheck(){
   const bar = $("ovSticky"), head = $("alertHead"), tools = $("tools");
   if(!bar || !head || !tools) return;
-  const topLine = $("mast") ? $("mast").getBoundingClientRect().bottom : 0;
+  const topLine = nxTopLine();
   const on = page === "today" && head.getBoundingClientRect().bottom < topLine && tools.getBoundingClientRect().top > (window.innerHeight || 800);
   bar.classList.toggle("on", on);
   bar.setAttribute("aria-hidden", String(!on));
@@ -21442,11 +21489,10 @@ function paintSiteUp(on){
   if(host) host.classList.toggle("ss-siteup", on);
   if(on) ssMeasureMast();
 }
-/* On a phone the crumb row sticks just under the masthead, whose height
-   depends on how its nav wraps at this width. */
+/* On a phone the crumb row sticks to the top of the window (under the app's
+   update banner, when one is up): the sidebar is a drawer there. */
 function ssMeasureMast(){
-  const mast = $("mast");
-  if(mast) document.documentElement.style.setProperty("--ss-mast", `${mast.offsetHeight}px`);
+  document.documentElement.style.setProperty("--ss-mast", `${nxTopLine()}px`);
 }
 window.addEventListener("resize", () => { if(siteOpen) ssMeasureMast(); });
 /* The one address the panel knows that is not a business. A home is reached
@@ -31359,28 +31405,47 @@ function showPage(id, scroll = true, historyMode = "push"){
   if(id === "map") showCityMap();
   if(id === "wiki") wikiVisit(from !== "wiki");
   featureDiscovery.visit(PAGES.find(p => p.id === id).newFeature);
-  /* The masthead is sticky, so the top of the new page is the top of the window. */
+  /* The sidebar stays put, so the top of the new page is the top of the window. */
   if(scroll && window.scrollY > 0) window.scrollTo(0, 0);
   wireReveal();
   requestAnimationFrame(inkHome);
 }
-/* The masthead: the five places, then the two references and the utilities.
-   A place's link is its area; the Overview's carries the critical count. */
+/* The sidebar: the five places, then the two references; the utilities are
+   the foot's ···. A place's link is its area; the Overview's carries the
+   critical count, the others a chevron where their views are folded away. */
 const NX_ICON = {
   back: '<path d="M15 6l-6 6 6 6"></path>',
   chevd: '<path d="M6 9l6 6 6-6"></path>',
+  chevr: '<path d="M9 6l6 6-6 6"></path>',
+  panel: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"></rect><path d="M9 4.5v15"></path>',
 };
 const nxIcon = name => NX_ICON[name] ? `<svg class="nx-i" viewBox="0 0 24 24" aria-hidden="true">${NX_ICON[name]}</svg>` : icon(name);
 function navHtml(){
   return AREAS.map(a => `<a href="#${a.id}" data-id="${a.id}">${icon(a.icon)}<span>${a.label}</span>${
-    a.id === "overview" ? `<span class="nx-n" data-nav-crit hidden></span>` : ""}</a>`).join("") + '<i class="ink"></i>';
+    a.id === "overview" ? `<span class="nx-n" data-nav-crit hidden></span>` : ""}${
+    a.views ? `<svg class="nx-i sd-cv" viewBox="0 0 24 24" aria-hidden="true">${NX_ICON.chevr}</svg>` : ""}</a>`).join("");
 }
-/* The City map and the Game guide after the sphere's shelf, then the menu. */
+/* The City map and the Game guide, under the places. */
 function refsHtml(){
   return REFS.map(r => `<a href="#${r.id}" data-id="${r.id}">${icon(r.icon)}<span>${r.label}</span>${
-    r.newFeature ? `<span class="feature-new" data-new-feature="${r.newFeature}" hidden>${tt("nav.new", "New")}</span>` : ""}</a>`).join("")
-    + `<button type="button" class="nx-more" id="navMore" aria-haspopup="true" aria-expanded="false" aria-label="${
-      attr(tt("nav.more.label", "More: search, preferences, help and what's new"))}">${icon("more")}</button>`;
+    r.newFeature ? `<span class="feature-new" data-new-feature="${r.newFeature}" hidden>${tt("nav.new", "New")}</span>` : ""}</a>`).join("");
+}
+/* The foot's two buttons: ··· (the utilities; a host page's own ··· takes them
+   in and this one steps aside, docs/ui-declutter.md "Sidebar") and the
+   sidebar's own fold. */
+function sdFootPaint(){
+  const more = $("navMore"), tog = $("sdToggle");
+  if(more && more.setAttribute){
+    more.innerHTML = icon("more");
+    more.setAttribute("aria-label", tt("nav.more.label", "More: search, preferences, help and what's new"));
+  }
+  if(tog && tog.setAttribute){
+    const rail = sdRail(), words = rail ? tt("nav.side.expand", "Expand the sidebar") : tt("nav.side.collapse", "Collapse the sidebar");
+    tog.innerHTML = nxIcon("panel");
+    tog.setAttribute("aria-label", words);
+    tog.setAttribute("aria-expanded", String(!rail));
+    if(tog.dataset) tog.dataset.tip = words;
+  }
 }
 /* The phone's bar: the five places and Map & more, which opens the references
    and the utilities. */
@@ -31393,6 +31458,107 @@ $("nav").innerHTML = navHtml();
 if($("navRefs")) $("navRefs").innerHTML = refsHtml();
 if($("phoneNav")) $("phoneNav").innerHTML = phoneNavHtml();
 featureDiscovery.refresh();
+
+/* --- the sidebar: full, a rail, or a phone's drawer -------------------------
+   Full (256 px), the open area's views sit under its place and the top of the
+   page carries only the view's own controls. Collapsed to its 64 px rail --
+   the foot's fold button, remembered on this device, or by default in a window
+   under 1100 px -- it keeps the icons, and the views go back to the top of the
+   page beside the controls. On a phone it is a drawer, opened from the bar's
+   Map & more. The inline script at the top of .sd-app set the rail before
+   the first paint; sdLayout() owns it from here. */
+const SD_KEY = "ba_dash_sidebar";
+/* This visit's choice, for a device that will not store it. */
+let sdChoice = "";
+function sdPref(){
+  let v = sdChoice;
+  if(!v) try{ v = localStorage.getItem(SD_KEY) || ""; }catch(e){}
+  return v === "rail" || v === "full" ? v : "";
+}
+const sdPhone = () => !!(window.matchMedia && matchMedia("(max-width:560px)").matches);
+/* The body's classes, where there is a real body (the tests' stand-in has none). */
+const sdBody = () => document.body && document.body.classList && typeof document.body.classList.toggle === "function" ? document.body.classList : null;
+const sdRail = () => !!(sdBody() && sdBody().contains("sd-rail"));
+let sdWas = null;
+function sdLayout(){
+  if(!sdBody()) return;
+  const phone = sdPhone(), pref = sdPref();
+  const rail = !phone && (pref ? pref === "rail" : (window.innerWidth || 1440) <= 1100);
+  const now = `${rail}/${phone}`;
+  if(now === sdWas) return;
+  sdWas = now;
+  document.body.classList.toggle("sd-rail", rail);
+  if(!phone) sdDrawer(false);
+  sdFootPaint();
+  /* The rail's tips and the views' place; the places are first painted by
+     the boot (paintNav()), never from here. */
+  if(navPainted) paintNav(); else sdPlaceViews();
+  /* The sphere's shelf moves with the head (wireSphere()). */
+  if($("mast") && $("mast").dispatchEvent) $("mast").dispatchEvent(new Event("nxfit"));
+}
+function sdSet(rail){
+  sdChoice = rail ? "rail" : "full";
+  try{ localStorage.setItem(SD_KEY, sdChoice); }catch(e){}
+  sdLayout();
+}
+/* The phone's drawer, over the page behind a scrim; Escape, the scrim or a
+   place picked closes it. The scrim is made the first time it opens. */
+let sdScrim = null;
+function sdDrawer(open){
+  if(!sdBody()) return;
+  const on = !!open && sdPhone(), was = sdBody().contains("sd-open");
+  if(on && !sdScrim){
+    sdScrim = document.createElement("div");
+    sdScrim.className = "sd-scrim";
+    sdScrim.addEventListener("click", () => sdDrawer(false));
+    document.body.appendChild(sdScrim);
+  }
+  sdBody().toggle("sd-open", on);
+  const b = $("phoneMore");
+  if(b && b.setAttribute) b.setAttribute("aria-expanded", String(on));
+  if(on && !was){ const f = q("#nav a.on") || q("#nav a"); if(f && f.focus) f.focus({preventScroll: true}); }
+  else if(!on && was && b && b.focus && $("mast") && $("mast").contains(document.activeElement)) b.focus({preventScroll: true});
+}
+document.addEventListener("keydown", e => { if(e.key === "Escape" && sdBody() && sdBody().contains("sd-open")) sdDrawer(false); });
+if($("sdToggle") && $("sdToggle").addEventListener) $("sdToggle").addEventListener("click", () => sdSet(!sdRail()));
+let sdSoon = false;
+window.addEventListener("resize", () => { if(sdSoon) return; sdSoon = true; requestAnimationFrame(() => { sdSoon = false; sdLayout(); }); });
+/* The sidebar is the window's height less what is above it: the news strip
+   (the hosted board's) until it scrolls away, so the foot is on screen from
+   the start. */
+let sdCut = -1;
+function sdFit(){
+  const app = $("sdApp"), side = $("mast");
+  if(!app || !side || !app.getBoundingClientRect || !side.style) return;
+  const cut = Math.max(0, Math.round(app.getBoundingClientRect().top - nxTopLine()));
+  if(cut === sdCut) return;
+  sdCut = cut;
+  side.style.setProperty("--sd-cut", cut + "px");
+}
+/* Measured as it happens, one rect read and a write only when it changed:
+   no frame is asked for, so a page at rest (or hidden) stays asleep. */
+window.addEventListener("scroll", sdFit, {passive: true});
+window.addEventListener("resize", sdFit);
+if(window.ResizeObserver && document.body) new ResizeObserver(() => sdFit()).observe(document.body);
+/* The open area's views: under its place while the sidebar is full, else at
+   the top of the page, beside the view's controls. */
+function sdPlaceViews(){
+  const views = $("localNav"), row = $("localRow"), areas = $("nav");
+  if(!views || !row || !areas || typeof areas.querySelectorAll !== "function" || typeof views.after !== "function") return;
+  const side = !sdRail() && !sdPhone() && !views.hidden;
+  const a = side ? areas.querySelector(`a[data-id="${routeArea(ROUTES[route] ? route : "overview")}"]`) : null;
+  if(a){ if(a.nextElementSibling !== views) a.after(views); }
+  else if(views.parentNode !== row) row.prepend(views);
+  areas.querySelectorAll("a[data-id]").forEach(x => x.classList.toggle("sd-open", !!a && x === a));
+}
+/* How much of the top of the window stays covered as the page scrolls: the
+   app's update banner while one is up (web/update.js). The sidebar covers
+   none of it. */
+function nxTopLine(){
+  if(typeof getComputedStyle !== "function" || !document.documentElement) return 0;
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--release-height"));
+  return isFinite(v) ? v : 0;
+}
 /* The area's own row of views, the one on screen lit, and the place's lit
    link in the masthead and the phone's bar. */
 function paintShell(){
@@ -31405,13 +31571,15 @@ function paintShell(){
   });
   paintLocal();
   paintArrival();
+  /* A place picked in the phone's drawer is where the reader is going. */
+  sdDrawer(false);
 }
 function paintLocal(){
   const host = $("localNav");
   if(!host) return;
   const r = ROUTES[route] ? route : "overview";
   const a = AREAS.find(x => x.id === routeArea(r));
-  if(!a || !a.views || !hasData()){ host.hidden = true; host.innerHTML = ""; ctlHoist(); return; }
+  if(!a || !a.views || !hasData()){ host.hidden = true; host.innerHTML = ""; sdPlaceViews(); ctlHoist(); return; }
   host.hidden = false;
   host.setAttribute("aria-label", tt("nav.local.label", "{area} views", {area: a.label}));
   // The lit area tab above names the row; the nav's label says it to a screen reader (declutter G2).
@@ -31421,6 +31589,7 @@ function paintLocal(){
     return `<a href="#${id}" data-route="${id}"${id === r ? ` class="on" aria-current="page"` : ""}${tip ? ` data-tip="${attr(tip)}"` : ""}>${spEsc(routeViewLabel(id))}${
       n ? `<small aria-label="${attr(tt("nav.local.count", {one: "{n} to do", other: "{n} to do"}, {n}))}">${n}</small>` : ""}</a>`;
   }).join("");
+  sdPlaceViews();
   ctlHoist();
 }
 /* A view's summary, said as its tab's tip rather than a line under the
@@ -31466,8 +31635,10 @@ function ctlHoist(){
     if(had && had.isConnected && had.focus) had.focus({preventScroll: true});
   }
   slot.hidden = !slot.children.length;
+  /* The row is the controls, and the views when the sidebar is not holding
+     them (sdPlaceViews()); a view with neither starts with its content. */
   const row = $("localRow"), nav = $("localNav");
-  if(row) row.hidden = !!(nav && nav.hidden) && slot.hidden;
+  if(row) row.hidden = slot.hidden && !(nav && !nav.hidden && nav.parentNode === row);
 }
 if(typeof MutationObserver !== "undefined"){
   const ctlWatch = new MutationObserver(() => ctlHoist());
@@ -31515,13 +31686,18 @@ if($("arrive")) $("arrive").addEventListener("click", e => {
 });
 /* Which places a reader can be on. Without a save only the Game guide has
    anything to show, so the rest say so rather than opening blank. */
+let navPainted = false;
 function paintNav(){
-  const open = hasData();
+  navPainted = true;
+  const open = hasData(), rail = sdRail();
   document.querySelectorAll("#nav a[data-id], #navRefs a[data-id], #phoneNav a[data-id]").forEach(a => {
     const off = !open && a.dataset.id !== "wiki";
     a.classList.toggle("off", off);
     a.setAttribute("aria-disabled", String(off));
+    /* The rail shows icons alone: each says its name on hover. */
+    const word = rail && a.closest && a.closest("#mast") ? (a.querySelector("span") || {}).textContent : "";
     if(off) a.dataset.tip = tt("nav.off.tip", "Open a save to see this page");
+    else if(word) a.dataset.tip = word;
     else delete a.dataset.tip;
   });
   paintLocal();
@@ -31532,8 +31708,11 @@ function paintNav(){
    masthead clock's tip before a save is open. A board with a save redraws the
    masthead and the footer itself (renderAll()). */
 function navRelabel(){
+  /* The views ride under a place in the sidebar: kept out of the rewrite. */
+  if($("localRow") && $("localNav") && $("nav").contains($("localNav"))) $("localRow").prepend($("localNav"));
   $("nav").innerHTML = navHtml();
   if($("navRefs")) $("navRefs").innerHTML = refsHtml();
+  sdFootPaint();
   if($("phoneNav")) $("phoneNav").innerHTML = phoneNavHtml();
   document.querySelectorAll("#nav .feature-new, #navRefs .feature-new, #ssField .feature-new, #ssFieldBtn .feature-new")
     .forEach(b => { b.textContent = tt("nav.new", "New"); });
@@ -31550,13 +31729,11 @@ function navRelabel(){
   if(typeof inkHome === "function") requestAnimationFrame(inkHome);
 }
 if(typeof ttOnChange === "function") ttOnChange(navRelabel);
-/* A place in the masthead or the phone's bar: its area, on the view it was
-   last left on this visit (Supply opens Changes the first time). */
+/* A place in the sidebar or the phone's bar: its area, on the view it was
+   last left on this visit (Supply opens Changes the first time). The bar's
+   Map & more opens the sidebar as a drawer. */
 function navClick(e){
-  if(e.target.closest && e.target.closest("#navMore, #phoneMore")){
-    if(typeof nxMenuToggle === "function") nxMenuToggle(e.target.closest("#navMore, #phoneMore"));
-    return;
-  }
+  if(e.target.closest && e.target.closest("#phoneMore")){ sdDrawer(!(sdBody() && sdBody().contains("sd-open"))); return; }
   const a = e.target.closest("a[data-id]");
   if(!a || e.button > 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
@@ -31568,6 +31745,8 @@ function navClick(e){
 $("nav").addEventListener("click", navClick);
 if($("navRefs")) $("navRefs").addEventListener("click", navClick);
 if($("phoneNav")) $("phoneNav").addEventListener("click", navClick);
+if($("navMore") && $("navMore").addEventListener) $("navMore").addEventListener("click", () => { if(typeof nxMenuToggle === "function") nxMenuToggle($("navMore")); });
+sdLayout();
 /* The area's row: a view, with the arrival carried while the reader stays in
    the area they were sent to. */
 if($("localNav")) $("localNav").addEventListener("click", e => {
@@ -32315,12 +32494,14 @@ function wireReveal(){
   setTimeout(() => rest.forEach(arrive), 2500);
 }
 
-/* the sphere is the dot grown up: it leaves the wordmark, rolls along the
-   masthead rule and rests just past the nav. It watches the pointer, squishes
-   when clicked and rolls along its shelf as the page scrolls. Clicking the
-   wordmark rolls out another one, up to three; on the fourth the first ball on
-   the shelf gulps its neighbour to make room. Wired once, on boot; the web
-   shell shows the board only after the first build, so it waits for layout. */
+/* the sphere is the dot grown up: it leaves the wordmark and rolls to the
+   right end of the sidebar head's rule, where it rests (on the rail, the
+   middle of the head). It watches the pointer and squishes when clicked.
+   Clicking the wordmark rolls out another one, up to three, each resting to
+   the left of the last; on the fourth the first ball on the shelf gulps its
+   neighbour to make room. As the page scrolls the balls roll left along the
+   rule, as far as it is free. Wired once, on boot; the web shell shows the
+   board only after the first build, so it waits for layout. */
 let sphereWired = false;
 function wireSphere(){
   if(sphereWired) return;
@@ -32328,9 +32509,8 @@ function wireSphere(){
      DOM until the board has been shown, and that one is about to be removed. */
   const first = $("orb"), dotEl = $("dot"), navEl = $("nav");
   if(!first || !dotEl || !navEl) return;
-  /* A narrow masthead hides the sphere (its shelf is the desktop's gap between
-     the places and the references): it is wired once the window is wide
-     enough to show it. */
+  /* A phone's closed drawer hides the sphere: it is wired once the window
+     is wide enough to show it. */
   if(!first.isConnected || !navEl.getBoundingClientRect().width || !first.offsetParent){
     if(first.isConnected && navEl.isConnected && getComputedStyle(first).display === "none"){
       window.addEventListener("resize", () => wireSphere(), {once: true});
@@ -32340,58 +32520,36 @@ function wireSphere(){
   }
   sphereWired = true;
   inkHome();  // the underline was homed while the board was hidden, so its width is 0
+  /* The shelf is the head's rule: the balls rest on it, under the wordmark. */
   const parent = first.offsetParent || first.parentElement;
-  const GAP = 12, MAX = 3, SIZES = [64, 48, 38], SIZES_TWO = [40, 32, 26];
+  const GAP = 10, MAX = 3, SIZES = [36, 28, 22], SIZES_RAIL = [34];
   let p0, base;
-  /* One row: the shelf follows the places, the balls resting on the rule under
-     the masthead. Two rows (a tablet, a long name): the places are the lower
-     row, so the shelf follows the brand and the balls rest on the rule
-     between the rows. */
   const measure = () => {
     p0 = parent.getBoundingClientRect();
-    const n = navEl.getBoundingClientRect(), br = ($("brand") || navEl).getBoundingClientRect();
-    const two = n.top >= br.bottom - 1;
-    base = { x: (two ? br.right : n.right) - p0.left + 16, floor: two ? n.top - p0.top : p0.height, two, mid: null };
+    const rail = sdRail(), s = SIZES_RAIL[0];
+    /* Full, the shelf runs the head's width, its right end a little short of
+       the edge; on the rail it is the one ball's place, in the middle. */
+    base = rail ? { rail, x: (p0.width - s) / 2, end: (p0.width + s) / 2, floor: p0.height - 6 }
+      : { rail, x: 4, end: p0.width - 4, floor: p0.height };
   };
   measure();
-  const d0 = dotEl.getBoundingClientRect();
   const balls = [];
-  const restX = k => base.x + balls.slice(0, k).reduce((a, b) => a + b.size + GAP, 0);
+  const sizeOf = k => (base.rail ? SIZES_RAIL : SIZES)[Math.min(k, (base.rail ? SIZES_RAIL : SIZES).length - 1)];
+  /* The first ball rests at the right end, each later one to its left. */
+  const restX = k => base.end - balls.slice(0, k).reduce((a, b) => a + b.size + GAP, 0) - sizeOf(k);
   const topOf = size => base.floor - size;
-  const sizeOf = k => Math.round((base.two ? SIZES_TWO : SIZES)[Math.min(k, SIZES.length - 1)] * (base.f || 1));
-  /* The shelf runs to the masthead's right edge. Balls may roll behind the
-     clock, which keeps itself readable over them; past the edge they would
-     widen the page. */
-  /* ...but never under the search field: it sits between the nav and the
-     clock, so the shelf ends a gap short of it wherever it shares their row. */
-  const wall = () => {
-    /* The references come after the shelf: the balls stop short of them. */
-    const refs = $("navRefs");
-    if(refs && refs.getClientRects().length){
-      const r = refs.getBoundingClientRect(), m = parent.getBoundingClientRect();
-      if(!(r.top >= m.bottom || r.bottom <= m.top)) return r.left - m.left - GAP;
-    }
-    const f = typeof ssMastControl === "function" ? ssMastControl() : null;
-    if(!f) return p0.width;
-    const r = f.getBoundingClientRect(), m = parent.getBoundingClientRect();
-    return r.top >= m.bottom || r.bottom <= m.top ? p0.width : r.left - m.left - GAP;
-  };
+  const wall = () => base.end;
   const room = () => wall() - base.x;
-  /* A shelf a little short of the first ball (a 1440 px desktop, whose places
-     and references leave 80 px) takes smaller balls, down to three-fifths;
-     shorter still, the balls step off it (fitShelf()). After measure(). */
-  const scaleShelf = () => { const full = (base.two ? SIZES_TWO : SIZES)[0], r = room();
-    base.f = r >= full ? 1 : r >= full * .6 ? r / full : 1; };
-  scaleShelf();
   const maxRun = () => {
-    /* Include pointer/animation movement. During an entrance the newest
-       ball is still on the left, so measure the actual rightmost one. */
-    const right = Math.max(...balls.map(b => b.rest + b.px + b.size));
-    return balls.length ? Math.max(0, wall() - right) : 0;
+    /* Include pointer/animation movement: the leftmost ball as it stands. */
+    const left = Math.min(...balls.map(b => b.rest + b.px));
+    return balls.length ? Math.max(0, left - base.x) : 0;
   };
+  /* How far the scroll has rolled the balls: leftwards, so negative. */
+  const rollOf = () => -Math.min(maxRun(), REDUCED ? 0 : window.scrollY * .6);
   const paint = (b) => {
-    const roll = Math.min(maxRun(), REDUCED ? 0 : window.scrollY * .6);
-    const x = Math.floor((b.px + roll) * 10) / 10; // never round past the limit
+    const roll = rollOf();
+    const x = Math.ceil((b.px + roll) * 10) / 10; // never round past the limit
     b.el.style.transform = 'translate(' + x.toFixed(1) + 'px,' + b.py.toFixed(1) + 'px) scale(' + b.sc.toFixed(3) + ')';
     b.seam.style.transform = 'rotate(' + (((b.px - b.sx) + roll) / (Math.PI * b.size) * 360).toFixed(1) + 'deg)';
   };
@@ -32402,7 +32560,10 @@ function wireSphere(){
   const makeBall = (el, k) => {
     const size = sizeOf(k), rest = restX(k), top = topOf(size);
     el.style.width = el.style.height = size + 'px'; el.style.left = rest + 'px'; el.style.top = top + 'px';
-    const sx = d0.left - p0.left + d0.width / 2 - (rest + size / 2), sy = d0.top - p0.top + d0.height / 2 - (top + size / 2), s0 = d0.width / size;
+    /* Out of the dot; on the rail, which shows no dot, it drops in where it rests. */
+    const d0 = dotEl.getBoundingClientRect(), dot = d0.width > 0;
+    const sx = dot ? d0.left - p0.left + d0.width / 2 - (rest + size / 2) : 0,
+      sy = dot ? d0.top - p0.top + d0.height / 2 - (top + size / 2) : -size, s0 = dot ? d0.width / size : .3;
     const b = { el, core: q('i', el), seam: q('u', el), size, rest, sx, sy, s0, px: sx, py: sy, sc: s0, tx: 0, ty: 0, busy: true };
     el.addEventListener('click', () => { squish(b); ring(b); });
     paint(b); el.classList.add('live'); return b;
@@ -32452,9 +32613,9 @@ function wireSphere(){
      shelf: they fly to the given viewport point one after another and vanish. */
   window.__consumeBalls = (tx, ty, onEach) => {
     /* Returns how many balls it took; 0 when the shelf is empty, busy or hidden
-       (narrow mastheads hide the balls but keep them in the DOM). */
+       (a phone's closed drawer hides the balls but keeps them in the DOM). */
     if (!balls.length || balls.some(b => b.busy) || getComputedStyle(balls[0].el).display === 'none') return 0;
-    const roll = Math.min(maxRun(), REDUCED ? 0 : window.scrollY * .6), taken = balls.splice(0, balls.length);
+    const roll = rollOf(), taken = balls.splice(0, balls.length);
     /* The first ball is the clone template for spawn(); it must not keep the
        animation's final opacity or transform. */
     const gone = (b) => { b.el.style.opacity = ''; b.el.style.transform = ''; b.el.remove(); onEach && onEach(); };
@@ -32470,7 +32631,9 @@ function wireSphere(){
     });
     return taken.length;
   };
-  const wordmark = q('.wordmark');
+  /* The board's own name: the web page's landing keeps its .wordmark in the
+     page until the board replaces it. */
+  const wordmark = $("title") || q('.wordmark');
   if (wordmark) wordmark.addEventListener('click', spawn);
   document.addEventListener('mousemove', (e) => balls.forEach(b => {
     if (REDUCED || b.busy || !b.el.offsetParent) return;
@@ -32507,12 +32670,12 @@ function wireSphere(){
     else wake();
   });
   /* The shelf moves when the window or the fonts do. */
-  /* A ball the shelf has no room for steps off it (and out of the pointer's
-     way) until there is room again. */
-  const fitShelf = () => balls.forEach(b => b.el.classList.toggle("nx-off", b.rest + b.size > wall() + 1));
-  /* Measured again whenever the masthead fits itself (nxFitMast()): one row
-     or two, the balls take that row's sizes and the shelf's room. */
-  const relayout = () => { measure(); scaleShelf(); balls.forEach((b, k) => { b.size = sizeOf(k); b.el.style.width = b.el.style.height = b.size + 'px';
+  /* A ball the shelf has no room for (the rail's one place) steps off it,
+     and out of the pointer's way, until there is room again. */
+  const fitShelf = () => balls.forEach(b => b.el.classList.toggle("nx-off", b.rest < base.x - 1 || b.rest + b.size > wall() + 1));
+  /* Measured again whenever the sidebar changes (nxfit, from sdLayout() and
+     nxFitMast()): full or a rail, the balls take its sizes and its room. */
+  const relayout = () => { measure(); balls.forEach((b, k) => { b.size = sizeOf(k); b.el.style.width = b.el.style.height = b.size + 'px';
     b.rest = restX(k); b.el.style.left = b.rest + 'px'; b.el.style.top = topOf(b.size) + 'px'; paint(b); });
     fitShelf(); wake(); };
   window.addEventListener('resize', relayout);
@@ -32521,7 +32684,7 @@ function wireSphere(){
 }
 
 /* --- search the board, and ask it ---------------------------------------------
-   One field in the masthead, between the nav and the clock, opens a palette over
+   One field in the sidebar, under its head (an icon on the rail), opens a palette over
    the board; / or Ctrl+K opens it from anywhere but a field being typed in. It
    finds pages and views, sites, products, finding kinds, Find-a-location presets
    and the wiki's own pages, grouped, best group first, keyboard first. The
@@ -33336,88 +33499,47 @@ function ssDistance(a, b){
   return prev[b.length];
 }
 
-/* --- the masthead field and the palette ------------------------------------------ */
+/* --- the sidebar's field and the palette ------------------------------------------ */
 const ssField = document.createElement("button");
 ssField.type = "button"; ssField.className = "ss-q"; ssField.id = "ssField";
 ssField.setAttribute("aria-label", tt("nav.search.field.label", "Search the board (/ or Ctrl+K)"));
 ssField.setAttribute("aria-keyshortcuts", "/ Control+K");
 /* Search is new: both forms of the control wear the New badge until the
    palette has been opened once (featureDiscovery, id "board-search"). The
-   badge hangs off the control's edge, so it takes no room the masthead fit
-   (ssFitMast()) measures. */
+   badge hangs off the control's edge, so it takes no room. */
 const SS_NEW = `<span class="feature-new ss-new" data-new-feature="board-search" aria-hidden="true" hidden>${tt("nav.new", "New")}</span>`;
 ssField.innerHTML = `<span class="ss-lens">${ssSvg("search")}</span><span class="ss-ql">${tt("nav.search.field.text", "Search the board")}</span><span class="ss-kbd" aria-hidden="true">/</span>${SS_NEW}`;
 const ssFieldBtn = document.createElement("button");
 ssFieldBtn.type = "button"; ssFieldBtn.className = "ibtn ss-qbtn"; ssFieldBtn.id = "ssFieldBtn";
 ssFieldBtn.setAttribute("aria-label", tt("nav.search.field.text", "Search the board"));
 ssFieldBtn.innerHTML = ssSvg("search") + SS_NEW;
-if($("mast")){ $("mast").insertBefore(ssField, $("clock")); $("mast").insertBefore(ssFieldBtn, $("clock")); }
+/* Under the sidebar's head: the field while it is full, the icon on its rail. */
+if($("sdHead") && $("sdHead").after) $("sdHead").after(ssField, ssFieldBtn);
 featureDiscovery.refresh();
 ssField.addEventListener("click", () => ssOpen());
 ssFieldBtn.addEventListener("click", () => ssOpen());
-/* Whichever of the two is showing: the sphere keeps clear of it. */
+/* Whichever of the two is showing. */
 const ssMastControl = () => [ssField, ssFieldBtn].find(el => el.isConnected && el.getClientRects().length) || null;
-/* The field needs the room between the nav and the clock, and so does the
-   sphere's first ball: the gap after the nav, the ball, and a gap before the
-   field. Where they cannot both have it the field narrows, down to SS_FIELD_MIN,
-   and below that it steps down to its icon. Measured at full width each time,
-   whatever the last measure decided. */
-const SS_BALL_ROOM = 16 + 64 + 12, SS_FIELD_MIN = 180, SS_ICON_GAP = 12;
-function ssFitMast(){
-  const mast = $("mast"), nav = $("nav");
-  if(!mast || !nav) return;
-  mast.classList.remove("ss-tight");
-  ssField.style.width = "";
-  ssFieldBtn.style.marginRight = "";
-  if(!ssField.getClientRects().length) return;
-  const n = nav.getBoundingClientRect(), f = ssField.getBoundingClientRect();
-  /* The nav on a row of its own (a narrow window) leaves the field its row. */
-  if(n.top >= f.bottom || f.top >= n.bottom) return;
-  /* The row is the places, the sphere's shelf, the references, the field and
-     the clock. What the shelf does not need of the gap before the references
-     is the field's to lose; past that the row overflows by the rest. */
-  const refs = $("navRefs");
-  const r = refs && refs.getClientRects().length ? refs.getBoundingClientRect() : null;
-  const over = Math.max(0, mast.scrollWidth - mast.clientWidth);
-  const slack = Math.floor((r ? r.left - n.right : f.left - n.right) - SS_BALL_ROOM - over);
-  if(slack >= 0) return;
-  const room = Math.floor(f.width + slack);
-  if(room >= SS_FIELD_MIN){
-    ssField.style.width = room + "px";
-    /* Narrowed, the field still says all its words (a longer translation
-       needs more than the floor), or it is its icon. */
-    if(ssField.scrollWidth <= ssField.clientWidth + 1) return;
-    ssField.style.width = "";
-  }
-  mast.classList.add("ss-tight");
-}
-/* The one-row masthead, where it fits; where it would not (a long company
-   name, a longer translation), the two rows a tablet has. Measured in one
-   row each time, after the search field has given what it can. */
+/* The sidebar gives the field its own row, full width, so nothing is fitted
+   any more (the masthead's row shared it with the places and the sphere):
+   what is left is the layout (sdLayout()) and the sphere's shelf, which
+   follows whatever moved the head (a language, the fonts, a host page's
+   Update). */
+function ssFitMast(){}
 function nxFitMast(){
   const mast = $("mast");
   if(!mast) return;
-  mast.classList.remove("nx-wrap");
-  ssFitMast();
-  /* Every part at its own width (nothing shrinks or wraps its words while
-     measured); the sphere rolls on the shelf and is not a part of the row. */
-  mast.classList.add("nx-measure");
-  const edge = mast.getBoundingClientRect().right;
-  const over = [...mast.children].some(el => !el.classList.contains("orb") && el.getClientRects().length
-    && el.getBoundingClientRect().right > edge + 1);
-  mast.classList.remove("nx-measure");
-  if(over){ mast.classList.add("nx-wrap"); ssFitMast(); }
-  /* The sphere's shelf follows (wireSphere()). */
+  if(typeof sdLayout === "function") sdLayout();
   mast.dispatchEvent(new Event("nxfit"));
 }
 window.addEventListener("resize", nxFitMast);
-/* Watched through the parts whose size moves it, fitted before the next paint
-   (as ssFitMast() was), so the masthead is never drawn or measured unfitted;
+/* Watched through the parts whose size moves it, fitted before the next paint,
+   so the sphere's shelf is never drawn or measured stale;
    a change nxFitMast() makes itself (the class) settles in one pass. A change
    of language waits a frame for the new words. */
 let nxFitting = false;
 const nxFitSoon = () => { if(nxFitting) return; nxFitting = true; requestAnimationFrame(() => { nxFitting = false; nxFitMast(); }); };
-if(window.ResizeObserver) ["navRefs", "brand", "clock"].forEach(id => { if($(id)) new ResizeObserver(() => nxFitMast()).observe($(id)); });
+if(window.ResizeObserver) ["brand"].forEach(id => { if($(id)) new ResizeObserver(() => nxFitMast()).observe($(id)); });
 if(document.fonts && document.fonts.ready) document.fonts.ready.then(nxFitMast);
 if(typeof ttOnChange === "function") ttOnChange(nxFitSoon);
 
@@ -34004,11 +34126,12 @@ const wireAdapters = once(() => {
   });
 });
 
-/* the utilities: ··· in the masthead, Map & more on a phone -----------------
-   One menu hung off <body> (a section would clip it): search, what's new, the
-   preferences and help in the footer, and on a phone the City map and the
-   Game guide as well. Arrow keys move through it, Escape closes it and gives
-   the keyboard back to the button that opened it. */
+/* the utilities: ··· at the sidebar's foot ------------------------------------
+   One menu hung off <body> (a section would clip it): what's new, the
+   preferences and help in the footer. Arrow keys move through it, Escape
+   closes it and gives the keyboard back to the button that opened it. The
+   hosted board's own ··· (its save source) takes these in instead, so the
+   sidebar has one ··· (nxMenuInto()). */
 const nxMenu = document.createElement("div");
 nxMenu.className = "nx-menu"; nxMenu.id = "nxMenu"; nxMenu.hidden = true;
 nxMenu.setAttribute("role", "menu");
@@ -34040,8 +34163,13 @@ function nxMenuToggle(btn){
   btn.setAttribute("aria-expanded", "true");
   const r = btn.getBoundingClientRect(), w = nxMenu.offsetWidth, h = nxMenu.offsetHeight;
   const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
-  nxMenu.style.left = Math.max(8, Math.min(r.right - w, vw - w - 8)) + "px";
-  nxMenu.style.top = Math.max(8, phone ? r.top - h - 8 : Math.min(r.bottom + 8, vh - h - 8)) + "px";
+  /* From the sidebar's foot it opens beside the sidebar, its foot level with
+     the button's; in the phone's drawer, above the button. */
+  const side = btn.closest && btn.closest("#mast");
+  const up = phone || (side && sdPhone());
+  const left = side && !up ? $("mast").getBoundingClientRect().right + 8 : up ? r.left : r.right - w;
+  nxMenu.style.left = Math.max(8, Math.min(left, vw - w - 8)) + "px";
+  nxMenu.style.top = Math.max(8, up ? r.top - h - 8 : side ? Math.min(r.bottom - h, vh - h - 8) : Math.min(r.bottom + 8, vh - h - 8)) + "px";
   const first = nxMenu.querySelector("[data-nx-item]");
   if(first) first.focus({preventScroll: true});
 }
@@ -34051,6 +34179,23 @@ function nxMenuClose(focus){
   if(nxMenuFrom){ nxMenuFrom.setAttribute("aria-expanded", "false"); if(focus && nxMenuFrom.isConnected) nxMenuFrom.focus({preventScroll: true}); }
   nxMenuFrom = null;
 }
+/* The hosted board's ··· (web/app.js) keeps a slot for the utilities under
+   its save source: they are drawn there, the sidebar's own ··· steps aside,
+   and the host hands each click back to nxMenuDo(). */
+let nxHostSlot = null;
+function nxMenuInto(slot){
+  if(!slot) return;
+  nxHostSlot = slot;
+  const svg = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+  const item = (id, ic, label) => `<button type="button" class="lg-btn nx-util" data-nx-item="${id}">${ic}<span>${spEsc(label)}</span></button>`;
+  slot.innerHTML = `<div class="menu-divider"></div>`
+    + item("news", spIcon("list"), tt("nav.more.news", "What's new"))
+    + item("prefs", icon("tune"), tt("nav.more.prefs2", "Preferences"))
+    + item("help", svg(NX_MENU_ICON.help), tt("nav.more.help", "Help & feedback"));
+  const more = $("navMore");
+  if(more) more.hidden = true;
+}
+if(typeof ttOnChange === "function") ttOnChange(() => { if(nxHostSlot) nxMenuInto(nxHostSlot); });
 function nxMenuDo(id, from = null){
   if(id === "map" || id === "wiki"){ if(hasData()) openRoute(id); else if(window.BigCopilotBoard) window.BigCopilotBoard.browseWiki(); return; }
   if(id === "search"){ if(typeof ssOpen === "function") ssOpen(); return; }
@@ -34088,7 +34233,7 @@ document.addEventListener("click", e => {
 window.addEventListener("resize", () => nxMenuClose(false));
 
 /* --- Preferences and Help & feedback: two sheets over the board -------------
-   Opened from the masthead's utilities (··· and the phone's Map & more), and
+   Opened from the sidebar's ··· (on the hosted board, its save-source menu), and
    from a link in context (Company finances' history). Each is a panel hung
    off <body> beside a scrim, under the board's own popovers (z-index 55; the
    language list, the checks panel and the difficulty popover are 60), so a

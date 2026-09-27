@@ -481,3 +481,97 @@ Tests:
   the masthead, no strip row while all is well, and the menu opening.
 - **Moved:** tests that found a control inside its section now find it in the row; tests that
   read a verdict line read the tab's tip.
+
+## Sidebar (27 September 2026)
+
+Round 2 left three rows of navigation over every page: the masthead, the area tabs and a row of
+tabs and controls. Peter asked for a sidebar instead, and chose variant B of the navigation
+canvas (<https://claude.ai/artifact/AJjoC3UAJVEc3W5ttVQchk>: frames ImportsB, OverviewB, B at
+1100 px, B dark; generator `mockup/nav-layout/build_nav_canvas.py` in the redesign checkout).
+
+What moved:
+
+| Element | Before | Now |
+| --- | --- | --- |
+| Company name, dot, sphere | masthead | the sidebar's head; the balls rest on its rule, at the right end |
+| Search | masthead field, or its icon | a row of its own under the head; the icon on the rail |
+| The five areas | a row of tabs | the sidebar; the open area's views under it, with their counts; the others a chevron |
+| The views (Changes 14, Imports 7 …) | a row under the areas | under their area in the sidebar |
+| The view's controls | beside the views | the top of the page, alone; nothing when the view has none |
+| City map, Game guide (New) | masthead | the sidebar, under the areas |
+| Clock | masthead | the sidebar's foot |
+| Update and ··· | masthead | the sidebar's foot, beside the fold button; one ··· |
+| News strip | above everything | the same, the full width above the sidebar |
+| Footer | under the page | the same, under the page beside the sidebar |
+
+The one ··· holds the save source (its status line, Choose save folder, Link to the game, One
+save file, Where is my save?) and then What's new, Preferences and Help & feedback. On the local
+server page, which has no save source, it holds the last three. The loud warning bar of the save
+source still appears, at the top of the page, only while something is wrong.
+
+Folding: the fold button at the sidebar's foot makes it a 64 px rail and back. The rail has the
+sphere, Search, the areas, the references, a short clock (D47 · 14:30 · YEAR 1), Update and ···.
+The choice is kept on the device (`localStorage` `ba_dash_sidebar`); if storage is refused it
+lasts the visit. With no choice made, a window 1100 px wide or less starts on the rail. On the
+rail the views return to the top of the page, left of the controls, which go to a second line
+on the right when they do not fit. There is no fold on scroll.
+
+The canvas's open questions, as decided: only the open area's views are shown; the rail falls
+back to the row of views on top, with no pop-outs on hover; the Overview has nothing under it in
+the sidebar; the sidebar's foot has no save-source line (it is in ···); the news strip spans the
+full width.
+
+What the canvas did not show, and how it was decided:
+
+- **The fold button** is the last button in the foot's row, with a panel icon. Its name and tip
+  say Collapse the sidebar or Expand the sidebar.
+- **The difficulty chip.** At 1501 px and wider it ends the clock's last line in the full
+  sidebar, and wraps under the year when it does not fit. On the rail and at 1500 px and under it
+  is the footer's.
+- **The sphere** rolls left along the head's rule as the page scrolls, as far as the rule is free.
+  It rolled right in the masthead. The rail's head holds one ball. Clicking the name still rolls
+  out up to three.
+- **The sidebar's height.** It is the window's height less the news strip while the strip is in
+  view, so its foot is on screen from the start (`sdFit()`).
+- **A phone (560 px and under).** The sidebar is a drawer, opened by the bottom bar's Map & more
+  (which opened a menu before). The day and Search are in the drawer. The views sit at the top of
+  the page as on the rail. A place picked, the scrim or Escape closes it.
+- **Hover names on the rail.** Each icon says its name on hover (its `data-tip`); the names stay
+  in the links for screen readers.
+- **Two tables beside the sidebar.** A 1280 px window leaves the page about 950 px. The Goods
+  flow picture now gives way to the phone's chain below a 900 px box, where it was 950 px, so a
+  1280 px window keeps the picture. Production's line names keep 220 px. The ingredients table's
+  heads and names wrap.
+- **The CLI's foot** has no Update: the local server page refreshes on its own.
+
+Code: the markup is `<nav class="sd" id="mast">` in `div.sd-app` (the ids of the old masthead's
+parts are kept: `#nav`, `#navRefs`, `#clock`, `#orb`, `#navMore`), and the board script's
+"the sidebar: full, a rail, or a phone's drawer" section (`sdLayout()`, `sdSet()`,
+`sdPlaceViews()`, `sdDrawer()`, `sdFit()`). The web page's Update and ··· are placed by
+`place()` in `web/app.js`, and its ··· takes the utilities in through `nxMenuInto()`.
+[architecture.md](architecture.md), "The sidebar", has the rest. The routes, their aliases and
+their history are unchanged: the sidebar only renders them.
+
+Tests:
+
+- **New in `shell_routes`:**
+  - "the full sidebar holds the open area's views…": the views under Supply, the chevrons, the
+    controls alone on top, the summary as the view's tip, the sidebar ahead of the page for the
+    keyboard, the Overview and Milestones starting with their content;
+  - "the fold button makes the sidebar a rail and back…": the rail, its hover names, the views
+    back on top on one line, remembered through a reload;
+  - "a window of 1100 px or less starts on the rail…": the default, a stored choice winning, and
+    the fold working with storage refused;
+  - "the sidebar's ··· opens beside it…".
+- **New in `restore`:** "on the board Update and one ··· sit at the sidebar foot…" checks that
+  one ··· holds the save source and then the utilities, and that a utility opens its sheet.
+- **Moved:**
+  - tests that measured the masthead (the sphere, the search control, the clock and its chip,
+    the update banner and the news strip) measure the sidebar;
+  - tests on a phone open the drawer first;
+  - layout tests that assumed the page took the whole window allow for the sidebar (`layout`,
+    `chart_hover`, `site_panel`, `flow_chain`'s 1366 case with the sidebar folded).
+
+Screenshots of every page, at 1440 light and dark and at 1100 light:
+`shots/after3-web/{1440-light,1440-dark,1100-light}/` and
+`shots/after3-cli/{1440-light,1440-dark,1100-light}/`, with the same file names as above.

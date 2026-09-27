@@ -674,8 +674,8 @@ to fetching `data.json` from a site that has no such route.
 
 ## Pages
 
-The UI redesign (26 Sep 2026, chunk 1) put a layer of routes over the pages: the masthead
-shows five areas and two references, and every place the reader can be is a route such as
+The UI redesign (26 Sep 2026, chunk 1) put a layer of routes over the pages: the sidebar
+(see [The sidebar](#the-sidebar)) shows five areas and two references, and every place the reader can be is a route such as
 `supply/imports` (see [Routes](#routes)). The pages below are the routes' *hosts*: they keep
 their ids, sections and `PAGE_DRAWS` tags, so lazy drawing and the calm refresh are as they
 were. [ui-route-migration.md](ui-route-migration.md) maps every route to the host view that
@@ -757,7 +757,7 @@ Growth's views (Expansion; Find a location is the Map page's finder):
 | Demand | `secMarket` | `drawMovers` (`#movers`) and `drawMarket` (`#market`) |
 | Plan a factory (`plan`) | `secPlan`, `secIngredients` | `drawPlan` |
 
-Outside the pages, `drawMast` and `drawFooter` own the masthead and footer, and
+Outside the pages, `drawMast` and `drawFooter` own the sidebar's name and clock and the footer, and
 `indexTrends` builds the lookup the other draws use. `renderAll()` calls those itself and
 works through `PAGE_DRAWS` for the rest, one row per draw function, tagged with the views
 (`"today"`, `"staffing/payroll"`) whose markup it writes, or `""` for a row drawn on every
@@ -786,10 +786,44 @@ view whose DOM it writes; if other code reads state it computes from another pag
 redraw. A row calls its function by name, `() => drawX()`, not `drawX` itself, so a test
 that stubs `window.drawX` is the one the row runs.
 
+### The sidebar
+
+Since 27 Sep 2026 the places run down the left (the navigation canvas's variant B,
+[ui-declutter.md](ui-declutter.md), "Sidebar"). The markup is `<nav class="sd" id="mast">`
+inside `div.sd-app`, a two-column grid whose second column is `.wrap`; the news strip and the
+update banner stay above it at full width. The sidebar is sticky and as tall as the window less
+what is above it (`sdFit()` sets `--sd-cut` while the news strip is in view). Top to bottom:
+
+- the head (`#sdHead`): the company's name (`#title`), the dot and the sphere (`wireSphere()`:
+  the balls rest on the head's rule, at its right end, and roll left as the page scrolls);
+- Search (`ssField`, or its icon `ssFieldBtn` on the rail);
+- the five areas (`#nav`, `navHtml()`), and under the open one its views: the same
+  `#localNav` that `paintLocal()` fills, moved there by `sdPlaceViews()`;
+- the references (`#navRefs`, `refsHtml()`);
+- the foot: the clock (`#clock`; `#sdClk` is the rail's short one), then `#sdRow` with ···
+  (`#navMore`) and the fold button (`#sdToggle`). The hosted board puts its Update and its own ···
+  (`#mastSrc`) first in that row, and its ··· takes the utilities in (`nxMenuInto()`), so the
+  sidebar always has one ···.
+
+The top of the page (`#localRow`) holds only the view's own controls, hoisted into `#viewCtl`
+from wherever the view draws them (`data-view-ctl="<route>"`, `ctlHoist()`); a view with no
+controls starts with its content.
+
+Folded, the sidebar is a 64 px rail (`body.sd-rail`): icons with their names as tips, the short
+clock, Update as its icon. `#localNav` then goes back into `#localRow`, before the controls.
+`sdLayout()` decides: the reader's choice on this device (`localStorage` `ba_dash_sidebar`,
+`rail` or `full`, set by `sdSet()` and kept for the visit when storage refuses), else the rail at
+1100 px and under. An inline script at the top of `.sd-app` applies the same rule before the
+first paint. On a phone (560 px and under) the sidebar is a drawer (`body.sd-open`, `sdDrawer()`)
+opened by the bottom bar's Map & more, and the views sit at the top of the page as on the rail.
+`nxTopLine()` is what stays covered at the top of the window as the page scrolls: the update
+banner, never the sidebar.
+
 ### The utilities
 
-The masthead's ··· (and Map & more on a phone, `nxMenuItems()`) lists Search, What's new,
-Preferences and Help & feedback. Preferences and Help & feedback are sheets over the board
+The sidebar's ··· (`#navMore`, `nxMenuItems()`) lists What's new, Preferences and Help &
+feedback; on the hosted board they are the last three rows of its save-source menu
+(`#menuUtilSlot`), which that page's ··· opens. Preferences and Help & feedback are sheets over the board
 (`pxOpen()`, `#pxSheet`, the board script's `/* --- Preferences and Help & feedback` section),
 hung off `<body>` at z-index 55, under the popovers a row can open (the language list, the checks
 panel and the difficulty popover, 60). They hold no setting of their own: each row reuses the
@@ -945,7 +979,7 @@ all three.
 | Anchor | What goes in it | Test that covers it |
 | --- | --- | --- |
 | The markup: `<div class="page" id="page…">` for a page, or `<section class="sec rv" id="sec…" data-sub="…">` inside its page for a view; a page with views also gets its `<nav class="seg" id="…Nav">` | The host element | the navigation tests, indirectly |
-| `const PAGES = [` (board script) | *Only for a page*: `{id, label, host, newFeature?}` | `tests/navigation.test.cjs`, "the masthead is Overview, Businesses, Supply, Staffing, Expansion, then City map and Game guide" |
+| `const PAGES = [` (board script) | *Only for a page*: `{id, label, host, newFeature?}` | `tests/navigation.test.cjs`, "the sidebar is Overview, Businesses, Supply, Staffing, Expansion, then City map and Game guide" |
 | `const ICON = {` (board script) | *Only for a page*: its nav icon, keyed by page id | none |
 | `const SUBS = {` (board script) | *Only for a view*: its `[id, label, section]` item; a new page with views needs the whole entry | `tests/navigation.test.cjs`, "Businesses carries Results, Products & prices, Standards and Milestones; Staffing its three views" and "every view in SUBS has its SEC_PAGE row and a PAGE_DRAWS tag" |
 | `const SEC_PAGE = {` (board script) | `secX: [page, view]` for every section. Without it `reveal()`, the sub-nav and `pageFromHash()` fail | `tests/navigation.test.cjs`, "every view in SUBS has its SEC_PAGE row …" and "every Company section deep link opens the view that holds it"; `tests/alert_kinds.test.cjs`, "the supply kinds land on the Supply view of their route" |

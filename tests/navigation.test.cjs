@@ -91,10 +91,10 @@ function board({saved = {}, data = {}} = {}) {
   };
 }
 
-/* The redesign's masthead (docs/ui-route-migration.md): five destinations,
-   then the two references. The pages behind them are hosts, which keep
-   their ids. */
-test('the masthead is Overview, Businesses, Supply, Staffing, Expansion, then City map and Game guide', () => {
+/* The redesign's sidebar (docs/ui-route-migration.md): five destinations,
+   then the two references, then the foot's ···. The pages behind them are
+   hosts, which keep their ids. */
+test('the sidebar is Overview, Businesses, Supply, Staffing, Expansion, then City map and Game guide', () => {
   const b = board();
   assert.deepEqual([...vm.runInContext('AREAS.map(a => a.label)', b.context)],
     ['Overview', 'Businesses', 'Supply', 'Staffing', 'Expansion']);
@@ -105,7 +105,11 @@ test('the masthead is Overview, Businesses, Supply, Staffing, Expansion, then Ci
     assert.match(b.$('nav').innerHTML, new RegExp(`data-id="${id}"`));
   assert.match(b.$('navRefs').innerHTML, /data-id="map"/);
   assert.match(b.$('navRefs').innerHTML, /data-id="wiki"/);
-  assert.match(b.$('navRefs').innerHTML, /id="navMore"/, 'the utilities menu sits after the references');
+  // The utilities are the foot's ···, after the references, inside the sidebar.
+  const side = between(source, '<nav class="sd" id="mast"', '</nav>\n<div class="wrap">');
+  assert.ok(side.indexOf('id="navRefs"') < side.indexOf('class="sd-foot"')
+    && side.indexOf('class="sd-foot"') < side.indexOf('id="navMore"'), 'the utilities menu sits in the foot, after the references');
+  assert.doesNotMatch(b.$('navRefs').innerHTML, /navMore/);
   assert.match(b.$('phoneNav').innerHTML, /data-id="staffing"[\s\S]*id="phoneMore"/, 'a phone has all five places and Map & more');
 });
 

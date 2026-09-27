@@ -402,7 +402,7 @@ test("a site's page stands on its own, under a crumb row that carries the picker
     for (const sel of ['#secDaily', '#secRhythm', '#secPortfolio', '#companyNav'])
       assert.equal(await page.locator(sel).isHidden(), true, sel);
     assert.equal(await page.locator('#secDetail').isVisible(), true);
-    assert.equal(await page.locator('#nav a.on').getAttribute('data-id'), 'businesses', 'Businesses stays lit');
+    assert.equal(await page.locator('#nav > a.on').getAttribute('data-id'), 'businesses', 'Businesses stays lit');
     // The crumb row sits above the head and holds the picker; the close is gone.
     assert.equal(await page.locator('#sitePanel > .ss-crumbs + .sitehead').count(), 1);
     assert.equal(await page.locator('.ss-crumbs #sitePick select.sitepick').count(), 1);
@@ -643,15 +643,16 @@ test("a site's page on a phone: a sticky crumb row, arrows round the list, nothi
     assert.equal(await page.locator('#sitePick > a.ibtn').first().isVisible(), true);
     assert.equal(await page.locator('#sitePick .seg > span').first().isHidden(), true);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.getBoundingClientRect().width), 'nothing scrolls sideways');
-    // Scrolled well past it, the row still sits right under the masthead.
+    // Scrolled well past it, the row still sits at the top of the window (the
+    // sidebar is a drawer on a phone, so nothing stands above it).
     const stuck = await page.evaluate(async () => {
       scrollTo(0, document.querySelector('.ss-crumbs').offsetTop + 600);
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       return {y: scrollY, top: document.querySelector('.ss-crumbs').getBoundingClientRect().top,
-              mast: document.getElementById('mast').getBoundingClientRect().bottom};
+              mast: nxTopLine()};
     });
     assert.ok(stuck.y > 400, `the page scrolled: ${JSON.stringify(stuck)}`);
-    assert.ok(Math.abs(stuck.top - stuck.mast) <= 1, `stuck under the masthead: ${JSON.stringify(stuck)}`);
+    assert.ok(Math.abs(stuck.top - stuck.mast) <= 1, `stuck at the top: ${JSON.stringify(stuck)}`);
     // A block landed on comes to rest below the crumb row, not under it.
     await page.evaluate(() => { scrollTo(0, 0); window.xlScroll = null; xlArrive('#sp-shelves'); });
     // The smooth scroll's end state: moved off the top, and still over three frames.

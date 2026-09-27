@@ -131,9 +131,12 @@ for (const width of [390, 1280]) test(`banner fits landing and dashboard at ${wi
     await page.evaluate(() => new Promise(requestAnimationFrame));
     if (board) {
       await page.evaluate(() => scrollTo(0, 400));
-      const banner = await page.locator('#releaseBanner').boundingBox();
-      const mast = await page.locator('.mast').boundingBox();
-      assert.ok(mast.y >= banner.y + banner.height - 1, 'sticky masthead clears the banner');
+      // The sticky sidebar clears the banner; on a phone it is a closed drawer.
+      if (await page.locator('#mast').isVisible()) {
+        const banner = await page.locator('#releaseBanner').boundingBox();
+        const side = await page.locator('#mast').boundingBox();
+        assert.ok(side.y >= banner.y + banner.height - 1, 'sticky sidebar clears the banner');
+      }
       await page.evaluate(() => scrollTo(0, 0));
     }
   }

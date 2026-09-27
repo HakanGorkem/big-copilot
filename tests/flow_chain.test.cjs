@@ -112,7 +112,8 @@ test('a portrait tablet gets the chain too, wider cards; a desktop box keeps the
   assert.equal(d.chain, false);
   assert.equal(d.svg, true);
   assert.equal(d.svgNodes, 7, 'every node, the shop no pipe reaches too');
-  assert.ok(await desk.evaluate(() => document.getElementById('sbFlowBox').getBoundingClientRect().width) >= 950);
+  // Beside the full sidebar, still past the breakpoint (FLOW_CHAIN_MAX).
+  assert.ok(await desk.evaluate(() => document.getElementById('sbFlowBox').getBoundingClientRect().width) >= 900);
   assert.equal(await desk.evaluate(() => document.getElementById('flowChain').innerHTML), '');
   // The window narrowing past the breakpoint redraws the chain, and back.
   await desk.setViewportSize({width: 600, height: 1000});
@@ -470,8 +471,10 @@ function sixStages(){
   return data;
 }
 
-test('the five-stage fixture chain fits a 1366 box: shrunk no further than 0.8, its Shops in the box, no blank band', async t => {
+test('the five-stage fixture chain fits a 1366 window with the sidebar folded: shrunk no further than 0.8, its Shops in the box, no blank band', async t => {
   const page = await board(t, fixture(), 1366);
+  // Folded to its rail, the sidebar leaves the page nearly the whole window.
+  await page.evaluate(() => new Promise(done => { sdSet(true); requestAnimationFrame(() => requestAnimationFrame(done)); }));
   const m = await measure(page);
   assert.deepEqual(m.heads, ['IMPORTERS', 'DEPOTS', 'FACTORIES', 'DEPOTS', 'SHOPS']);
   assert.ok(m.scale >= 0.8 && m.scale < 1, `scaled to ${m.scale.toFixed(2)}`);

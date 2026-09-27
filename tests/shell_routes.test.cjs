@@ -31,9 +31,11 @@ sys.stdout.buffer.write(render(d).encode("utf-8"))`], {cwd: ROOT, maxBuffer: 64 
 after(async () => { await browser?.close(); });
 
 /* The board at `hash`, in a context of its own (its storage survives a reload). */
-async function board(t, {hash = '#overview', width = 1440, height = 900, scheme = 'dark'} = {}) {
+async function board(t, {hash = '#overview', width = 1440, height = 900, scheme = 'dark', init = null} = {}) {
   const context = await browser.newContext({viewport: {width, height}, reducedMotion: 'reduce', colorScheme: scheme});
   t.after(() => context.close());
+  // Something to set up before the page runs (storage refused, say).
+  if(init) await context.addInitScript(init);
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -429,14 +431,18 @@ test('on a 320 x 568 phone, and at 130% on 390 x 844, the first critical finding
     const m = await page.evaluate(() => {
       const row = document.querySelector('#alerts .find.crit'), r = el => el.getBoundingClientRect();
       return {what: r(row.querySelector('.what')).bottom, act: r(row.querySelector('.ov-act')).bottom,
-        bar: r(document.getElementById('phoneNav')).top, day: document.querySelector('.wrap .mast .clock > b').getClientRects().length > 0,
+        bar: r(document.getElementById('phoneNav')).top,
         ctx: document.getElementById('ovCtx').innerText.replace(/\s+/g, ' '),
         over: [...document.querySelectorAll('#alerts .find .ov-act')].filter(a => a.offsetParent && a.scrollWidth > a.clientWidth + 1).length,
         sideways: document.documentElement.scrollWidth > document.documentElement.clientWidth};
     });
     const what = `${width}x${height}${zoom ? ' at 130%' : ''}`;
     assert.ok(m.what < m.bar && m.act <= m.bar, `${what}: headline ${m.what}, action ${m.act}, bar ${m.bar}`);
-    assert.ok(m.day, `${what}: the day is on the masthead`);
+    // The day is in the sidebar, a drawer here: one tap on Map & more.
+    await page.locator('#phoneMore').click();
+    assert.equal(await page.locator('#clock > b').isVisible(), true, `${what}: the day is in the drawer`);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#clock > b').isVisible(), false, `${what}: Escape closes the drawer`);
     assert.match(m.ctx, /Profit.*Cash.*All figures/);
     assert.equal(m.over, 0, `${what}: every action's words are inside its button`);
     assert.equal(m.sideways, false, `${what}: nothing scrolls sideways`);
@@ -657,32 +663,152 @@ test('Schedules keeps the business, its day and its now / plan view through Back
   assert.deepEqual(await state(), want, 'a reload');
 });
 
-// --- declutter round 2: one row of views and controls ------------------------------------------
+// --- the sidebar (the navigation canvas's variant B) ---------------------------------------
 
-test("a view shares one row with its tabs: Supply's scope, mode and basis beside its views, no summary line, the summary in the tab's tip", async t => {
+/* Where the open area's views are, whether the top of the page holds them,
+   and what the row there holds. */
+const shell = page => page.evaluate(() => {
+  const views = document.getElementById('localNav'), row = document.getElementById('localRow');
+  const r = el => { const b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.right), Math.round(b.bottom)]; };
+  return {rail: document.body.classList.contains('sd-rail'), side: r(document.getElementById('mast')),
+    inSide: document.getElementById('mast').contains(views), under: views.previousElementSibling?.dataset?.id || null,
+    rowShown: !row.hidden && row.getClientRects().length > 0, rowViews: row.contains(views),
+    rowCtl: !document.getElementById('viewCtl').hidden, stored: localStorage.getItem('ba_dash_sidebar')};
+});
+
+test("the full sidebar holds the open area's views; the page starts with the view's controls alone, or its content", async t => {
   const page = await board(t, {hash: '#supply/imports', width: 1440});
   const bar = page.locator('#viewCtl .sbv-bar[data-view-ctl="supply/imports"]');
   await bar.waitFor();
+  let s = await shell(page);
+  assert.equal(s.rail, false);
+  assert.ok(s.side[2] - s.side[0] >= 250 && s.side[2] - s.side[0] <= 260, `a 256 px sidebar: ${s.side}`);
+  // The views under Supply, the only area open; the others fold theirs away.
+  assert.equal(s.inSide, true);
+  assert.equal(s.under, 'supply');
+  assert.deepEqual(await page.locator('#localNav a[data-route]').evaluateAll(as => as.map(a => a.dataset.route)),
+    ['supply/changes', 'supply/imports', 'supply/deliveries', 'supply/production', 'supply/flow']);
+  assert.equal(await page.locator('#nav > a[data-id="businesses"] .sd-cv').isVisible(), true);
+  assert.equal(await page.locator('#nav > a[data-id="supply"] .sd-cv').isVisible(), false);
+  // The top of the page: the scope, the mode and the basis, and no row of views.
+  assert.equal(s.rowShown, true);
+  assert.equal(s.rowViews, false);
   assert.equal(await bar.locator('select[data-sb-scope], [data-sb-mode]').count() >= 3, true);
-  // One line at 1440: the tabs and the controls overlap vertically.
-  const boxes = await page.evaluate(() => ['localNav', 'viewCtl'].map(id => { const r = document.getElementById(id).getBoundingClientRect(); return [r.top, r.bottom]; }));
-  assert.ok(boxes[1][0] < boxes[0][1] && boxes[0][0] < boxes[1][1], `one row: ${JSON.stringify(boxes)}`);
   assert.equal(await page.locator('#secImports .sb-verdict, #secImports .sbv-bar').count(), 0);
+  // The summary is the view's tip, in the sidebar.
   assert.match(await page.locator('#localNav a[data-route="supply/imports"]').getAttribute('data-tip'), /next delivery with room/);
-  // Another view: its controls take the row, and the last view's go home.
+  // The sidebar comes first to the keyboard, then the page.
+  assert.ok(await page.evaluate(() => !!(document.getElementById('mast').compareDocumentPosition(document.querySelector('.wrap')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+  assert.equal(await page.evaluate(() => document.getElementById('mast').tagName + ':' + document.getElementById('mast').getAttribute('aria-label')), 'NAV:Main');
+  // Another view from the sidebar: its controls take the top, the last view's go home.
   await page.locator('#localNav a[data-route="supply/deliveries"]').click();
   await page.locator('#viewCtl [data-view-ctl="supply/deliveries"]').waitFor();
   assert.equal(await page.locator('#viewCtl [data-view-ctl]').count(), 1);
   assert.equal(await page.locator('#secImports [data-view-ctl="supply/imports"]').count(), 1);
-  // A control in the row works where it stands.
   await page.locator('#viewCtl [data-sb-mode="all"]').click();
   assert.equal(await page.evaluate(() => sbMode.deliveries), 'all');
-  assert.equal(await page.locator('#viewCtl .sbv-mode a.on').textContent(), 'Everything');
   assert.equal(await page.locator('#viewCtl [data-view-ctl]').count(), 1, 'the redrawn row replaces the old one');
-  // Another area: Businesses › Results keeps its chart switch beside its tabs.
-  await page.evaluate(() => openRoute('businesses/results'));
+  // Another area: its views move under it; Results keeps its chart switch on top.
+  await page.locator('#nav > a[data-id="businesses"]').click();
   await page.locator('#viewCtl #chartTools').waitFor();
-  // A view with no controls: the row holds its tabs alone.
+  s = await shell(page);
+  assert.equal(s.under, 'businesses');
+  // A view with no controls, and the Overview, which has no views: the page starts with its content.
   await page.evaluate(() => openRoute('businesses/milestones'));
-  assert.equal(await page.locator('#viewCtl').isHidden(), true);
+  assert.equal((await shell(page)).rowShown, false);
+  await page.locator('#nav > a[data-id="overview"]').click();
+  s = await shell(page);
+  assert.equal(s.rowShown, false);
+  assert.equal(s.inSide, false, 'no views under the Overview');
+  const kpis = await page.locator('#kpis').boundingBox();
+  assert.ok(kpis.y < 120, `the Overview starts with its figures: ${kpis.y}`);
+});
+
+test('the fold button makes the sidebar a rail and back, remembered on this device; the rail puts the views beside the controls', async t => {
+  const page = await board(t, {hash: '#supply/imports', width: 1440});
+  await page.locator('#viewCtl .sbv-bar').waitFor();
+  const fold = page.locator('#sdToggle');
+  assert.equal(await fold.getAttribute('aria-label'), 'Collapse the sidebar');
+  assert.equal(await fold.getAttribute('aria-expanded'), 'true');
+  await fold.click();
+  let s = await shell(page);
+  assert.equal(s.rail, true);
+  assert.ok(s.side[2] - s.side[0] <= 66, `a 64 px rail: ${s.side}`);
+  assert.equal(s.stored, 'rail');
+  assert.equal(await fold.getAttribute('aria-label'), 'Expand the sidebar');
+  assert.equal(await fold.getAttribute('aria-expanded'), 'false');
+  // The views are back at the top of the page, before the controls, on one line at 1440.
+  assert.equal(s.inSide, false);
+  assert.equal(s.rowViews, true);
+  const boxes = await page.evaluate(() => ['localNav', 'viewCtl'].map(id => { const r = document.getElementById(id).getBoundingClientRect(); return [r.left, r.top, r.bottom]; }));
+  assert.ok(boxes[0][0] < boxes[1][0] && boxes[1][1] < boxes[0][2] && boxes[0][1] < boxes[1][2], `one row: ${JSON.stringify(boxes)}`);
+  // The rail keeps icons: each place says its name on hover.
+  assert.equal(await page.locator('#nav > a[data-id="staffing"]').getAttribute('data-tip'), 'Staffing');
+  // Its word stays in the link for a screen reader, out of sight.
+  assert.ok(await page.locator('#nav > a[data-id="staffing"] > span').evaluate(el => el.getBoundingClientRect().width <= 1));
+  assert.equal(await page.locator('#ssFieldBtn').isVisible(), true);
+  // Remembered through a reload, and on another route.
+  await page.reload();
+  await page.waitForFunction(() => typeof hasData === 'function' && hasData());
+  s = await shell(page);
+  assert.equal(s.rail, true);
+  assert.equal(s.rowViews, true);
+  await page.locator('#sdToggle').click();
+  s = await shell(page);
+  assert.equal(s.rail, false);
+  assert.equal(s.stored, 'full');
+  assert.equal(s.under, 'supply');
+  assert.equal(await page.locator('#nav > a[data-id="staffing"]').getAttribute('data-tip'), null);
+});
+
+test('a window of 1100 px or less starts on the rail; a choice made on this device wins, and one that cannot be stored lasts the visit', async t => {
+  const page = await board(t, {hash: '#supply/imports', width: 1100});
+  await page.locator('#viewCtl .sbv-bar').waitFor();
+  let s = await shell(page);
+  assert.equal(s.rail, true);
+  assert.equal(s.stored, null, 'the default is not a choice');
+  assert.equal(s.rowViews, true);
+  // The views on the first line, the controls wrapping to the right below them.
+  const [tabs, ctl] = await page.evaluate(() => ['localNav', 'viewCtl'].map(id => { const r = document.getElementById(id).getBoundingClientRect(); return {top: r.top, bottom: r.bottom, right: r.right}; }));
+  assert.ok(ctl.top >= tabs.bottom - 1, JSON.stringify({tabs, ctl}));
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), 'nothing scrolls sideways');
+  // Unfolded here, it stays unfolded here.
+  await page.locator('#sdToggle').click();
+  await page.reload();
+  await page.waitForFunction(() => typeof hasData === 'function' && hasData());
+  s = await shell(page);
+  assert.equal(s.rail, false);
+  assert.equal(s.stored, 'full');
+  // Wider than 1100 with no choice made: full.
+  const wide = await board(t, {hash: '#overview', width: 1101});
+  assert.equal((await shell(wide)).rail, false);
+  // With storage refused the fold still works, for the visit.
+  const refused = await board(t, {hash: '#supply/imports', width: 1440, init: () => {
+    const no = () => { throw new Error('storage refused'); };
+    Object.defineProperty(window, 'localStorage', {configurable: true, get: () => ({getItem: no, setItem: no, removeItem: no})});
+  }});
+  await refused.locator('#sdToggle').click();
+  assert.equal(await refused.evaluate(() => document.body.classList.contains('sd-rail')), true);
+  await refused.locator('#sdToggle').click();
+  assert.equal(await refused.evaluate(() => document.body.classList.contains('sd-rail')), false);
+});
+
+test("the sidebar's one ··· opens beside it with What's new, Preferences and Help & feedback", async t => {
+  const page = await board(t, {hash: '#overview', width: 1440});
+  assert.equal(await page.locator('#mast [aria-haspopup]:visible').count(), 1, 'one ···');
+  /* The local server page's own ··· (#navMore); on the hosted board, once it
+     has placed its save source, that menu's ··· (#menuBtn) takes the three
+     in under the source (tests/restore.test.cjs has the whole menu). */
+  const own = await page.locator('#navMore').isVisible();
+  const more = page.locator(own ? '#navMore' : '#menuBtn');
+  const menu = page.locator(own ? '#nxMenu' : '#srcMenu .menu-panel');
+  await more.click();
+  assert.equal(await menu.isVisible(), true);
+  assert.deepEqual(await menu.locator('[data-nx-item]').evaluateAll(els => els.map(el => el.dataset.nxItem)), ['news', 'prefs', 'help']);
+  const [side, box, btn] = await Promise.all([page.locator('#mast').boundingBox(), menu.boundingBox(), more.boundingBox()]);
+  assert.ok(box.x >= side.x + side.width, 'beside the sidebar');
+  assert.ok(Math.abs(box.y + box.height - (btn.y + btn.height)) <= 1, 'its foot level with the button');
+  await page.keyboard.press('Escape');
+  assert.equal(await menu.isVisible(), false);
+  if (own) assert.equal(await page.evaluate(() => document.activeElement.id), 'navMore');
 });

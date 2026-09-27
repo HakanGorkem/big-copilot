@@ -348,12 +348,14 @@ test('nothing found: the sphere looks, a near word is offered, and the questions
 
 // --- the phone -----------------------------------------------------------------------
 
-test('on a phone the masthead has the icon, and the palette is the whole screen, three a group', async () => {
+test('on a phone search is in the drawer, and the palette is the whole screen, three a group', async () => {
   const page = await board({width: 390, height: 844});
   try {
-    assert.equal(await page.locator('#ssField').isHidden(), true);
-    assert.equal(await page.locator('#ssFieldBtn').isVisible(), true);
-    await page.click('#ssFieldBtn');
+    // The sidebar is a drawer on a phone, opened from the bar's Map & more.
+    assert.equal(await page.locator('#ssField').isVisible(), false);
+    await page.click('#phoneMore');
+    assert.equal(await page.locator('#ssField').isVisible(), true);
+    await page.click('#ssField');
     const box = await page.locator('#ssPal').boundingBox();
     // The whole page: the window less the scrollbar gutter the page keeps.
     const page_w = await page.evaluate(() => document.documentElement.getBoundingClientRect().width);
@@ -430,15 +432,16 @@ test('with storage refused, the questions and the palette still work and nothing
    next one rolls out. */
 const shelfAtRest = page => page.evaluate(() => { window.shelfMark = null; }).then(() => page.waitForFunction(() => {
   const now = performance.now();
-  const state = [...document.querySelectorAll('.mast .orb')].map(o => o.style.transform).join('|');
-  const done = [...document.querySelectorAll('.mast .orb')].every(o => /scale\(1(\.0+)?\)$/.test(o.style.transform));  // the browser writes "scale(1)"
+  const state = [...document.querySelectorAll('.sd .orb')].map(o => o.style.transform).join('|');
+  const done = [...document.querySelectorAll('.sd .orb')].every(o => /scale\(1(\.0+)?\)$/.test(o.style.transform));  // the browser writes "scale(1)"
   if(!done || !window.shelfMark || window.shelfMark.state !== state){ window.shelfMark = {state, at: now}; return false; }
   return now - window.shelfMark.at >= 400;
 }, null, {polling: 50}));
 
-/* The shelf is the gap between the five places and the references (City map,
-   Game guide); the search field comes after the references. */
-test('the sphere rests between the places and the references, and the field steps down before the row would crowd', async () => {
+/* The shelf is the sidebar head's rule: the balls rest on it at its right
+   end, under the company's name and clear of it, and the search field has a
+   row of its own below. Folded to the rail the head holds one ball. */
+test('the sphere rests on the sidebar head, clear of the name, and folds to one ball with the rail', async () => {
   const page = await board({data: false, width: 1440});
   try {
     /* The web build shows its landing until the board is entered (app.js
@@ -447,22 +450,40 @@ test('the sphere rests between the places and the references, and the field step
       process.env.BOARD_TARGET === 'web');
     await page.locator('#orb.live').waitFor();
     await shelfAtRest(page);  // under reduced motion an entrance ends at its 400 ms mark
-    const [orb, refs, nav] = await page.evaluate(() => ['orb', 'navRefs', 'nav'].map(id => {
-      const r = document.getElementById(id).getBoundingClientRect(); return {left: r.left, right: r.right, w: r.width};
-    }));
-    assert.ok(orb.left >= nav.right, `the ball ${orb.left} starts after the places ${nav.right}`);
-    assert.ok(orb.right <= refs.left, `the ball ${orb.right} ends before the references ${refs.left}`);
-    // However many balls roll out, none rests under the references. The board's
-    // own wordmark: the web build keeps its landing's (hidden) in the page too.
-    await page.click('.wrap .mast .wordmark');
+    const boxes = () => page.evaluate(() => {
+      const r = el => { const b = el.getBoundingClientRect(); return {left: b.left, right: b.right, top: b.top, bottom: b.bottom}; };
+      return {head: r($('sdHead')), name: r(document.querySelector('.sd .wordmark')), search: r($('ssField')),
+        orbs: [...document.querySelectorAll('.sd .orb:not(.nx-off)')].map(r)};
+    });
+    let b = await boxes();
+    const [orb] = b.orbs;
+    assert.ok(Math.abs(orb.bottom - b.head.bottom) <= 1, `the ball ${orb.bottom} rests on the head's rule ${b.head.bottom}`);
+    assert.ok(orb.right <= b.head.right && b.head.right - orb.right < 12, 'at the right end of the shelf');
+    assert.ok(orb.top >= b.name.bottom - 2 || orb.left >= b.name.right, 'clear of the name');
+    assert.ok(orb.bottom <= b.search.top, 'above the search field');
+    // However many balls roll out, none leaves the head. The board's own
+    // wordmark: the web build keeps its landing's (hidden) in the page too.
+    await page.click('.sd .wordmark');
     await shelfAtRest(page);
-    await page.click('.wrap .mast .wordmark');
+    await page.click('.sd .wordmark');
     await shelfAtRest(page);
-    const right = await page.evaluate(() => Math.max(...[...document.querySelectorAll('.orb')].map(o => o.getBoundingClientRect().right)));
-    assert.ok(right <= (await page.locator('#navRefs').boundingBox()).x + 1);
-    // Narrower, the places take a row of their own and search is its icon.
-    await page.setViewportSize({width: 1180, height: 1000});
-    await page.waitForFunction(() => getComputedStyle($('ssFieldBtn')).display !== 'none');
+    b = await boxes();
+    assert.equal(b.orbs.length, 3);
+    assert.ok(b.orbs.every(o => o.left >= b.head.left - 1 && o.right <= b.head.right + 1), JSON.stringify(b));
+    // Folded, the rail's head holds one ball, in its middle; unfolded, all three again.
+    await page.evaluate(() => sdSet(true));
+    await shelfAtRest(page);
+    b = await boxes();
+    assert.equal(b.orbs.length, 1);
+    assert.ok(Math.abs((b.orbs[0].left + b.orbs[0].right) / 2 - (b.head.left + b.head.right) / 2) <= 2, JSON.stringify(b));
+    await page.evaluate(() => sdSet(false));
+    await shelfAtRest(page);
+    assert.equal((await boxes()).orbs.length, 3);
+    // A window under 1100 px starts on the rail, whose search is its icon.
+    await page.evaluate(() => localStorage.removeItem('ba_dash_sidebar'));
+    await page.setViewportSize({width: 1000, height: 1000});
+    await page.evaluate(() => { sdChoice = ''; sdLayout(); });
+    await page.waitForFunction(() => document.body.classList.contains('sd-rail'));
     assert.equal(await page.locator('#ssFieldBtn').isVisible(), true);
     assert.equal(await page.locator('#ssField').isVisible(), false);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.getBoundingClientRect().width), 'nothing scrolls sideways');
@@ -754,7 +775,8 @@ test('a staffing kind opens its business in Schedules; a preset opens on its nei
 test('on a phone the sheet is as tall as the visible viewport', async () => {
   const page = await board({width: 390, height: 700});
   try {
-    await page.click('#ssFieldBtn');
+    await page.click('#phoneMore');
+    await page.click('#ssField');
     assert.equal(await page.evaluate(() => [ssPal.style.height, `${Math.round(visualViewport.height)}px`].join()), '700px,700px');
     await page.click('#ssPal .ss-cancel');
     assert.equal(await page.evaluate(() => ssPal.style.height), '');
@@ -1336,6 +1358,8 @@ test('the search control wears the New badge until the palette first opens, and 
     const page = await board({width, height: 900});
     try {
       if (chip) await withChip(page);
+      // On a phone the control is in the sidebar's drawer.
+      if (width <= 560) await page.click('#phoneMore');
       await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
       const shown = () => page.evaluate(() => {
         const c = ssMastControl(), b = c.querySelector('[data-new-feature="board-search"]');
@@ -1345,7 +1369,7 @@ test('the search control wears the New badge until the palette first opens, and 
       });
       const before = await shown();
       assert.equal(before.badge, true, `${what}: the badge shows on ${before.id}`);
-      assert.ok(before.inside, `${what}: the badge stays inside the masthead and the window`);
+      assert.ok(before.inside, `${what}: the badge stays inside the sidebar and the window`);
       assert.ok(before.scroll <= before.room, `${what}: nothing scrolls sideways`);
       // Opening the palette is the visit; both forms lose the badge together.
       await page.evaluate(() => ssOpen());

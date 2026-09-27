@@ -214,22 +214,39 @@ test('the board footer offers the game, the channel and the Discord, and stays v
   assert.equal(await foot.locator('[data-vote-card]').isVisible(), false);
 });
 
-test('on the board Update and ··· sit in the masthead beside Search, and the strip takes no row until something is wrong', async t => {
+test('on the board Update and one ··· sit at the sidebar foot, the ··· holds the save source and the utilities, and the strip takes no row until something is wrong', async t => {
   const page = await setup(t);
   await messages(page);
   await page.evaluate(() => fixture.complete());
   assert.equal(await hasBoard(page), true);
-  // Declutter round 2: no row of its own for the source controls.
-  assert.equal(await page.locator('#mast #mastSrc #updateBtn').count(), 1);
-  assert.equal(await page.locator('#mast #mastSrc #menuBtn').count(), 1);
-  const order = await page.evaluate(() => { const kids = [...document.getElementById('mast').children];
-    return [kids.indexOf(document.getElementById('ssFieldBtn')), kids.indexOf(document.getElementById('mastSrc')), kids.indexOf(document.getElementById('clock'))]; });
-  assert.ok(order[0] < order[1] && order[1] < order[2], `Search, then Update and ···, then the clock: ${order}`);
+  // The sidebar's foot, after the clock: no row of its own for the source controls.
+  assert.equal(await page.locator('#mast .sd-foot #mastSrc #updateBtn').count(), 1);
+  assert.equal(await page.locator('#mast .sd-foot #mastSrc #menuBtn').count(), 1);
+  const order = await page.evaluate(() => ['ssField', 'nav', 'navRefs', 'clock', 'mastSrc'].map(id => document.getElementById(id))
+    .every((el, i, all) => i === 0 || (all[i - 1].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)));
+  assert.ok(order, 'Search, the places, the references, the clock, then Update and ···');
+  // One ···: the board's own steps aside for the hosted board's.
+  assert.equal(await page.locator('#navMore').isVisible(), false);
+  assert.equal(await page.locator('#mast [aria-haspopup]:visible').count(), 1);
   assert.equal(await page.locator('#srcStrip').isVisible(), false, 'all well: no strip row');
   assert.equal(await page.locator('#sourceRow').evaluate(el => el.getBoundingClientRect().height), 0);
-  // The menu still opens from the masthead, with its source line.
+  // The menu opens beside the sidebar: the save source first, then What's
+  // new, Preferences and Help & feedback.
   await page.locator('#menuBtn').click();
-  assert.equal(await page.locator('#srcMenu.open .menu-panel').isVisible(), true);
+  const panel = page.locator('#srcMenu.open .menu-panel');
+  assert.equal(await panel.isVisible(), true);
+  const [side, box] = await Promise.all([page.locator('#mast').boundingBox(), panel.boundingBox()]);
+  assert.ok(box.x >= side.x + side.width, `the menu ${box.x} opens beside the sidebar ${side.x + side.width}`);
+  assert.deepEqual(await panel.locator('[data-nx-item]').evaluateAll(els => els.map(el => el.dataset.nxItem)), ['news', 'prefs', 'help']);
+  assert.ok(await panel.evaluate(el => {
+    const at = sel => el.querySelector(sel);
+    return !!(at('#menuSrcLine').compareDocumentPosition(at('#folderBtn')) & Node.DOCUMENT_POSITION_FOLLOWING)
+      && !!(at('#folderBtn').compareDocumentPosition(at('[data-nx-item="news"]')) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }), 'the source, then the utilities');
+  // A utility closes the menu and opens its sheet.
+  await panel.locator('[data-nx-item="prefs"]').click();
+  assert.equal(await page.locator('#srcMenu').evaluate(el => el.classList.contains('open')), false);
+  await page.waitForFunction(() => document.body.classList.contains('px-on'));
 });
 
 test('URL destination wins over remembered page without adding a visit', async t => {
