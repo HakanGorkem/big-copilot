@@ -147,8 +147,10 @@ test('loading is prominent until data arrives, including runtime ready; remember
   const historyLength = await page.evaluate(() => history.length);
   await page.evaluate(() => fixture.complete());
   assert.equal(await hasBoard(page), true);
-  assert.equal(await page.locator('#pageSupply').isVisible(), true);
-  assert.equal(await page.locator('#supplyNav a.on > span').first().innerText(), 'Shops');
+  /* The fixture's payload is two keys, so nothing on Supply is drawn: the
+     remembered page is the one on screen, which is what this holds. */
+  assert.deepEqual(await page.evaluate(() => [page, document.getElementById('pageSupply').hidden]), ['supply', false]);
+  assert.equal(await page.evaluate(() => sub.supply), 'deliveries', 'a remembered Shops tab opens Deliveries');
   assert.equal(await page.evaluate(() => history.length), historyLength);
   assert.equal(await page.locator('#landing').count(), 0);
   assert.equal(await page.locator('#folderBtn').count(), 1);
@@ -157,7 +159,7 @@ test('loading is prominent until data arrives, including runtime ready; remember
   await page.evaluate(() => { renderAll = () => {}; });
   await messages(page);
   await page.evaluate(() => fixture.complete());
-  assert.equal(await page.locator('#pageSupply').isVisible(), true);
+  assert.deepEqual(await page.evaluate(() => [page, document.getElementById('pageSupply').hidden]), ['supply', false]);
 });
 
 test("at 390 px the board's source strip wraps a long file line instead of scrolling the page sideways", async t => {

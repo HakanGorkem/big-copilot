@@ -546,7 +546,7 @@ test("the address bar only ever trades another spelling of the open site's own a
   } finally { await page.close(); }
 });
 
-test('the portfolio and the Supply tabs name a site by a link to its page', async () => {
+test('the portfolio and the Supply views name a site by a link to its page', async () => {
   const page = await board({chains: [CHAIN], supply: {shops: [SHELF]}});
   try {
     await page.evaluate(() => { siteOpen = false; drawSite(); openChains.add('Gift Shops'); drawPortfolio(); });
@@ -558,8 +558,8 @@ test('the portfolio and the Supply tabs name a site by a link to its page', asyn
     // From the portfolio the way back is the portfolio.
     assert.equal(await page.evaluate(() => siteFrom), null);
     // Supply › Shops: the shop cell of a real row (after the tick).
-    await page.evaluate(() => { sbWhich = 'all'; reveal('secShops'); drawShopsTab(); wireAll(); });
-    const cell = page.locator('#secShops tbody tr').first().locator('td').nth(1);
+    await page.evaluate(() => { sbMode.deliveries = 'all'; reveal('secDeliveries'); drawDeliveriesView(); wireAll(); });
+    const cell = page.locator('#secDeliveries [data-sb-table="shops"] tbody tr').first().locator('td').nth(1);
     assert.equal(await cell.locator('a.ss-sl').getAttribute('href'), THERE);
     assert.equal(await cell.locator('.map-shortcut').count(), 1, 'the map button stays beside it');
     await cell.locator('a.ss-sl').click();

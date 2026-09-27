@@ -228,11 +228,11 @@ test('idle stock has one name, and a renamed kind keeps its id', () => {
 /* R8: stock a depot holds that no plan sends on, while the company's own
    sites sell or need it, is a kind of its own, and every map that routes a
    kind knows it. */
-test('Not routed is a kind, on by default, linked to the site\'s Supply tab and the depot\'s Stock', () => {
+test('Not routed is a kind, on by default, linked to Supply › Deliveries and the depot\'s Stock', () => {
   const g = run('ALERT_GROUPS').find(x => x.id === 'notrouted');
   assert.deepEqual([g.label, g.on], ['Not routed', true]);
   const links = between(source, 'const ALERT_LINKS = {', 'const SEC_PAGE =');
-  assert.match(links, /notrouted: \{sec:"secWarehouses", tab:"site"\}/);
+  assert.match(links, /notrouted: \{sec:"secDeliveries", view:"deliveries"\}/);
   const evidence = between(source, 'const ALERT_EVIDENCE = {', 'const SEV_KIND =');
   assert.match(evidence, /notrouted: \{block: "stock"\}/);
   assert.match(source, /depot: \{[^}]*notrouted: "stock"/);
@@ -241,11 +241,11 @@ test('Not routed is a kind, on by default, linked to the site\'s Supply tab and 
 /* A depot only a route from the company's own site feeds, whose busiest day
    outruns its daily top-up: a kind of its own, opening the depot's page on
    its Stock, since Before the import never lists such a depot. */
-test("Depot top-up too low is a kind, on by default, landing on the depot's own Stock", () => {
+test("Depot top-up too low is a kind, on by default, landing on Deliveries, the depot's own Stock its evidence", () => {
   const g = run('ALERT_GROUPS').find(x => x.id === 'topup');
   assert.deepEqual([g.label, g.on], ['Depot top-up too low', true]);
   const links = between(source, 'const ALERT_LINKS = {', 'const SEC_PAGE =');
-  assert.match(links, /topup: \{sec:"secDetail", site:true\}/);
+  assert.match(links, /topup: \{sec:"secDeliveries", view:"deliveries"\}/);
   const evidence = between(source, 'const ALERT_EVIDENCE = {', 'const SEV_KIND =');
   assert.match(evidence, /topup: \{block: "stock"\}/);
   assert.match(source, /depot: \{[^}]*topup: "stock"/);
@@ -254,13 +254,13 @@ test("Depot top-up too low is a kind, on by default, landing on the depot's own 
 /* A wholesale store's weekly delivery that falls short, to a shop or a
    depot: one kind for every such finding, opening the site's page on its
    shelves (a shop) or its Stock (a depot). Top-up stays a route's. */
-test('Wholesale delivery too low is a kind of its own, landing on the shelves or the depot\'s Stock', () => {
+test('Wholesale delivery too low is a kind of its own, landing on Deliveries, the shelves or the depot\'s Stock its evidence', () => {
   const g = run('ALERT_GROUPS').find(x => x.id === 'wholesale');
   assert.deepEqual([g.label, g.on], ['Wholesale delivery too low', true]);
   assert.match(g.note, /wholesale store delivers/);
   assert.match(run('ALERT_GROUPS').find(x => x.id === 'topup').note, /route from your own site/);
   const links = between(source, 'const ALERT_LINKS = {', 'const SEC_PAGE =');
-  assert.match(links, /wholesale: \{sec:"secDetail", site:true\}/);
+  assert.match(links, /wholesale: \{sec:"secDeliveries", view:"deliveries"\}/);
   const evidence = between(source, 'const ALERT_EVIDENCE = {', 'const SEV_KIND =');
   assert.match(evidence, /wholesale: \{block: "shelves"\}/);
   assert.match(source, /depot: \{[^}]*wholesale: "stock"/);
@@ -304,21 +304,26 @@ test('Today, the kinds popover and the map read the list of the sizing on screen
 /* R13: every supply kind lands on a Supply tab: the one named, or with tab
    "site" the tab of the site's own kind (a shop's Shops, a factory's
    Factories, every other site's Warehouses). */
-test('the supply kinds land on the Supply tab of their object', () => {
+test('the supply kinds land on the Supply view of their route', () => {
   const ctx = vm.createContext({});
   vm.runInContext(between(source, 'const ALERT_LINKS = {', '/* Put something at the top of the window') +
     '; this.out = JSON.stringify({ALERT_LINKS, SEC_PAGE, SEC_MOVED});', ctx);
   const got = JSON.parse(ctx.out), links = got.ALERT_LINKS;
-  const tabs = Object.fromEntries(Object.entries(links).filter(([, l]) => l.tab).map(([id, l]) => [id, l.tab]));
-  assert.deepEqual(tabs, {shortfall: 'site', order: 'site', paused: 'site',
-    outruns: 'shops', unplanned: 'shops', dead: 'site', target: 'site', notrouted: 'site',
-    feed: 'factories', staff: 'factories', unnamed: 'factories', unset: 'factories'});
+  const views = Object.fromEntries(Object.entries(links).filter(([, l]) => l.view).map(([id, l]) => [id, l.view]));
+  assert.deepEqual(views, {shortfall: 'route', order: 'imports', paused: 'imports',
+    outruns: 'deliveries', unplanned: 'deliveries', dead: 'deliveries', target: 'deliveries', notrouted: 'deliveries',
+    topup: 'deliveries', wholesale: 'deliveries',
+    feed: 'production', staff: 'production', unnamed: 'production', unset: 'production'});
   const pages = got.SEC_PAGE;
-  for (const l of Object.values(links)) if (l.tab) assert.equal(pages[l.sec][0], 'supply');
-  assert.deepEqual([...pages.secShops], ['supply', 'shops']);
-  assert.deepEqual([...pages.secFactories], ['supply', 'factories']);
+  for (const l of Object.values(links)) if (l.view) assert.equal(pages[l.sec][0], 'supply');
+  // The old sections open the view that took their place.
+  assert.deepEqual([...pages.secShops], ['supply', 'deliveries']);
+  assert.deepEqual([...pages.secWarehouses], ['supply', 'imports']);
+  assert.deepEqual([...pages.secFactories], ['supply', 'production']);
+  assert.deepEqual([...pages.secFlow], ['supply', 'flow']);
   const moved = got.SEC_MOVED;
-  assert.deepEqual([moved.secLogistics, moved.secStock, moved.secFlow], ['secWarehouses', 'secShops', 'secWarehouses']);
+  assert.deepEqual([moved.secLogistics, moved.secStock, moved.secShops, moved.secWarehouses, moved.secFactories],
+    ['secImports', 'secDeliveries', 'secDeliveries', 'secImports', 'secProduction']);
 });
 
 /* Issue #100 Change C: a finding kind is a row in several hand-kept tables

@@ -121,38 +121,45 @@ the map.
     an hour-by-hour grid comparing historical customers with capacity from the
     current roster. A picker in its header moves between sites, support sites in
     their own group, and *close* puts it away.
-- **Supply**: the logistics round, one tab per object: **Shops**, **Warehouses** and
-  **Factories**. Each tab opens on *Needs a change*, with *Everything* beside it, and the
-  list/diagram pair for how the goods move.
-  - *Change checklist*: the strip under the tabs counts the changes to type on every tab
-    ("2 of 13 typed in"), copies the ones left, and clears your ticks. Each row with a
-    change carries a tick at its head, with the figure to type in the column that holds
-    the setting, as *now → new*; each tab's badge counts what is left to type there. Open
-    **Plan imports** on Today to land on the tab with the most left. Ticks are local to this
-    browser and character, and clear when their setting or recommendation changes; they are
-    not confirmation from the game. Storage and transport limits are not modelled.
-  - *Shops*: every shelf against tomorrow morning's round: sells a day, the busiest day,
-    on hand, the pressure the busiest day puts on the round, and the daily top-up (or a
-    wholesale store's week).
-  - *Warehouses*: every depot, second-tier ones fed each morning from your own sites
-    included, one block each: what it holds, how it is fed, what it feeds, and a row per
-    item with its draw, a week's cover as a rail from today to the import (or the busiest
-    day against the morning round), the import order or top-up, and what a week uses. An
-    import line's setting is a box: see *Setting imports and top-ups* below. A factory
-    input no depot imports or tops up is listed in a *No depot* block.
-  - *Factories*: every factory, one block each: its lines with their machines and the
-    hours a day they are rostered against the hours they need, its factory inputs against
-    their daily top-ups, and its own imports; then **Staffing for factory lines** (below).
-    The sizing switch, 24/7 or Demand, sits on Warehouses and Factories.
-  - Idle rows that share a cause fold into one row, per depot on Warehouses and Factories
-    and per product and reason across shops; a click opens it. A column header sorts the
-    rows inside every block at once, figures high to low first, names A to Z; a second
-    click turns it round, and *usual order* puts the rows back. A column that holds an
-    action rather than a figure does not sort.
-  - *Diagram*: the chain drawn as a flow diagram, importers, factories, depots and shops,
-    line width for daily volume, in place of the tab's list. Click a site to go back to the
-    list on its rows. A finding on Today lands the same way: on its tab, on its row, lit,
-    with a crumb back.
+- **Supply**: the logistics round, five views by task: **Changes**, **Imports**,
+  **Deliveries**, **Production** and **Goods flow**. Shops, warehouses and factories are each
+  view's *Scope* (the whole company, every site of a kind, or one site). Each view opens on
+  *Needs a change*, with *Everything* beside it; the planning basis switch sits in each.
+  - *Changes*: every change to type, grouped Imports, Deliveries and Production, each row
+    *now → new* with a mark at its head, and each row's state: **Marked by you** (your own
+    tick, a local note, not confirmation from the game), **Applied · awaiting refresh** (the
+    game link wrote it) or **Confirmed · day N** (a later read of the game holds it). *Copy
+    remaining* copies the ones left, with a preview of the text; *Apply N import amounts*
+    writes the import figures through the game link; *Clear my marks* clears your ticks.
+    Marks are local to this browser and character, and clear when their setting or
+    recommendation changes. Storage and transport limits are not modelled.
+  - *Imports*: a card reviewing one import line, then every depot's and factory's import
+    lines. The card holds the weekly order (or Smart Delivery stock) apart from a one-time
+    catch-up bought by hand before the next delivery, the figure's box with the basis it was
+    planned for, *Why* the figure, the steps to type it in the game, *Copy*, and, with the
+    game link, *Preview in the game*. Where the figure assumes factory hours your staffing
+    does not run, the card names them, the steps include them, and Changes lists them as a
+    change of their own under Production; the game link never writes factory hours. Each
+    depot's rows show its draw, a week's cover as a rail from today to the import, the order
+    and what a week uses. A factory input no depot imports or tops up is listed under
+    *No depot*. **Calculate import amounts** on the Overview opens here.
+  - *Deliveries*: by where the goods arrive. Shops: every shelf against tomorrow morning's
+    round: sells a day, the busiest day, on hand, the pressure the busiest day puts on the
+    round, and the daily top-up (or a wholesale store's week). Warehouses fed each morning
+    from your own sites: their top-ups, wholesale, idle stock and lines no route reaches.
+    Factory inputs against their daily top-ups.
+  - *Production*: machine hours needed against staffed, then every factory, one block each:
+    its lines with their machines and the hours a day they are staffed against the hours
+    they need, and its inputs; then **Staffing for factory lines** (below).
+  - Idle rows that share a cause fold into one row, per depot and per product and reason
+    across shops; a click opens it. A column header sorts the rows inside every block at
+    once, figures high to low first, names A to Z; a second click turns it round, and
+    *usual order* puts the rows back. A column that holds an action rather than a figure
+    does not sort.
+  - *Goods flow*: the chain drawn as a flow diagram, importers, factories, depots and shops,
+    line width for daily volume. Click a site to follow it: a panel says what it holds and
+    lists the changes on its route; *Table* goes back to the view you came from. A finding
+    on the Overview lands on its view, on its row, lit, with a way back.
     On a phone or a portrait tablet (a diagram box under about 950 px) the diagram is the
     chain instead: the stages down the page in the order the goods travel, so the Import Hub
     sits between the piers and the factories. A depot's shops fold into one card from four up,
@@ -1046,7 +1053,7 @@ always states the figure it used, and by how much it misses.
 ### One word for each item at each site
 
 Every item a site holds, needs or has a plan for gets one verdict, worked out once and
-read by every view: the Supply tabs, the goods flow, the site page and the findings. The
+read by every view: Supply's views, the goods flow, the site page and the findings. The
 first of these that fits is the word:
 
 | Word | When |
@@ -1068,15 +1075,19 @@ next ten. Consumption is measured from play, not read off a label, so two figure
 1% (or 5 units) of each other are the same figure: a weekly use of 17,003 against an
 order of 17,000 is covered.
 
-**Factory sizing: 24/7 or Demand.** One switch, kept in this browser, on Supply's
-Warehouses and Factories tabs and on factory and depot pages. **24/7** (the default)
+**Planning basis: Full production or Shop demand.** One switch, on Supply's views and on
+factory and depot pages, kept for each company in this browser (a company with no choice
+of its own starts from the one this browser kept before). **Full production** (the default)
 sizes every factory line at its rated capacity, round the clock, with no margin on top:
-the set-up for running flat out. **Demand** sizes each line on what the shops down the
+the set-up for running flat out. **Shop demand** sizes each line on what the shops down the
 plan sell of its product (or what the log says left, where that is more), plus the
-margin, never past capacity. A shop open under a week has not settled, so Demand reads
+margin, never past capacity. A shop open under a week has not settled, so Shop demand reads
 its coming week off a straight line through its trading days and says the figure *may
 still be ramping*, naming the shops. Switching needs no refresh: both answers are
-already on the page.
+already on the page. An import figure you type is kept with the basis it was typed under;
+under the other basis it stays yours, with that basis's own suggestion beside it and a
+*Reset to* it. A figure kept by a board from before the basis was recorded asks for a
+review and is never written by the game link until you keep it or reset it.
 
 A shop's week is its trading-day rate over the days it traded in the last seven, spread
 over the days since it first traded, so a shop open two days a week uses two days' worth,
@@ -1149,8 +1160,8 @@ table, not a line in Needs attention. Only a real gap becomes an alert.
 
 Goods move on two clocks: the logistics manager tops every shop up to a per-item target
 each morning, and imports land once a week. So "days of stock left" is the wrong
-question, because a shelf that empties overnight is fine if it refills at dawn. The
-Supply tabs ask the questions that matter instead:
+question, because a shelf that empties overnight is fine if it refills at dawn.
+Supply's views ask the questions that matter instead:
 
 - **Shops, before the drop**: does the *busiest* day of the week outrun tomorrow morning's
   top-up? A flat average would under-provision a Saturday, so the pressure figure is the
@@ -1192,7 +1203,7 @@ Supply tabs ask the questions that matter instead:
 Depots and factories reached by a paused import are flagged separately, since those
 drain with nothing scheduled to refill them.
 
-The Factories tab turns the same log on the factories themselves:
+Supply › Production turns the same log on the factories themselves:
 
 - **Lines**: every assembly machine in every factory, the recipe it runs, and
   what that makes a day, being machines times the recipe's rated hourly output times 24,
@@ -1249,7 +1260,7 @@ reading.
 **Hours a factory line runs.** Each line shows, a cell an hour, the hours a day its
 machines are rostered (the week of its least-rostered machine, as hours a day, with the
 thinnest weekday named where it is lower: *12 (Sun 0 h)*) against the hours the
-sizing needs: 24 under 24/7; under Demand, what the shops at the end of the chain use plus
+sizing needs: 24 under Full production; under Shop demand, what the shops at the end of the chain use plus
 the margin, divided by what the machines make an hour, never past 24 (a line whose output
 nothing draws is sized at 24 there too). Too few hours over the week is **short**, a change
 to type: post factory workers for the hours it needs. More than it needs stays **covered**,
@@ -1265,7 +1276,7 @@ its machine-hours a week ÷ 50, rounded up, and one more while a shift stays ope
 security and unassigned staff do not count). The rest *could go*: *2 could go: the week
 needs 10*; too few reads *hire 2: the week needs 14*, with what the difference does to the
 wage bill a day. Machines on a recipe the board cannot name yet are rostered too (24 h
-under 24/7, their hours now under Demand), and the card says how many it includes. *Open
+under Full production, their hours now under Shop demand), and the card says how many it includes. *Open
 factory page* opens the factory on its lines.
 
 The **weekly order** column is judged against what the coming week actually takes, not
@@ -1291,12 +1302,12 @@ walked at a flat daily rate: the machines take the same on a Saturday as on a Tu
 ## Setting imports and top-ups
 
 Two numbers a logistics manager is set with, both in the *Order / top-up* and *Daily top-up*
-columns of the Supply tabs.
+columns of Supply's views.
 
-- **Weekly import orders, per depot** (Warehouses; a factory's own imports on Factories): every material the depot ships, consolidated.
+- **Weekly import orders, per depot** (Supply › Imports, a depot's and a factory's own alike): every material the depot ships, consolidated.
   *Uses / week* is what all the factories drawing on it eat in a week (from their lines,
-  in the chosen sizing: machines times recipe draw times 24 times 7 at 24/7, what the
-  shops sell of their products at Demand; a factory it feeds through another factory
+  in the chosen sizing: machines times recipe draw times 24 times 7 at Full production, what the
+  shops sell of their products at Shop demand; a factory it feeds through another factory
   counts too) plus what else leaves for other sites
   (measured from the delivery log, leaving out the days an import can have landed, when
   the log nets the arrival off what left; on a line a route from your own site feeds,
@@ -1319,7 +1330,7 @@ columns of the Supply tabs.
   asked for an import the route already brings. The table suggests imports only where an
   import contract exists or a factory line needs the material; a depot line that only
   shops draw, with no contract, is not in it. The suggestion covers the week plus the
-  margin where the shops' part is concerned (24/7 sizing adds none to the factory lines).
+  margin where the shops' part is concerned (Full production adds none to the factory lines).
   For a plain order it is that week rounded up to the ten. For Smart Delivery it names
   one contract, the one whose level holds: the last that still brings something when the
   game's delivery pass runs into an empty depot. A plain amount delivered before that

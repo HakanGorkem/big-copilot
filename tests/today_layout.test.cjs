@@ -307,7 +307,7 @@ test('at 390 px the count lines, the tool panels and a live import task share th
   } finally { await page.close(); }
 });
 
-test("an Overstaffed hours row, one per site, opens its site's page from its sentence and from its name", async () => {
+test("an Overstaffed hours row, one per site, opens its schedule from its sentence and its site's page from its name", async () => {
   const page = await today(1440);
   try {
     await page.evaluate(() => {
@@ -316,11 +316,11 @@ test("an Overstaffed hours row, one per site, opens its site's page from its sen
     });
     await page.click('[data-td-toggle="off"]');
     const row = page.locator('[data-td-rows="off"] .find').first();
-    // The sentence is the finding: the site's page, with the finding lit and the way back to Today.
+    // The sentence is the finding: its week in Staffing › Schedules, the business picked.
     await row.locator('.what').click();
-    assert.deepEqual(await page.evaluate(() => [location.hash, siteOpen, spArrived === D.minor.rows[1].id, siteFrom && siteFrom.label]),
-      ['#site/secondavenue-10', true, true, 'Needs attention']);
-    await page.evaluate(() => { siteShut(); showPage('today'); showSwitchedOff = true; drawAlerts(); });
+    assert.deepEqual(await page.evaluate(() => [location.hash, siteOpen, schedLit === D.businesses.find(b => b.name === D.minor.rows[1].site).key]),
+      ['#staffing/schedules', false, true]);
+    await page.evaluate(() => { showPage('today'); showSwitchedOff = true; drawAlerts(); });
     // The name is the site's own page, with no finding.
     await page.locator('[data-td-rows="off"] .find').first().locator('a.ss-sl').click();
     assert.deepEqual(await page.evaluate(() => [location.hash, siteOpen, spArrived]), ['#site/secondavenue-10', true, null]);

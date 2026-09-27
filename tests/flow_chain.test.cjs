@@ -47,11 +47,11 @@ async function board(t, data, width){
   await page.goto('http://board.test/');
   await page.emulateMedia({reducedMotion: 'reduce'});
   await page.evaluate(data => {
-    D = data; sbWhich = 'all'; sbViewOn = 'diagram'; sub.supply = 'shops';
+    D = data; sbWhich = 'all'; sub.supply = 'flow';
     document.body.classList.add('has-board');
     document.querySelectorAll('.page').forEach(el => { el.hidden = el.id !== 'pageSupply'; });
     document.querySelectorAll('#pageSupply section').forEach(el => { el.hidden = false; el.classList.add('measured'); });
-    drawSupplyStrip(); drawShopsTab(); drawWarehousesTab(); drawFactoriesTab(); wireAll();
+    drawSupplyStrip(); drawFlowView(); wireAll();
     drawFlow();
   }, data);
   return page;
@@ -214,8 +214,8 @@ test('a tap gives the rows and the site page; a vanished site drops the focus', 
   assert.equal((await rows.textContent()).trim(), `Its ${n} rows`);
   assert.equal(await page.locator('#flowChain [data-fc-site]').count(), 1);
   await rows.click();
-  assert.equal(await page.evaluate(() => [sbViewMode(), sub.supply].join()), 'list,factories');
-  assert.equal(await page.locator('#secFactories .sb-obj.lit').count(), 1);
+  assert.equal(await page.evaluate(() => sub.supply), 'production');
+  assert.equal(await page.locator('#secProduction .sb-obj.lit').count(), 1);
 
   const again = await board(t, fixture(), 390);
   await again.locator('#flowChain .sb-fc-band [data-fc-id="dist#6"]').click();
@@ -418,7 +418,7 @@ test('a site followed on the chain does not dim the picture the box grows into',
 
 test('a live refresh keeps the site followed and the open group, and lays the pipes again', async t => {
   const page = await board(t, depotWith(4), 390);
-  await page.evaluate(() => { showPage('supply'); sbViewOn = 'diagram'; showSub('supply', 'shops'); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'flow'); });
   await page.locator('#flowChain [data-fc-group="g:dist#6"]').click();
   /* A live refresh: fresh data, and the Supply rows of PAGE_DRAWS run the
      calm way renderCalm() runs them (the fixture is Supply's payload only, so
@@ -428,7 +428,7 @@ test('a live refresh keeps the site followed and the open group, and lays the pi
     document.querySelector('#flowChain .sb-fc-chain').dataset.old = '1';
     D = JSON.parse(JSON.stringify(D));
     rvCalm = true;
-    try{ PAGE_DRAWS.filter(r => r[0] && r[0].split(' ').includes('supply/shops')).forEach(r => r[1]()); }
+    try{ PAGE_DRAWS.filter(r => r[0] && r[0].split(' ').includes('supply/flow')).forEach(r => r[1]()); }
     finally{ rvCalm = false; }
     return !document.querySelector('#flowChain [data-old]');
   });

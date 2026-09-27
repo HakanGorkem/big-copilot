@@ -847,6 +847,12 @@ test('a depot and a factory say each line\'s word as Checks does', async () => {
   } finally { await page.close(); }
 });
 
+/* Supply › Deliveries is where a top-up or wholesale finding's own link goes
+   (tests/alert_kinds.test.cjs); a business's page still lands on the row for
+   a kind whose link targets the site, which is what these take the kinds
+   through (ALERT_LANDS_ON_ROW). */
+const onTheSite = a => { ALERT_LINKS[a.group] = {sec: 'secDetail', site: true}; showPage('today'); goToAlert(a); };
+
 test('a wholesale finding opens its shop on the shelf row, lit, and a depot on its Stock', async () => {
   const shop = {lines: [
     {item: 'Gift', slug: 'gift', units: 40, rate: 30, price: 30, revenue: 900, soldPerDay: 30},
@@ -855,7 +861,7 @@ test('a wholesale finding opens its shop on the shelf row, lit, and a depot on i
   const page = await site({shop, alerts: [a], supply: {facts: {0: {energy: sf('short', 'order',
     {role: 'shelf', cad: 'weekly', use: 70, need: 81, have: 50, setTo: 90, wholesale: true})}}}});
   try {
-    await page.evaluate(a => { showPage('today'); goToAlert(a); }, a);
+    await page.evaluate(`(${onTheSite})(${JSON.stringify(a)})`);
     const landing = () => {
       const row = [...document.querySelectorAll('#sp-shelves tbody tr')].find(tr => /Energy Drink/.test(tr.textContent));
       const r = row ? row.getBoundingClientRect() : null;
@@ -890,7 +896,7 @@ for (const width of [1440, 390]) {
       const page = await site({shop: DEPOT, alerts: [a], viewport: {width, height: 900},
         supply: {day: 29, imports: [importRow()], facts: {0: {soda: sf('covered'), [slug]: fact}}}});
       try {
-        await page.evaluate(a => { showPage('today'); goToAlert(a); }, a);
+        await page.evaluate(`(${onTheSite})(${JSON.stringify(a)})`);
         const landing = () => {
           const lit = [...document.querySelectorAll('#sp-stock tbody tr.sp-hit')];
           const r = lit[0] ? lit[0].getBoundingClientRect() : null;
@@ -1779,14 +1785,17 @@ test('a factory page carries the sizing switch, and its inputs follow it', async
   facts[0].gb.dem = {st: 'covered', why: null, lvl: 'ok', use: 7000, need: 8050, setTo: null, ramp: [1]};
   const page = await site({shop: FACTORY, supply: {day: 29, factories: factories(), facts}});
   try {
-    assert.equal(await page.locator('#sp-inputs #spSizing a.on').textContent(), '24/7');
+    assert.equal(await page.locator('#sp-inputs #spSizing a.on').textContent(), 'Full production');
     assert.match(await page.locator('#sp-inputs tbody tr').first().innerText(), /9,600/);
     await page.evaluate(() => { renderAll = () => drawSite(); });
-    await page.locator('#spSizing').getByText('Demand').click();
+    await page.locator('#spSizing').getByText('Shop demand').click();
     const row = await page.locator('#sp-inputs tbody tr').first();
     assert.match(await row.innerText(), /7,000\s*may still be ramping/);
     assert.equal(await row.locator('.sp-up').count(), 0, 'nothing to raise under Demand');
     assert.match(await page.locator('#sp-inputs .sz-ramp').getAttribute('data-tip'), /HART\. Other/);
-    assert.equal(await page.evaluate(() => localStorage.getItem('ba_dash_sizing')), 'dem');
+    // Kept for this company only (docs/ui-progress-postconditions.md).
+    assert.deepEqual(await page.evaluate(() => [sizing, szRead(),
+      D.meta.character ? localStorage.getItem('ba_dash_sizing:' + D.meta.character) : 'dem', localStorage.getItem('ba_dash_sizing')]),
+      ['dem', 'dem', 'dem', null]);
   } finally { await page.close(); }
 });
