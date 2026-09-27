@@ -2,8 +2,8 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script>window.LEDGER_BUILD = "51a17e3c99";</script>
-<link rel="stylesheet" href="community.css?v=51a17e3c99">
+<script>window.LEDGER_BUILD = "3564d0fe3d";</script>
+<link rel="stylesheet" href="community.css?v=3564d0fe3d">
 <title>Big Copilot</title>
 <script>
 /* The remembered theme, before anything paints. It has to be an inline, blocking
@@ -15,7 +15,7 @@
 try{ var t = localStorage.getItem("ba_dash_theme"); if(t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); }catch(e){}
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d100f'/%3E%3Ccircle cx='16' cy='16' r='8' fill='%2343c07a'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="fonts/fonts.css?v=51a17e3c99">
+<link rel="stylesheet" href="fonts/fonts.css?v=3564d0fe3d">
 <style>
 /* The map artwork keeps its approved dark palette in either dashboard theme. */
 .map-shortcut{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-left:5px;padding:4px;border:1px solid var(--rule);border-radius:4px;background:var(--surface);color:var(--ink-2);cursor:pointer;line-height:1;flex:none}
@@ -1471,6 +1471,8 @@ html:has(dialog:modal){overflow:hidden}
 .gw-line:hover .gw-lvl .add{animation:gw-grow .6s cubic-bezier(.2,.7,.2,1)}
 @keyframes gw-grow{from{transform:scaleX(0)}}
 .gw-imps{display:flex;flex-wrap:wrap;gap:6px}
+.gw-basis{margin:2px 0 0;font-size:12px;color:var(--ink-3)}
+.gw-basis b{font-weight:600;color:var(--ink-2)}
 .gw-imp{display:inline-flex;align-items:center;gap:7px;min-height:26px;padding:2px 10px 2px 4px;box-sizing:border-box;border-radius:13px;border:1px solid var(--rule-soft);background:var(--surface);font-size:12px;color:var(--ink);max-width:100%}
 .gw-imp i{width:18px;height:18px;border-radius:50%;background:var(--raised);display:grid;place-items:center;font:600 10px/1 "IBM Plex Mono",monospace;font-style:normal;color:var(--ink-2);flex:none}
 .gw-imp small{font:500 10.5px/1 "IBM Plex Mono",monospace;color:var(--ink-3)}
@@ -5328,7 +5330,7 @@ document.addEventListener('click', event => {
   <div class="map-dialog-head"><h2 id="locationMapTitle">Location map</h2><button type="button" id="closeLocationMap" class="ibtn" aria-label="Close map" data-tt-aria-label="nav.dlg.closemap" autofocus><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
   <div id="cityMapOverlay"></div>
 </dialog>
-<script>window.LEDGER_RELEASE = {"version":"51a17e3c99","latest":{"pr":121,"date":"2026-09-25","title":"Hire and place staff for every site at once","summary":"Company › Payroll is now Staff. It adds up what each shop, office and factory still needs by role, moves spare people between sites first, and picks the most skilled of your headhunters' candidates, with filters for the demands you want to avoid. One confirm hires them, puts them at their sites and writes their hours, through the Big Copilot Link mod 0.3.0. Hires cannot be undone."}};</script>
+<script>window.LEDGER_RELEASE = {"version":"3564d0fe3d","latest":{"pr":121,"date":"2026-09-25","title":"Hire and place staff for every site at once","summary":"Company › Payroll is now Staff. It adds up what each shop, office and factory still needs by role, moves spare people between sites first, and picks the most skilled of your headhunters' candidates, with filters for the demands you want to avoid. One confirm hires them, puts them at their sites and writes their hours, through the Big Copilot Link mod 0.3.0. Hires cannot be undone."}};</script>
 <script>/* Embedded in the browser shell so the loaded release is the baseline even
  * when the first version check happens after another deployment. */
 (() => {
@@ -5416,8 +5418,8 @@ document.addEventListener('click', event => {
   });
 })();
 </script>
-<script src="app.js?v=51a17e3c99"></script>
-<script src="community.js?v=51a17e3c99"></script>
+<script src="app.js?v=3564d0fe3d"></script>
+<script src="community.js?v=3564d0fe3d"></script>
 
 <script>
 
@@ -5788,8 +5790,11 @@ function localiseNames(raw){
    company's own (szAdopt()). */
 var boardSeq = 0;
 function takeData(raw){
+  const old = D;
   D = localiseNames(raw);
   boardSeq++;
+  if(typeof sbBoard === "function" && old && old !== raw) sbBoard(old);
+  if(typeof pgBoard === "function") pgBoard();
   if(typeof szAdopt === "function") szAdopt();
   return D;
 }
@@ -6423,10 +6428,8 @@ function drawWeekday(series, tools){
 }
 
 /* --- the chain as a picture ------------------------------------------- */
-const FLOW_COLS = () => [tt("sb.flow.col.importers", "Importers"), tt("sb.flow.col.factories", "Factories"),
-  tt("sb.flow.col.depots", "Depots"), tt("sb.flow.col.shops", "Shops")];
-/* The artboard's stage: 180 × 44 boxes in four columns across 1128 units,
-   drawn 1:1 inside the chart box. */
+/* The artboard's stage: 180 × 44 boxes in a column per stage (four for a
+   plain chain, across 1128 units), drawn 1:1 inside the chart box. */
 const NODE_W = 180, NODE_H = 44, ROW_GAP = 16, COL_GAP = 136;
 
 /* The map is meant to be compact: four columns, a node 180 by 44. A chain of
@@ -6435,40 +6438,50 @@ const NODE_W = 180, NODE_H = 44, ROW_GAP = 16, COL_GAP = 136;
    in the gaps of the first, so a pipe to a back-row shop runs straight
    through a gap instead of behind a box. */
 const SHOP_GAP = 8, SUB_GAP = 14, MAP_MAX_H = 900;
+/* The columns are the chain's stages in the order the goods travel
+   (flowStages(), as the narrow chain has them): a depot an importer fills
+   stands before the factory it feeds, a depot a factory fills after it. The
+   shops are the last column. Each column is headed by its kind. */
 function flowLayout(){
   const g = D.supply.graph;
-  const columns = [[], [], [], []];
-  g.nodes.forEach(n => columns[n.col].push(n));
-  // Keep each column near the sites it feeds, so the lines stay untangled.
-  columns[3].sort((a, b) => b.stock - a.stock);
-  const shops = columns[3].length;
+  const stages = flowStages(g);
+  const kinds = [], columns = [];
+  stages.bands.filter(b => b.kind !== "shop").forEach(b => {
+    kinds.push(b.kind);
+    columns.push(b.cards.filter(c => c.node).map(c => c.node));
+  });
+  const S = columns.length;
+  kinds.push("shop");
+  // The shops, the busiest first.
+  columns.push(g.nodes.filter(n => n.kind === "shop").sort((a, b) => b.stock - a.stock));
+  const shops = columns[S].length;
   const split = shops * (NODE_H + SHOP_GAP) + 34 > MAP_MAX_H;
   /* Two sub-columns cost width; the columns close up a little to pay for it,
      and the svg scales to its box regardless. */
   const colGap = split ? 90 : COL_GAP;
   const pitch = split ? (NODE_H + 12) / 2 : NODE_H + SHOP_GAP;
-  const spanOf = (ci, n) => ci === 3
+  const spanOf = (ci, n) => ci === S
     ? (split ? (n - 1) * pitch + NODE_H : n * pitch - SHOP_GAP)
     : n * (NODE_H + ROW_GAP) - ROW_GAP;
   const height = Math.max(...columns.map((c, ci) => spanOf(ci, c.length)), 1) + 34 + 8;
-  const width = 4 * NODE_W + 3 * colGap + (split ? NODE_W + SUB_GAP : 0);
-  const colX = [0, 1, 2, 3].map(ci => ci * (NODE_W + colGap));
+  const width = (S + 1) * NODE_W + S * colGap + (split ? NODE_W + SUB_GAP : 0);
+  const colX = columns.map((c, ci) => ci * (NODE_W + colGap));
   const at = {};
   columns.forEach((col, ci) => {
     const top = (height - 34 - spanOf(ci, col.length)) / 2 + 34;
     col.forEach((n, ri) => {
-      const back = split && ci === 3 && ri % 2 === 1;
+      const back = split && ci === S && ri % 2 === 1;
       at[n.id] = {
         x: colX[ci] + (back ? NODE_W + SUB_GAP : 0),
-        y: top + ri * (ci === 3 ? pitch : NODE_H + ROW_GAP),
+        y: top + ri * (ci === S ? pitch : NODE_H + ROW_GAP),
         /* Where a pipe to a back-row shop straightens out: just before the
            front row, so its last stretch is a level run through the gap. */
-        corridor: back ? colX[3] - 10 : null,
+        corridor: back ? colX[S] - 10 : null,
         node: n,
       };
     });
   });
-  return {at, width, height, columns, colX};
+  return {at, width, height, columns, colX, heads: kinds.map(FLOW_BAND)};
 }
 
 function drawFlow(){
@@ -6500,11 +6513,11 @@ function drawFlow(){
     return;
   }
   if(chain) chain.innerHTML = "";
-  const {at, width, height, colX} = flowLayout();
+  const {at, width, height, colX, heads: labels} = flowLayout();
   const heaviest = Math.max(...g.links.map(l => l.perDay), 1);
   const named = id => (g.nodes.find(n => n.id === id) || {}).name || id;
-  const heads = FLOW_COLS().map((label, i) =>
-    `<text class="col" x="${colX[i]}" y="22">${label.toUpperCase()}</text>`);
+  const heads = labels.map((label, i) =>
+    `<text class="col" x="${colX[i]}" y="22">${spEsc(label.toUpperCase())}</text>`);
 
   /* One pipe per link, with its cargo riding the same path while the pipe is
      hovered. Width is volume on a square-root scale, so the heaviest pipe is
@@ -12367,8 +12380,13 @@ function buildOrderChecklist(importRows, looseRows, sites, shops, imports, busin
     /* The thinnest day, as Python names it ("Mon"), short in the UI language. */
     const day = r.thinDay ? sbDayShort(WEEKDAY_NAMES.find(d => d.slice(0, 3) === r.thinDay.day) || r.thinDay.day) : null;
     const item = r.item, n = r.need, m = r.machines, had = now ?? 0, h = r.thinDay ? r.thinDay.hours : null;
+    /* Each machine's own hours where the line says them ("12 h and 0 h"),
+       unless a thin weekday is the thing to name. */
+    const each = Array.isArray(r.each) && r.each.length && typeof sbHoursWords === "function" ? sbHoursWords(r.each) : null;
     add("Factory run hours", r.s, r, now, r.need, sbCkJoin([r.machines > 1
-      ? (day ? tt("sb.ck.staff.each.thin", {one: "Staff {item} for {n} hour a day, on each of its {m} machines; the schedule has them {now} ({day} {h} h).",
+      ? (!day && each ? tt("sb.ck.staff.each.now", {one: "Staff {item} for {n} hour a day, on each of its {m} machines; the schedule has them at {now} a day.",
+            other: "Staff {item} for {n} hours a day, on each of its {m} machines; the schedule has them at {now} a day."}, {item, n, m, now: each})
+        : day ? tt("sb.ck.staff.each.thin", {one: "Staff {item} for {n} hour a day, on each of its {m} machines; the schedule has them {now} ({day} {h} h).",
             other: "Staff {item} for {n} hours a day, on each of its {m} machines; the schedule has them {now} ({day} {h} h)."}, {item, n, m, now: had, day, h})
           : tt("sb.ck.staff.each", {one: "Staff {item} for {n} hour a day, on each of its {m} machines; the schedule has them {now}.",
             other: "Staff {item} for {n} hours a day, on each of its {m} machines; the schedule has them {now}."}, {item, n, m, now: had}))
@@ -12389,16 +12407,20 @@ function buildOrderChecklist(importRows, looseRows, sites, shops, imports, busin
      a row of its own, marked `dep`. The import's row names them too. */
   deps.forEach(dep => {
     const for_ = {s: dep.for.s, slug: dep.for.slug, item: dep.for.item};
-    let row = rows.find(x => x.kind === "Factory run hours" && x.site === dep.s && x.slug === dep.slug && (x.line === undefined || x.line === dep.rid));
+    /* The line's own hours row, where it asks for the same hours; a figure
+       planned on the other basis asks for its own. */
+    let row = rows.find(x => x.kind === "Factory run hours" && x.site === dep.s && x.slug === dep.slug && (x.line === undefined || x.line === dep.rid)
+      && x.proposed === dep.need);
     if(!row){
       const had = dep.now, n = dep.need, m = dep.machines, item = dep.item, material = dep.material;
-      const depot = address(dep.depot);
+      const depot = address(dep.depot), now = typeof sbHoursWords === "function" && dep.each ? sbHoursWords(dep.each) : `${had}`;
       row = add("Factory run hours", dep.s, {item, slug: dep.slug}, had, n, sbCkJoin([m > 1
-        ? tt("sb.ck.dep.each", {one: "Staff {item} for {n} hour a day on each of its {m} machines; the schedule has them {now}.",
-            other: "Staff {item} for {n} hours a day on each of its {m} machines; the schedule has them {now}."}, {item, n, m, now: had})
-        : tt("sb.ck.dep.one", {one: "Staff {item} for {n} hour a day; the schedule has it {now}.",
-            other: "Staff {item} for {n} hours a day; the schedule has it {now}."}, {item, n, now: had}),
-        tt("sb.ck.dep.for", "The {material} import at {depot} is planned on these hours.", {material, depot})]), null, "hours");
+        ? tt("sb.ck.dep.each.now", {one: "Staff {item} for {n} hour a day on each of its {m} machines; the schedule has them at {now}.",
+            other: "Staff {item} for {n} hours a day on each of its {m} machines; the schedule has them at {now}."}, {item, n, m, now})
+        : tt("sb.ck.dep.one.now", {one: "Staff {item} for {n} hour a day; the schedule has it at {now}.",
+            other: "Staff {item} for {n} hours a day; the schedule has it at {now}."}, {item, n, now}),
+        tt("sb.ck.dep.for", "The {material} import at {depot} is planned on these hours.", {material, depot}),
+        dep.basis ? tt("sb.ck.basis", "Planned for {basis}.", {basis: szNameLow(dep.basis)}) : ""]), null, "hours");
       if(dep.rid !== undefined){ row.line = dep.rid; row.key = JSON.stringify(JSON.parse(row.key).concat([dep.rid])); row.legacyKey = row.key; }
       row.dep = true;
     }
@@ -12440,6 +12462,10 @@ function orderChecklistText(rows, title, mode = "cap"){
     sbCkJoin([mode === "dem" ? tt("sb.ck.copy.shop", "Planned for shop demand: factory quantities and hours are sized for what the shops at the end of each chain use.")
       : tt("sb.ck.copy.full", "Planned for full production: factory quantities and hours assume the lines run round the clock at their rated output."),
       tt("sb.ck.copy.unchecked", "Storage and transport capacity are not checked.")])];
+  /* A figure of the player's typed under the other basis keeps it, and so do
+     the factory hours it assumes: said once, and on each such line. */
+  if(rows.some(r => r.kind === "Weekly imports" && (r.basis === "cap" || r.basis === "dem") && r.basis !== mode))
+    out.push(tt("sb.ck.copy.mixed", "Lines that name another basis keep the plan they were set for, factory hours included."));
   let group = null;
   rows.forEach(r => {
     if(r.group !== group){ group = r.group; out.push("", group); }
@@ -12566,21 +12592,31 @@ const PG_KEY = "ba_progress_v1:";
 const PG_KEEP_DAYS = 14;
 const pgMemo = new Map();
 const pgWho = () => (typeof D !== "undefined" && D && D.meta && D.meta.character) || "";
+/* The company's boards are counted in its store (`n`), so "a board after
+   the write" holds across a reload; `PG_LOAD` names this page load. */
+const PG_LOAD = `${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`;
 function pgStore(){
   const who = pgWho();
   if(!pgMemo.has(who)){
-    let recs = {};
+    let recs = {}, n = 0;
     if(who) try{
       const saved = JSON.parse(localStorage.getItem(PG_KEY + who));
-      if(saved && saved.v === 1 && saved.recs && typeof saved.recs === "object") recs = saved.recs;
+      if(saved && saved.v === 1 && saved.recs && typeof saved.recs === "object"){ recs = saved.recs; n = Number(saved.n) || 0; }
     }catch(e){}
-    pgMemo.set(who, recs);
+    pgMemo.set(who, {recs, n});
   }
-  return {who, recs: pgMemo.get(who)};
+  const m = pgMemo.get(who);
+  return {who, recs: m.recs, memo: m};
 }
 function pgSave(){
-  const {who, recs} = pgStore();
-  if(who) try{ localStorage.setItem(PG_KEY + who, JSON.stringify({v: 1, recs})); }catch(e){}
+  const {who, recs, memo} = pgStore();
+  if(who) try{ localStorage.setItem(PG_KEY + who, JSON.stringify({v: 1, n: memo.n, recs})); }catch(e){}
+}
+/* A board taken in for this company (takeData()): one more on its count. */
+function pgBoard(){
+  const {recs, memo} = pgStore();
+  memo.n++;
+  if(Object.keys(recs).length) pgSave();
 }
 /* The game's clock as minutes: the link's, where it reads one, else the board's. */
 const pgMinutes = c => c && Number.isFinite(Number(c.day)) ? (Number(c.day) * 24 + (Number(c.hour) || 0)) * 60 + (Number(c.minute) || 0) : null;
@@ -12593,7 +12629,8 @@ function pgClockNow(){
    and the rows it answers; it is Applied until a later board judges it. */
 function pgRecord(rec){
   const {recs} = pgStore();
-  recs[rec.id] = Object.assign({}, rec, {state: "applied", at: Date.now(), seq: boardSeq, clock: pgClockNow()});
+  const {memo} = pgStore();
+  recs[rec.id] = Object.assign({}, rec, {state: "applied", at: Date.now(), seq: memo.n, load: PG_LOAD, clock: pgClockNow()});
   pgSave();
   if(typeof sbStamp !== "undefined") sbStamp++;
 }
@@ -12644,20 +12681,22 @@ function pgPeopleSites(){
   return at;
 }
 /* Every Applied record is judged once on each board built after its write:
-   the board counter and the game's clock must both be later. A record stays
-   PG_KEEP_DAYS game days, then goes; a judged one keeps what it saw. */
+   the company's board count must be past the write's and the game's clock not
+   earlier. After a reload the clock must have moved on too: a save file read
+   again at the write's own minute may hold the bytes from before it. A record
+   stays PG_KEEP_DAYS game days, then goes; a judged one keeps what it saw. */
 let pgJudged = 0;
 function pgEvaluate(){
   if(!hasData() || pgJudged === boardSeq) return;
   pgJudged = boardSeq;
-  const {recs} = pgStore();
+  const {recs, memo} = pgStore();
   const now = pgMinutes(D.meta);
   let touched = false;
   Object.entries(recs).forEach(([id, rec]) => {
     const made = pgMinutes(rec.clock);
     if(now !== null && made !== null && now - made > PG_KEEP_DAYS * 1440){ delete recs[id]; touched = true; return; }
-    if(!["applied", "partly", "unseen"].includes(rec.state) || !(boardSeq > rec.seq)) return;
-    if(now !== null && made !== null && now < made) return;
+    if(!["applied", "partly", "unseen"].includes(rec.state) || !(memo.n > rec.seq)) return;
+    if(now !== null && made !== null && (now < made || (now === made && rec.load !== PG_LOAD))) return;
     let v = null;
     try{ v = PG_CHECK[rec.family] ? PG_CHECK[rec.family](rec) : null; }catch(e){ v = null; }
     if(!v) return;
@@ -12781,7 +12820,9 @@ function pgStateAt(siteKey, slug){
   const order = ["confirmed", "applied", "marked"];
   let best = null;
   rows.forEach(r => { const st = pgState(d, r); if(order.includes(st) && (best === null || order.indexOf(st) < order.indexOf(best))) best = st; });
-  if(!best){
+  /* A record with no row of its own speaks only where the line has no open
+     change: a new proposal (or its catch-up) is not the old write's. */
+  if(!best && !rows.length){
     const rec = Object.values(pgStore().recs).find(x => x.family === "imports" && x.target.depot === siteKey && x.target.slug === slug);
     if(rec) best = rec.state === "confirmed" ? "confirmed" : rec.state === "changed" ? null : "applied";
   }
@@ -12836,25 +12877,59 @@ function sbTabOf(s){
   if(((D.supply.factories || {}).sites || []).some(f => f.s === s)) return "factories";
   return "warehouses";
 }
+/* A view's scope as this board reads it: one site no longer in the
+   company (sold, or another company's board) is the whole company. */
+function sbScopeOf(view){
+  const sc = sbScope[view] || "all";
+  if(!sc.startsWith("site:")) return sc;
+  return hasData() && (D.businesses || []).some(b => b.key === sc.slice(5)) ? sc : "all";
+}
 /* Whether a view's scope takes a site in. */
 function sbInScope(view, s){
-  const sc = sbScope[view] || "all";
+  const sc = sbScopeOf(view);
   if(sc === "all") return true;
   if(s === null || s === undefined) return sc === "warehouses";
   if(sc.startsWith("site:")) return (D.businesses[s] || {}).key === sc.slice(5);
   return sbTabOf(s) === sc;
 }
-/* The state of the views as the history entry keeps it. */
-const sbSnap = () => ({scope: {...sbScope}, mode: {...sbMode}, sel: sbSel ? {...sbSel} : null,
-  arrive: sbArrive ? {...sbArrive} : null, table: sbTableView, pick: typeof flowPickId !== "undefined" ? flowPickId : null});
+/* The state of the views as the history entry keeps it. A site is kept by
+   its key, never by its place in the company's list, and read back against
+   the board on screen: a site gone is no site. */
+const sbKeyOf = s => s !== null && s !== undefined && hasData() ? ((D.businesses || [])[s] || {}).key || null : null;
+const sbIndexOf = key => { const s = key && hasData() ? (D.businesses || []).findIndex(b => b.key === key) : -1; return s < 0 ? null : s; };
+const sbSnap = () => ({who: hasData() ? D.meta.character || "" : "", scope: {...sbScope}, mode: {...sbMode},
+  sel: sbSel ? {key: sbKeyOf(sbSel.s), slug: sbSel.slug} : null,
+  arrive: sbArrive ? {view: sbArrive.view, key: sbKeyOf(sbArrive.s), slug: sbArrive.slug, crumb: sbArrive.crumb} : null,
+  table: sbTableView, pick: typeof flowPickId !== "undefined" ? flowPickId : null});
 function sbRestore(x){
   if(!x || typeof x !== "object") return;
+  /* Another company's entry keeps nothing of its own here. */
+  if(typeof x.who === "string" && hasData() && x.who !== (D.meta.character || "")){ sbForget(); return; }
   if(x.scope) Object.keys(sbScope).forEach(k => { if(typeof x.scope[k] === "string") sbScope[k] = x.scope[k]; });
   if(x.mode) Object.keys(sbMode).forEach(k => { if(x.mode[k] === "all" || x.mode[k] === "changes") sbMode[k] = x.mode[k]; });
-  sbSel = x.sel && typeof x.sel === "object" ? x.sel : null;
-  sbArrive = x.arrive && typeof x.arrive === "object" ? x.arrive : null;
+  const sel = x.sel && typeof x.sel === "object" && typeof x.sel.key === "string" ? sbIndexOf(x.sel.key) : null;
+  sbSel = sel !== null ? {s: sel, slug: x.sel.slug ?? null} : null;
+  const a = x.arrive && typeof x.arrive === "object" ? x.arrive : null;
+  const at = a && typeof a.key === "string" ? sbIndexOf(a.key) : null;
+  sbArrive = a && (at !== null || a.key === null) ? {view: a.view, s: at, slug: a.slug ?? null, crumb: a.crumb || ""} : null;
   if(SB_VIEWS.includes(x.table)) sbTableView = x.table;
   if(typeof flowPickId !== "undefined") flowPickId = typeof x.pick === "string" ? x.pick : null;
+}
+/* Every view back to its first state: another company's board. */
+function sbForget(){
+  Object.keys(sbScope).forEach(k => { sbScope[k] = "all"; });
+  sbSel = null; sbSelOff = false; sbArrive = null;
+  if(typeof flowPickId !== "undefined") flowPickId = null;
+}
+/* A new board (takeData()): another company's forgets the views' state; the
+   same company's keeps the reviewed line and the landing on their sites, by
+   key, wherever the sites now stand in the list. */
+function sbBoard(old){
+  const was = old && old.meta ? old.meta.character || "" : null;
+  if(was !== null && was !== (D.meta && D.meta.character || "")){ sbForget(); return; }
+  const move = s => { const key = s !== null && s !== undefined && old ? ((old.businesses || [])[s] || {}).key : null; return key ? sbIndexOf(key) : null; };
+  if(sbSel && sbSel.s !== null && sbSel.s !== undefined){ const s = move(sbSel.s); sbSel = s === null ? null : {...sbSel, s}; }
+  if(sbArrive && sbArrive.s !== null && sbArrive.s !== undefined){ const s = move(sbArrive.s); sbArrive = s === null ? null : {...sbArrive, s}; }
 }
 /* The entry on screen keeps what the reader changed here. */
 function sbKeep(){
@@ -13157,7 +13232,7 @@ function supplyChecklistRows(){
   const wholesaleRows = factRows(fc => !!fc.wholesale);
   /* The hours each factory line should run, under the sizing on screen. */
   const lines = f.sites.flatMap(site => site.lines.map(l => ({s: site.s, item: l.item, slug: l.slug, rid: l.rid, fact: sbLineFact(l),
-    hoursNow: l.hoursNow, thinDay: l.thinDay || null, need: (l.needHours || {})[sizing], machines: l.machines, sizedFor})));
+    hoursNow: l.hoursNow, each: sbMachineHours(l), thinDay: l.thinDay || null, need: (l.needHours || {})[sizing], machines: l.machines, sizedFor})));
   /* The factory hours each proposed import figure assumes (sbDeps()). */
   importRows.forEach(x => x.rows.forEach(r => { r.deps = r.changed && Number.isFinite(r.value) ? sbDeps(f, r) : []; }));
   const deps = importRows.flatMap(x => x.rows.flatMap(r => r.deps.map(dep => ({...dep, for: r}))));
@@ -13172,14 +13247,31 @@ function szFactFor(s, slug, mode){
   if(!fact) return null;
   return mode === "dem" && fact.dem ? {...fact, ...fact.dem} : fact;
 }
+/* Each machine's hours a day now, in the line's machine order: the weeks
+   the payload names (`gaps`, every machine under the full week), the rest
+   round the clock. An older payload without them reads `hoursNow`, its
+   least-staffed machine's, for every machine. */
+function sbMachineHours(l){
+  const m = l.machines || 0;
+  const slots = Array.isArray(l.slots) && l.slots.length === m ? l.slots : null;
+  if(!slots || !Array.isArray(l.gaps)) return Array.from({length: m}, () => Number.isFinite(l.hoursNow) ? l.hoursNow : 0);
+  return slots.map(slot => { const g = l.gaps.find(x => x && x.slot === slot); return Math.round((g ? g.hours : 168) / 7 * 10) / 10; });
+}
+/* The same hours in words: "12 h" where every machine has them, else each
+   machine's in order ("12 h and 0 h"). */
+const sbHoursWords = each => each.length && each.every(h => h === each[0])
+  ? tt("sb.dep.h", "{h} h", {h: num(each[0])}) : sbAnd(each.map(h => tt("sb.dep.h", "{h} h", {h: num(h)})));
 /* The factory hours an import figure assumes (H2 of the redesign): every line
-   that eats this depot's material and is planned, on the basis on screen, to
-   run other hours a day than it is staffed for now. `perHour` is what the
-   line's machines eat of the material in an hour, from the recipe; with no
-   recipe it is null and the words say it without a figure. The figure itself
-   is Python's; nothing here sizes anything. */
+   that eats this depot's material and is planned, on the figure's own basis
+   (the player's figure keeps the one it was typed under), to run other hours
+   a day than its machines are staffed for now. `each` is every machine's
+   hours now and `week` the line's staffed machine-hours a week; `perHour`
+   what one machine eats of the material in an hour, from the recipe (null
+   without one, and the words say it without a figure). The figure itself is
+   Python's; nothing here sizes anything. */
 function sbDeps(f, r){
   const out = [];
+  const basis = r.basis === "cap" || r.basis === "dem" ? r.basis : sizing;
   const recipes = {};
   ((D.plan || {}).recipes || []).forEach(x => { recipes[x.slug] = x; });
   const aliases = (D.supply.factories || {}).aliases || {};
@@ -13188,12 +13280,13 @@ function sbDeps(f, r){
     const own = n.factoryImportSite ?? (n.directImport ? site.s : null);
     if(n.from !== r.s && own !== r.s) return;
     site.lines.filter(l => (n.lineSlugs || []).includes(l.slug)).forEach(l => {
-      const need = (l.needHours || {})[sizing], now = l.hoursNow;
-      if(!Number.isFinite(need) || !Number.isFinite(now) || need === now) return;
+      const need = (l.needHours || {})[basis], each = sbMachineHours(l);
+      if(!Number.isFinite(need) || !each.length || each.every(h => h === need)) return;
       if(out.some(x => x.s === site.s && x.rid === l.rid && x.slug === l.slug)) return;
       const ing = ((recipes[l.slug] || {}).ingredients || []).find(i => (aliases[i.slug] || i.slug) === r.slug);
-      out.push({s: site.s, item: l.item, slug: l.slug, rid: l.rid, machines: l.machines, now, need,
-                thinDay: l.thinDay || null, perHour: ing ? ing.per * l.machines : null, material: r.item, depot: r.s});
+      const week = Number.isFinite(l.hoursWeek) && Array.isArray(l.gaps) ? l.hoursWeek : Math.round(each.reduce((a, h) => a + h, 0) * 7);
+      out.push({s: site.s, item: l.item, slug: l.slug, rid: l.rid, machines: l.machines, now: l.hoursNow, each, week, need, basis,
+                thinDay: l.thinDay || null, perHour: ing ? ing.per : null, material: r.item, depot: r.s});
     });
   }));
   return out;
@@ -13373,7 +13466,7 @@ function sbScopeSelect(view, kinds){
   const sites = D.businesses.map((b, s) => ({b, s})).filter(({s}) => facts[s] && kinds.includes(sbTabOf(s)));
   const label = {shops: tt("sb.scope.shops", "All shops"), warehouses: tt("sb.scope.warehouses", "All warehouses"), factories: tt("sb.scope.factories", "All factories")};
   const group = {shops: tt("nav.sub.shops", "Shops"), warehouses: tt("nav.sub.warehouses", "Warehouses"), factories: tt("nav.sub.factories", "Factories")};
-  const cur = sbScope[view] || "all";
+  const cur = sbScopeOf(view);
   const opt = (v, text) => `<option value="${attr(v)}"${v === cur ? " selected" : ""}>${spEsc(text)}</option>`;
   const used = kinds.filter(k => sites.some(x => sbTabOf(x.s) === k));
   return `<label class="sbv-scope"><span class="lab">${tt("sb.scope", "Scope")}</span><span class="sbv-sel">${spIcon("building")}<select data-sb-scope="${view}" aria-label="${
@@ -13580,7 +13673,7 @@ function sbWire(sec, tables, view){
 async function sbCopyRows(btn, which){
   const d = sbData();
   let rows;
-  if(which === "remaining") rows = d.rows.filter(r => !pgDone(d, r));
+  if(which === "remaining") rows = d.rows.filter(r => !pgDone(d, r) && sbInScope("changes", r.site));
   else rows = which.split(" ").map(i => d.rows[+i]).filter(Boolean);
   const text = orderChecklistText(rows, tt("sb.ck.copy.title", "Big Copilot · {save} · day {day}", {save: D.meta.save, day: D.meta.day}), sizing);
   const host = btn.closest(".sbc-top, .sbi-card, .sbc-wrap") || $("pageSupply");
@@ -13984,7 +14077,7 @@ function sbDepotPart(d, claimed, ctx, view, want){
 const SB_LINE_KINDS = ["Factory run hours"];
 const SB_INPUT_KINDS = ["Factory daily top-ups", "Check the delivery route"];
 const SB_LINE_COLS = [sbCol(() => tt("sb.col.line", "Line"), r => r.item || r.workstation, "l"),
-  sbCol(() => tt("sb.col.machines", "Machines"), null, "l", () => tt("sb.col.machines.tip", "A square a machine, filled by the share of the week someone is posted to it")),
+  sbCol(() => tt("sb.col.machines", "Machines"), null, "l", () => tt("sb.col.machines.tip", "A square a machine, filled by the share of the week someone is scheduled on it")),
   sbCol(() => tt("sb.col.hours", "Hours a day"), r => Number.isFinite(r.hoursNow) ? r.hoursNow : null, "l",
     () => tt("sb.col.hours.tip", "A cell an hour. Solid: staffed and needed. Hatched: staffed beyond what the sizing needs. Red outline: needed and not staffed.")),
   sbCol(() => tt("sb.col.makes", "Makes / day"), r => r.unnamed ? null : r.makes ?? null, "", () => tt("sb.col.makes.tip", "At full rate, round the clock")),
@@ -13994,7 +14087,7 @@ const SB_LINE_COLS = [sbCol(() => tt("sb.col.line", "Line"), r => r.item || r.wo
   sbStatusCol(r => r.fact ? szRank(r.fact) : null)];
 const SB_INPUT_COLS = [sbCol(() => tt("sb.col.input", "Factory input"), r => r.item, "l"),
   sbCol(() => tt("sb.col.eats", "Eats / day"), r => szUse(r.fact, r.perDay), "",
-    () => tt("sb.col.eats.tip", "At full rate under 24/7; what the shops at the end of the chain use under Demand")),
+    () => tt("sb.col.eats.tip", "At full rate under full production; what the shops at the end of the chain use under shop demand")),
   sbCol(() => tt("sb.col.onHand", "On hand"), r => r.stock ?? null), sbCol(() => tt("sb.col.arrived", "Arrived / day"), r => r.known ? r.arrives : null, "",
     () => tt("sb.col.arrived.tip", "Measured: what reached the factory a day over the last week, from its delivery log (only the last round while its log is under a week old)")),
   sbCol(() => tt("sb.col.topup", "Daily top-up"), r => r.directImport ? null : r.target || null, "",
@@ -14032,25 +14125,26 @@ function sbLineRow(d, r, site){
   const set = chk.find(c => c.kind === "Factory run hours");
   const sized = sizing === "dem" ? (r.demBasis === "none" ? tt("sb.line.sized.none", "nothing downstream is drawn, so Demand sizes it round the clock too")
     : tt("sb.line.sized.dem", "for what the shops use, plus the chain margin")) : tt("sb.line.sized.full", "planned for full production");
-  let hoursTip = r.thinDay ? tt("sb.line.rostered.thin", "Rostered {now} h a day on average; {day} has {hours} h", {now, day: sbDayShort(r.thinDay.day), hours: r.thinDay.hours})
-    : tt("sb.line.rostered", "Rostered {now} h a day", {now});
+  let hoursTip = r.thinDay ? tt("sb.line.rostered.thin", "Staffed {now} h a day on average; {day} has {hours} h", {now, day: sbDayShort(r.thinDay.day), hours: r.thinDay.hours})
+    : tt("sb.line.rostered", "Staffed {now} h a day", {now});
   if(Number.isFinite(need)) hoursTip = tt("sb.line.rostered.needs", "{rostered}; needs {need} h {sized}", {rostered: hoursTip, need, sized});
   const hours = now === null ? "—" : `<span class="sb-hrs">${sbDayStrip(now, Number.isFinite(need) ? need : now, hoursTip)}<span class="n">${set
       ? sbChg(now, set.proposed, tt("sb.unit.h", "h"))
       : `<b>${tt("sb.unit.nh", "{n} h", {n: now})}</b>${Number.isFinite(need) && need !== now ? ` · ${tt("sb.line.needs", "needs {n}", {n: need})}` : ""}`}</span></span>`;
   const reason = !f ? "" : f.st === "short" && f.why === "hours"
-      ? (r.thinDay ? tt("sb.line.short.thin", {one: "rostered {now} ({day} {hours} h) of the {n} hour a day it needs, {sized}",
-          other: "rostered {now} ({day} {hours} h) of the {n} hours a day it needs, {sized}"},
+      ? (r.thinDay ? tt("sb.line.short.thin", {one: "staffed {now} ({day} {hours} h) of the {n} hour a day it needs, {sized}",
+          other: "staffed {now} ({day} {hours} h) of the {n} hours a day it needs, {sized}"},
           {now, day: sbDayShort(r.thinDay.day), hours: r.thinDay.hours, n: need, sized})
-        : tt("sb.line.short", {one: "rostered {now} of the {n} hour a day it needs, {sized}",
-          other: "rostered {now} of the {n} hours a day it needs, {sized}"}, {now, n: need, sized}))
+        /* Each machine's own hours, where they differ ("12 h and 0 h"). */
+        : tt("sb.line.short.each", {one: "staffed {now} of the {n} hour a day it needs, {sized}",
+          other: "staffed {now} of the {n} hours a day it needs, {sized}"}, {now: sbHoursWords(sbMachineHours(r)), n: need, sized}))
     : f.st === "covered" && Number.isFinite(f.lower) ? tt("sb.line.fewer", "needs {lower} of its {now} hours: fewer would do", {lower: f.lower, now})
     : f.st === "covered" && Number.isFinite(need) ? (sizing === "cap" ? tt("sb.line.runs.full", "runs round the clock, as planned")
       : tt("sb.line.runs.dem", {one: "runs the {n} hour a day it needs", other: "runs the {n} hours a day it needs"}, {n: need}))
     : spEsc(szTip(f));
   const tip = f && f.st === "short" && f.why === "hours"
-    ? tt("sb.line.post", {one: "Post factory workers to {item} for {n} hour a day; the roster has them {now}.",
-      other: "Post factory workers to {item} for {n} hours a day; the roster has them {now}."}, {item: r.item, n: need, now})
+    ? tt("sb.line.schedule", {one: "Schedule factory workers on {item} for {n} hour a day; the schedule has them at {now}.",
+      other: "Schedule factory workers on {item} for {n} hours a day; the schedule has them at {now}."}, {item: r.item, n: need, now: sbHoursWords(sbMachineHours(r))})
     : f && Number.isFinite(f.lower) ? tt("sb.line.fewer.tip", "A suggestion, not a change: the line would still meet its need on fewer hours") : "";
   const tickFor = b ? tt("sb.tick.hours", "{item} at {site}: hours", {item: r.item, site: shortName(b)})
     : tt("sb.tick.hoursFactory", "{item} at the factory: hours", {item: r.item});
@@ -14066,7 +14160,7 @@ function sbLineRow(d, r, site){
     <td class="l">${spMachines(r.machines, r.gaps, r.slots)}</td>
     <td class="l">${hours}</td>
     <td>${num(r.makes ?? 0)}${r.missing && r.missing.length ? `<span class="sub">${tt("sb.line.stopped", "stopped: no {items}", {items: sbList(r.missing.map(spEsc))})}</span>`
-      : r.fullWeek && r.hoursWeek < r.fullWeek ? `<span class="sub">${tt("sb.line.atRoster", "{n:,} at this roster", {n: r.atRoster ?? 0})}</span>` : ""}</td>
+      : r.fullWeek && r.hoursWeek < r.fullWeek ? `<span class="sub">${tt("sb.line.atRoster", "{n:,} at these hours", {n: r.atRoster ?? 0})}</span>` : ""}</td>
     ${r.later ? `<td colspan="2"><span class="sub" data-tip="${attr(tt("sb.line.shared.tip", "Ships, held and what the plans take are {item}'s, shared by every line making it; they are on the other {item} line, at {at}",
       {item: r.item, at: r.later}))}">${tt("sb.line.shared", "shared with the other {item} line", {item: spEsc(r.item)})}</span></td>`
       : `<td>${num(r.ships ?? 0)}${r.piling ? ` <span class="chip warn">${tt("sb.line.piling", "piling up")}</span>` : ""}${r.toCity > 0
@@ -14170,9 +14264,9 @@ function sbFactoryPart(d, claimed, ctx, view, o){
     const placed = site.machines, running = (sent.find(x => x.s === s) || {}).running;
     const staffed = Math.round(site.lines.reduce((t, l) => t + (l.hoursWeek || 0), 0) / 7);
     const stats = sbStat(tt("sb.col.machines", "Machines"), placed, Number.isFinite(running) && running < placed ? tt("sb.fac.running", "{n} running", {n: running}) : "",
-        Number.isFinite(running) ? tt("sb.fac.running.tip", "{placed} placed; {n} run a recipe with someone posted at some hour", {placed, n: running}) : "")
+        Number.isFinite(running) ? tt("sb.fac.running.tip", "{placed} placed; {n} run a recipe with someone scheduled at some hour", {placed, n: running}) : "")
       + sbStat(tt("sb.fac.staffed", "Staffed"), num(staffed), tt("sb.unit.hoursDay", "h a day"),
-        tt("sb.fac.staffed.tip", "Hours a day someone is posted to a machine, all lines together"));
+        tt("sb.fac.staffed.tip", "Hours a day someone is scheduled on a machine, all lines together"));
     return sbObject(view, s, {icon: "gear", how, stats, left, open: left > 0 || keep.some(r => r.fact && r.fact.lvl === "critical"), body});
   });
   const lineN = szTally(everyLine.filter(r => r.fact), r => r.fact);
@@ -14302,10 +14396,13 @@ function sbcRow(d, r){
 function sbPaintChangesTop(d){
   const top = $("sbcTop");
   if(!top) return;
+  /* The changes on the list, in the scope, as the Overview counts the same
+     rows for the whole company; a write the game confirmed and the board no
+     longer asks for is listed under them, not counted. Copy remaining copies
+     what the scope holds. */
   const rows = d.rows.filter(r => sbInScope("changes", r.site));
-  const settled = pgSettled("imports").filter(x => x.state === "confirmed").length;
-  const done = rows.filter(r => pgDone(d, r)).length + settled, total = rows.length + settled;
-  const left = d.rows.filter(r => !pgDone(d, r)).length;
+  const done = rows.filter(r => pgDone(d, r)).length, total = rows.length;
+  const left = rows.filter(r => !pgDone(d, r)).length;
   const p = total ? done / total : 1;
   top.style.setProperty("--p", p.toFixed(3));
   top.classList.toggle("done", !!total && done === total);
@@ -14330,7 +14427,7 @@ function drawChangesView(){
   sbDrawing = "changes";
   const d = sbData();
   const rows = d.rows.filter(r => sbInScope("changes", r.site));
-  const left = d.rows.filter(r => !pgDone(d, r));
+  const left = rows.filter(r => !pgDone(d, r));
   const unnamed = d.f.sites.reduce((n, s) => n + (s.unnamed || []).length, 0);
   const toGame = gwImportLines(null).length;
   const apply = toGame ? gwButton("imports", tt("sb.cw.apply", {one: "Apply {n} import amount", other: "Apply {n} import amounts"}, {n: toGame}), `data-gw-depot=""`, "",
@@ -14339,7 +14436,7 @@ function drawChangesView(){
      to set, margins and lowered targets included. */
   const supplyKinds = ["unplanned", "outruns", "topup", "wholesale", "target", "dead", "notrouted", "shortfall", "order", "paused", "feed", "unnamed", "unset"];
   const onOverview = alertLines().filter(a => supplyKinds.includes(a.group) && !kindOff(a)).length;
-  const settled = pgSettled();
+  const settled = pgSettled("imports");
   const groups = SBC_GROUPS.map(([view, icn, label]) => {
     const mine = rows.filter(r => r.view === view);
     if(!mine.length) return "";
@@ -14387,14 +14484,16 @@ const sbImporters = r => [...new Set((r.contracts || []).map(c => c.importer).fi
 function sbDepWords(r, deps){
   const lines = deps.map(dep => {
     const thin = dep.thinDay ? tt("sb.dep.thin", "{day} {h} h", {day: sbDayShort(WEEKDAY_NAMES.find(x => x.slice(0, 3) === dep.thinDay.day) || dep.thinDay.day), h: dep.thinDay.hours}) : "";
-    return tt("sb.dep.line", {one: "<b>{item}</b> at {site} ({m} machine): {now} → <b>{need} h a day</b>{thin}",
-      other: "<b>{item}</b> at {site} ({m} machines): {now} → <b>{need} h a day</b>{thin}"},
+    return tt("sb.dep.line.each", {one: "<b>{item}</b> at {site} ({m} machine): staffed {now} a day → <b>{need} h a day</b>{thin}",
+      other: "<b>{item}</b> at {site} ({m} machines): staffed {now} a day → <b>{need} h a day</b> each{thin}"},
       {item: spEsc(dep.item), site: spEsc(D.businesses[dep.s] ? shortName(D.businesses[dep.s]) : "?"), m: dep.machines, n: dep.machines,
-       now: dep.now, need: dep.need, thin: thin ? ` (${thin})` : ""});
+       now: sbHoursWords(dep.each), need: dep.need, thin: thin ? ` (${thin})` : ""});
   });
+  /* The consequence from the machine-hours staffed now against the plan's. */
   const known = deps.every(x => Number.isFinite(x.perHour));
-  const more = deps.filter(x => x.now > x.need), less = deps.filter(x => x.now < x.need);
-  const diff = Math.round(deps.reduce((n, x) => n + (Number.isFinite(x.perHour) ? x.perHour * (x.now - x.need) * 7 : 0), 0));
+  const gap = x => x.week - x.need * 7 * x.machines;
+  const more = deps.filter(x => gap(x) > 0), less = deps.filter(x => gap(x) < 0);
+  const diff = Math.round(deps.reduce((n, x) => n + (Number.isFinite(x.perHour) ? x.perHour * gap(x) : 0), 0));
   const depot = D.businesses[r.s] ? spEsc(shortName(D.businesses[r.s])) : "";
   const value = num(r.value ?? 0);
   const then = more.length && !less.length
@@ -14497,7 +14596,7 @@ function sbImportCard(d){
   const terms = r.contracts.map(c => gwTerms.get(gwLineKey(c, r.slug, b.key))).find(t => t && Number.isFinite(t.cap));
   const dep = hours.length && r.deps && r.deps.length ? sbDepWords(r, r.deps) : null;
   const depHtml = dep ? `<div class="sbi-dep" role="note">${spIcon("gear")}<div><b>${tt("sb.card.dep", "Needs a factory-hours change.")}</b> ${
-    tt("sb.card.dep.lead", "{value} is planned on these hours:", {value: num(r.value ?? 0)})}<ul>${dep.lines.map(x => `<li>${x}</li>`).join("")}</ul><p>${dep.then}</p>
+    tt("sb.card.dep.lead.basis", "{value}, planned for {basis}, assumes these hours:", {value: num(r.value ?? 0), basis: szNameLow(r.deps[0].basis)})}<ul>${dep.lines.map(x => `<li>${x}</li>`).join("")}</ul><p>${dep.then}</p>
     <a class="link" href="#supply/production" data-sb-go="${attr(JSON.stringify(["production", r.deps[0].s, null]))}">${tt("sb.card.dep.go", "Plan factory hours")} ›</a></div></div>` : "";
   const stW = weekly ? (weekly.review ? "review" : pgState(d, weekly)) : "none";
   const line = weekly ? `data-gw-depot="${attr(b.key)}" data-gw-line="${attr(r.impId)}"` : "";
@@ -14547,9 +14646,9 @@ function sbImportCard(d){
   else if(weekly) steps.push(spEsc(weekly.lead || weekly.reason));
   if(once) steps.push(once.proposed === null ? tt("sb.card.do.gap.some", "Buy some <b>{item}</b> for <b>{depot}</b> as an urgent order.", {item: spEsc(r.item), depot: spEsc(shortName(b))})
     : tt("sb.card.do.gap", "Buy about <b>{n}</b> <b>{item}</b> for <b>{depot}</b> as an urgent order.", {n: num(once.proposed), item: spEsc(r.item), depot: spEsc(shortName(b))}));
-  (r.deps || []).forEach(x => steps.push(tt("sb.card.do.hours", {one: "BizMan › <b>{site}</b> › Schedule: staff <b>{item}</b> {need} h a day on its {m} machine (now {now} h). Not written by the game link.",
-    other: "BizMan › <b>{site}</b> › Schedule: staff <b>{item}</b> {need} h a day on each of its {m} machines (now {now} h). Not written by the game link."},
-    {site: spEsc(D.businesses[x.s] ? shortName(D.businesses[x.s]) : "?"), item: spEsc(x.item), need: x.need, m: x.machines, n: x.machines, now: x.now})));
+  (r.deps || []).forEach(x => steps.push(tt("sb.card.do.hours.each", {one: "BizMan › <b>{site}</b> › Schedule: staff <b>{item}</b> {need} h a day on its {m} machine (now {now}). Not written by the game link.",
+    other: "BizMan › <b>{site}</b> › Schedule: staff <b>{item}</b> {need} h a day on each of its {m} machines (now {now}). Not written by the game link."},
+    {site: spEsc(D.businesses[x.s] ? shortName(D.businesses[x.s]) : "?"), item: spEsc(x.item), need: x.need, m: x.machines, n: x.machines, now: sbHoursWords(x.each)})));
   const manual = `<div class="sbi-panel" data-panel="manual"${sbiOpen === "manual" ? "" : " hidden"}><h4>${tt("sb.card.manual", "Manual instructions")}</h4><ol class="sbi-steps">${
     steps.map(x => `<li>${x}</li>`).join("")}</ol></div>`;
   const copyKeys = [weekly, once, ...hours].filter(Boolean).map(x => x.i).join(" ");
@@ -14617,7 +14716,9 @@ function sbProdTiles(sites){
   const lines = sites.flatMap(s => s.lines);
   if(!lines.length) return "";
   const sum = f => lines.reduce((n, l) => { const v = f(l); return Number.isFinite(v) ? n + v * (l.machines || 0) : n; }, 0);
-  const now = sum(l => l.hoursNow), cap = sum(l => (l.needHours || {}).cap), dem = sum(l => (l.needHours || {}).dem);
+  /* Staffed now: every machine's own hours, not the least-staffed one's for all. */
+  const now = lines.reduce((n, l) => n + sbMachineHours(l).reduce((a, h) => a + h, 0), 0);
+  const cap = sum(l => (l.needHours || {}).cap), dem = sum(l => (l.needHours || {}).dem);
   const tile = (k, lab, v, small) => `<div class="sbp-tile${k === sizing ? " on" : ""}${k === "now" ? " obs" : ""}"><span class="lab">${lab}</span><b>${num(Math.round(v))}</b><small>${small}</small></div>`;
   return `<div class="sbp-tiles" role="group" aria-label="${attr(tt("sb.prod.tiles", "Machine-hours a day"))}">${
     tile("now", tt("sb.prod.now", "Staffed now · observation"), now, tt("sb.prod.mh", "machine-hours a day"))}${
@@ -14706,7 +14807,7 @@ function drawFlowPanel(){
    person per machine per hour, 12 hours the longest shift, and a site's
    factory workers counted from its machine-hours a week. Python builds it for
    both sizings (factoryStaffing); this reads the one on screen. */
-const SB_STAFF_WHY = () => tt("sb.staff.why", "The same rules as a shop's Staffing: one person per machine per hour, one shift per person at a time, 12 hours the longest shift. A line needs its machines × the hours it must run: 24 when sized 24/7, else the hours downstream demand plus the chain margin takes. Each run is cut into shifts of at most 12 hours, placed around the workers' own demands. A factory is given the fewest of its own factory workers that cover the week: its machine-hours a week ÷ 50, rounded up, and one more while a shift stays open; the rest could go. Only factory workers already at that factory count. Too few hours is a change to type; fewer workers is a suggestion.");
+const SB_STAFF_WHY = () => tt("sb.staff.why", "The same rules as a shop's Staffing: one person per machine per hour, one schedule entry per person at a time, 12 hours the longest entry. A line needs its machines × the hours it must run: 24 when planned for full production, else the hours shop demand plus the chain margin takes. Each run is cut into entries of at most 12 hours, placed around the workers' own demands. A factory is given the fewest of its own factory workers that cover the week: its machine-hours a week ÷ 50, rounded up, and one more while an entry stays open; the rest could go. Only factory workers already at that factory count. Too few hours is a change to type; fewer workers is a suggestion.");
 function drawFactoryStaffing(keep = () => true){
   const rows = (((D.factoryStaffing || {})[sizing]) || []).filter(keep);
   if(!rows.length) return "";
@@ -14734,7 +14835,7 @@ function drawFactoryStaffing(keep = () => true){
     const lines = (r.lines || []).map(l => {
       const chips = (l.cuts || []).map(([a, z]) => `<span class="sb-shift">${h(a)}–${h(z)}<small>${tt("sb.unit.nh", "{n} h", {n: z - a})}</small></span>`).join("");
       return `<div class="sb-sln"><span class="nm">${spEsc(l.item)}</span><span class="hrs">${sbDayStrip(l.hoursNow, l.hours,
-        tt("sb.staff.line.tip", "{now} h rostered, {need} h needed, from {from}:00", {now: l.hoursNow ?? 0, need: l.hours, from: h(l.from || 0)}), l.from || 0)}${
+        tt("sb.staff.line.tip", "{now} h staffed, {need} h needed, from {from}:00", {now: l.hoursNow ?? 0, need: l.hours, from: h(l.from || 0)}), l.from || 0)}${
         Number.isFinite(l.hoursNow) && l.hoursNow !== l.hours ? sbChg(l.hoursNow, l.hours, tt("sb.unit.h", "h")) : `<b>${tt("sb.unit.nh", "{n} h", {n: l.hours})}</b>`}</span><span class="shifts">${chips}${
         l.machines > 1 ? `<small class="sb-per">× ${tt("sb.staff.machines", {one: "{n} machine", other: "{n} machines"}, {n: l.machines})}</small>` : ""}</span></div>`;
     }).join("");
@@ -27406,8 +27507,12 @@ function gwImportView(lines, answer, phase){
                : tt("sb.imp.perWeek", "{n:,} a week", {n: Math.round(Number(c.amount) || 0)})})}</span>`).join("")}</div>` : ""}`));
       });
     }
+    /* The basis the figure was planned for, as the card and the copy say it. */
+    const basis = r.basis === "cap" || r.basis === "dem"
+      ? `<p class="gw-basis">${r.edited ? tt("sb.gw.basis.own", "Your figure, planned for {basis}", {basis: `<b>${szNameLow(r.basis)}</b>`})
+        : tt("sb.gw.basis", "Planned for {basis}", {basis: `<b>${szNameLow(r.basis)}</b>`})}</p>` : "";
     return `<div class="gw-line${dim ? " dim" : ""}${done ? " ticked" : ""}"><div class="gw-lt"><span class="gw-mat" aria-hidden="true">${gwSvg("crate")}</span><b>${
-      spEsc(r.item)}</b>${mode}${figure}</div>${bar}${pills.length ? `<div class="gw-imps">${pills.join("")}</div>` : ""}${notes.join("")}</div>`;
+      spEsc(r.item)}</b>${mode}${figure}</div>${basis}${bar}${pills.length ? `<div class="gw-imps">${pills.join("")}</div>` : ""}${notes.join("")}</div>`;
   };
   const depots = new Map();
   lines.forEach(l => { if(!depots.has(l.depot.key)) depots.set(l.depot.key, []); depots.get(l.depot.key).push(l); });

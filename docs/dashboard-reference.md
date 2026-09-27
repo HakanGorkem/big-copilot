@@ -156,8 +156,9 @@ the map.
     once, figures high to low first, names A to Z; a second click turns it round, and
     *usual order* puts the rows back. A column that holds an action rather than a figure
     does not sort.
-  - *Goods flow*: the chain drawn as a flow diagram, importers, factories, depots and shops,
-    line width for daily volume. Click a site to follow it: a panel says what it holds and
+  - *Goods flow*: the chain drawn as a flow diagram, a column a stage in the order the goods
+    travel (a depot an importer fills stands before the factory it feeds, one a factory fills
+    after it), shops last, line width for daily volume. Click a site to follow it: a panel says what it holds and
     lists the changes on its route; *Table* goes back to the view you came from. A finding
     on the Overview lands on its view, on its row, lit, with a way back.
     On a phone or a portrait tablet (a diagram box under about 950 px) the diagram is the

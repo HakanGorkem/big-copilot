@@ -112,3 +112,53 @@ theme. Phone widths were not reviewed (optional).
 - The Imports scale merges labels of marks within a tenth of the scale into one label.
 - No changelog entry (the coordinator decides at release).
 - Deferred to chunk 3, untouched: City map vs Finder history; phone Tab order in finding rows.
+
+## Round 1 fixes (27 September 2026)
+
+Three reviews of `90a871e` (Opus code, Sol code, Sol QA) held it. Each fix below has a test that
+fails on `90a871e` and passes now (checked by running the new tests on a `git archive 90a871e`
+copy); the three dialog assertions of item 8 pass on both, since that path already worked and
+the finding was missing coverage.
+
+| # | Finding | Fix | Test |
+| --- | --- | --- | --- |
+| 1 | Sol MUST: Confirmed never arrived after a reload (`boardSeq` restarts per page load) | The company's board count `n` lives in its progress store and survives reloads (`pgBoard()` from `takeData()`); a record keeps `seq` (that count) and `load` (the page load). After a reload the game clock must also have moved on, so a save read again at the write's own minute judges nothing | `progress`: "a write made before a reload is confirmed by a later board after it; …" |
+| 2 | Sol MUST: an edited import's factory-hours dependency and copied text used the basis on screen | `sbDeps()` plans on the figure's own basis (`r.basis`); the card's dependency names it ("15,500, planned for full production, assumes these hours"); the Changes hours row is the line's own only where it asks the same hours, else a row of its own that says its basis; the copied text says once that lines naming another basis keep their plan | `progress`: "a figure typed under one basis keeps it after a switch: …" |
+| 3 | QA MUST: the dependency and Production's "Staffed now" used the least-staffed machine's hours for every machine | `sbMachineHours()` reads each machine's week from `gaps` (by slot; the rest run 168 h); the dependency names each machine's hours ("staffed 12 h and 0 h a day → 24 h a day each"), and the consequence is the recipe's draw per machine-hour × (staffed machine-hours − planned); the tile sums real machine-hours; the manual step and both Changes hours rows say the per-machine hours (a thin weekday is still named where there is one) | `progress`: "the factory hours an import assumes are each machine's: 12 h and 0 h at the day-47 brewery" (6,300 a week less under full production, 700 under shop demand; tile 12) |
+| 4 | Opus SHOULD 1: an old record put Confirmed on a new finding for the same line | `pgStateAt()` uses the record fallback only where the site and item have no checklist row open | `progress`: "an old write's record lights a finding only where its line has no open change" (through `ovStatePill`) |
+| 5 | Opus SHOULD 2: the import preview did not name the basis | Each `.gw-line` says "Planned for {basis}" or "Your figure, planned for {basis}" | `game_link_write`: "imports: the preview names each line's planning basis, under both bases" |
+| 6 | Opus SHOULD 3: Supply view state rode on indexes and crossed companies | The history entry keeps sites by key (`sbSnap()`), read back by key (`sbRestore()`; an index-only entry keeps no line); `sbBoard()` moves the reviewed line and the landing by key on each board; a `site:` scope the board lacks reads as the whole company in the list and the select (`sbScopeOf()`); another company's board or entry resets scope, line, landing and followed site (`sbForget()`) | `progress`: "Supply's view state is the company's, …" and "a site gone from the company is no scope: …" |
+| 7 | QA SHOULD: Goods flow drew Brewery before Hub | `flowLayout()` takes its columns from `flowStages()` (as the narrow chain does), shops last, each headed by its kind | `progress`: "Goods flow draws the chain in the order the goods travel: Pier, Hub, Brewery, shops" (day-47 save) |
+| 8 | Opus LOW 2, 3, 4, NIT; QA LOW | Changes' N of M counts the rows only (confirmed records listed, not counted), as the Overview does, and Copy remaining, its count and preview follow the scope; "Checked on a later read" lists import records only; the two tips name Full production and Shop demand; Production says staffed / scheduled, not rostered / shift / posted; the real imports, schedule and hire dialogs are asserted to record (and imports and schedule confirm on the board read after), and Undo to drop | `progress`: "Changes counts what the Overview counts, …", "Production speaks the board's words: …"; `game_link_write`: the imports and schedule write tests; `staff_hire`: "Review: the dry run, …" |
+
+Known and left (coordinator's call): Opus LOW 1, a read already in flight at Apply judged as
+later in the same page load; recorded in `docs/ui-progress-postconditions.md`.
+
+Changed English: new keys for the reworded strings (`sb.dep.line.each`, `sb.card.dep.lead.basis`,
+`sb.card.do.hours.each`, `sb.ck.dep.each.now`, `sb.ck.dep.one.now`, `sb.ck.staff.each.now`,
+`sb.line.short.each`, `sb.line.schedule`, `sb.gw.basis`, `sb.gw.basis.own`, `sb.ck.copy.mixed`,
+`sb.dep.h`); the German of the edited ones (`sb.col.eats.tip`, `sb.staff.why`,
+`sb.line.rostered*`, `sb.line.short.thin`, `sb.line.atRoster`, `sb.fac.*.tip`,
+`sb.col.machines.tip`, `sb.staff.line.tip`) is stale and shows English until redone.
+
+Also changed in tests: `import_routes` (the reworded line status; the second Cake line's `gaps`
+now follow its own slots, which the per-machine reading needs) and the older `progress`
+dependency regexes.
+
+Files: `ba_dashboard.py`; `docs/architecture.md`, `docs/dashboard-reference.md`,
+`docs/ui-progress-postconditions.md`, this note; `tests/progress.test.cjs`,
+`tests/game_link_write.test.cjs`, `tests/staff_hire.test.cjs`, `tests/import_routes.test.cjs`;
+generated `web/index.html`, `web/py/ba_dashboard.py`, `web/version.json`, `web/i18n/de.json`.
+
+Validation, in the foreground, Edge, `--test-concurrency=2`, on the final source:
+
+| Command | Result |
+| --- | --- |
+| `node --test` (CLI target) on `progress`, `import_routes`, `import_setto`, `supply_sort`, `flow_chain`, `roster`, `game_link_write`, `shell_routes`, `search`, `navigation`, `staff_hire`, `order_checklist`, `restore`, `calm_refresh`, `hostile_names`, `layout`, `site_panel`, `game_names`, `findability`, `alert_kinds`, `i18n_layout`, `i18n_runtime` | 773 tests, 773 pass |
+| `BOARD_TARGET=web` on `progress`, `import_routes`, `shell_routes`, `search` | 140 tests, 140 pass |
+| The new tests on a `git archive 90a871e` copy | 14 run: 10 fail (every fix's test), 4 pass (the dialog assertions of item 8, and one unrelated test the pattern caught) |
+| `python -m unittest tests.test_css_integrity tests.test_doc_registries` | 6 tests, OK |
+| `python -m unittest discover -s tests -p "test_i18n*.py"` | 35 tests, OK |
+| `python build_web.py`, then `python build_web.py --check` | exit 0, "web/ is up to date" |
+
+The full Python and Node suites were not rerun this round (CI runs them).

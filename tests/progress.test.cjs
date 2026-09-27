@@ -204,7 +204,7 @@ test('the factory hours an import is planned on: named on the card, a step of th
   // Full production: the Flour order assumes the cake line runs 24 h; it runs 12.
   const cap = await board(t);
   await cap.evaluate(() => { sbSelOff = false; sbSel = {s: 0, slug: 'flour'}; drawImportsView(); wireAll(); });
-  assert.match(await cap.locator('#sbCard .sbi-dep').textContent(), /Needs a factory-hours change\..*Cake.*12 → 24 h a day/s);
+  assert.match(await cap.locator('#sbCard .sbi-dep').textContent(), /Needs a factory-hours change\..*Cake.*staffed 12 h a day → 24 h a day each/s);
   assert.match(await cap.locator('#sbCard .sbi-dep').textContent(), /less than planned/);
   await cap.click('#sbCard [data-sbi-panel=manual]');
   assert.match(await cap.locator('#sbCard .sbi-steps').textContent(), /Schedule: staff Cake 24 h a day on each of its 2 machines \(now 12 h\)\. Not written by the game link\./);
@@ -221,7 +221,7 @@ test('the factory hours an import is planned on: named on the card, a step of th
   const row = await dem.evaluate(() => sbData().rows.filter(r => r.kind === 'Factory run hours').map(r => [r.current, r.proposed, !!r.dep]));
   assert.deepEqual(row, [[12, 10, true]]);
   await dem.evaluate(() => { sbSelOff = false; sbSel = {s: 0, slug: 'flour'}; drawImportsView(); wireAll(); });
-  assert.match(await dem.locator('#sbCard .sbi-dep').textContent(), /12 → 10 h a day.*more than planned/s);
+  assert.match(await dem.locator('#sbCard .sbi-dep').textContent(), /staffed 12 h a day → 10 h a day each.*more than planned/s);
 });
 
 test('Applied is set only by a write that went through; Confirmed only by a later board that holds it', async t => {
@@ -292,4 +292,216 @@ test('a schedule is confirmed by its shift print on a later read; a hire by each
   // Someone found at another site than the one they were sent to: not confirmed.
   await page.evaluate(k => { const d = JSON.parse(JSON.stringify(D)); d.staffing.push({key: 'dist#6', people: [{id: 'E9', name: 'Moved'}]}); d.meta.minute = 9; takeData(d); pgEvaluate(); }, key);
   assert.equal((await hire())[0], 'changed');
+});
+
+// --- round 1 of the chunk's review -------------------------------------------
+
+/* The synthetic company of tests/save_fixtures.py on day 47, as a payload:
+   its brewery's two Beer machines are staffed 12 h and 0 h a day, and the
+   Water they eat comes from 1 Pier through HART. Hub. */
+let day47 = null;
+const DAY47 = () => {
+  if(!day47){
+    const r = spawnSync(process.env.PYTHON || 'python', ['-c', [
+      'import sys, os, json, tempfile',
+      'sys.path.insert(0, "tests")',
+      'import save_fixtures as f, ba_dashboard',
+      'from ba_save import Names, load_save',
+      'd = tempfile.mkdtemp(); p = os.path.join(d, "s.hsg"); f.write_data_save(p, 47)',
+      'sys.stdout.write(json.dumps(ba_dashboard.extract(load_save(p), Names(f.data_names()), None)))'].join('\n')],
+      {cwd: root, maxBuffer: 64 * 1024 * 1024, env: {...process.env, PYTHONDONTWRITEBYTECODE: '1'}});
+    assert.equal(r.status, 0, r.stderr?.toString());
+    day47 = r.stdout.toString();
+  }
+  return JSON.parse(day47);
+};
+const HUB47 = 'ba:street_eighthavenue#4', WATER = 'ba:itemname_water';
+/* The same page after a reload: storage as it was, the board taken in again. */
+const takeAgain = (page, data) => page.evaluate(data => {
+  document.body.classList.add('has-board');
+  takeData(data);
+  sbSelOff = true; sbSel = null;
+  document.querySelectorAll('.page').forEach(el => { el.hidden = el.id !== 'pageSupply'; });
+  document.querySelectorAll('#pageSupply section').forEach(el => { el.hidden = false; el.classList.add('measured'); });
+  drawSupplyStrip(); drawChangesView(); wireAll();
+}, data);
+
+test('a write made before a reload is confirmed by a later board after it; the same save read again at its minute says nothing', async t => {
+  const data = fixture();
+  data.businesses[2].shiftPrint = 'aaaaaaaa';
+  const key = data.businesses[2].key;
+  const page = await board(t, {data});
+  // A few boards in this page load first: the write is not the first thing counted.
+  await page.evaluate(k => {
+    takeData(JSON.parse(JSON.stringify(D))); takeData(JSON.parse(JSON.stringify(D)));
+    pgScheduleDone(k, {row: {full: false}}, {after: {print: 'bbbbbbbb'}, added: 3, removed: 2});
+  }, key);
+  const state = () => page.evaluate(() => pgOfFamily('schedule')[0].state);
+  assert.equal(await state(), 'applied');
+  await page.reload();
+  // The save file read again at the write's own minute may hold the bytes from before it.
+  await takeAgain(page, data);
+  assert.equal(await state(), 'applied', 'a read at the write\'s minute after a reload judges nothing');
+  // A later read that holds the week written: Confirmed, after the reload.
+  const later = JSON.parse(JSON.stringify(data));
+  later.businesses[2].shiftPrint = 'bbbbbbbb'; later.meta.minute = (later.meta.minute || 0) + 5;
+  await takeAgain(page, later);
+  assert.equal(await state(), 'confirmed');
+});
+
+test('a figure typed under one basis keeps it after a switch: its factory hours, card and copied lines', async t => {
+  const page = await board(t);
+  // Flour typed at 15,500 while planning for full production: the cake line is planned on 24 h.
+  await page.evaluate(() => { impSetKeep(impSetId('hub#1', 'flour'), {value: 15500, inGame: 14000, basis: 'cap'}); sbStamp++; });
+  await page.evaluate(() => { sizing = 'dem'; sbStamp++; drawSupplyStrip(); });
+  const got = await page.evaluate(() => {
+    const d = sbData();
+    const r = sbImportRow(d, 0, 'flour');
+    const w = d.rows.find(x => x.kind === 'Weekly imports' && x.slug === 'flour');
+    return {deps: r.deps.map(x => [x.need, x.basis]), hours: (w.hours || []).map(h => h.proposed),
+      text: orderChecklistText([w, ...(w.hours || [])], 'T', sizing)};
+  });
+  assert.deepEqual(got.deps, [[24, 'cap']], 'the hours of the plan the figure was set for');
+  assert.deepEqual(got.hours, [24]);
+  assert.match(got.text, /Flour: 14000 -> 15500 units\/week\..*Planned for full production\./);
+  assert.match(got.text, /Cake: run 12 -> 24 hours\/day\..*Planned for full production\./);
+  assert.match(got.text, /Lines that name another basis keep the plan they were set for/);
+  assert.doesNotMatch(got.text, /-> 10 hours/);
+  // The card and its manual step say the same.
+  await page.evaluate(() => { sbSelOff = false; sbSel = {s: 0, slug: 'flour'}; drawImportsView(); wireAll(); });
+  assert.match(await page.locator('#sbCard .sbi-dep').textContent(), /15,500, planned for full production, assumes these hours:.*→ 24 h a day/s);
+  await page.click('#sbCard [data-sbi-panel=manual]');
+  assert.match(await page.locator('#sbCard .sbi-steps').textContent(), /staff Cake 24 h a day on each of its 2 machines \(now 12 h\)/);
+});
+
+test('the factory hours an import assumes are each machine\'s: 12 h and 0 h at the day-47 brewery', async t => {
+  const page = await board(t, {data: DAY47()});
+  const hub = await page.evaluate(k => D.businesses.findIndex(b => b.key === k), HUB47);
+  // Full production: both machines round the clock against 84 machine-hours a week staffed.
+  await page.evaluate(([s, slug]) => { sbSelOff = false; sbSel = {s, slug}; drawImportsView(); wireAll(); }, [hub, WATER]);
+  const dep = page.locator('#sbCard .sbi-dep');
+  assert.match(await dep.textContent(), /Beer at HART\. Brewery \(2 machines\): staffed 12 h and 0 h a day → 24 h a day each/);
+  // 25 Water a machine-hour: (336 - 84) × 25 a week less than the plan.
+  assert.match(await dep.textContent(), /about 6,300 a week less than planned/);
+  await page.click('#sbCard [data-sbi-panel=manual]');
+  assert.match(await page.locator('#sbCard .sbi-steps').textContent(), /staff Beer 24 h a day on each of its 2 machines \(now 12 h and 0 h\)/);
+  // Production's observation: 12 machine-hours a day, not the least-staffed machine's 0 twice.
+  await page.evaluate(() => drawProductionView());
+  assert.equal(await page.locator('#secProduction .sbp-tile.obs b').textContent(), '12');
+  // Shop demand, a figure of the player's: 8 h a machine, 112 machine-hours against 84.
+  await page.evaluate(([s, slug, k]) => {
+    sizing = 'dem'; impSetKeep(impSetId(k, slug), {value: 2600, inGame: 3000, basis: 'dem'}); sbStamp++;
+    sbSel = {s, slug}; drawSupplyStrip(); drawImportsView(); wireAll();
+  }, [hub, WATER, HUB47]);
+  assert.match(await dep.textContent(), /staffed 12 h and 0 h a day → 8 h a day each/);
+  assert.match(await dep.textContent(), /about 700 a week less than planned/);
+});
+
+test('an old write\'s record lights a finding only where its line has no open change', async t => {
+  const page = await board(t);
+  const pill = slug => page.evaluate(slug => ovStatePill({ev: {slug}}, D.businesses[0]), slug);
+  // Confirmed on an earlier read; the board now proposes Flour afresh.
+  await page.evaluate(() => {
+    pgRecord({id: 'imports|hub#1|flour|weekly|14000', family: 'imports', target: {depot: 'hub#1', slug: 'flour'},
+      expect: {contracts: [], inGame: 14000}, rowKeys: ['an older row'], label: 'Flour'});
+    pgStore().recs['imports|hub#1|flour|weekly|14000'].state = 'confirmed';
+  });
+  assert.ok(await page.evaluate(() => (sbData().at.get('0|flour') || []).length > 0), 'Flour has an open change');
+  assert.equal(await pill('flour'), '', 'a new proposal is not the old write\'s');
+  // A line with nothing open still says what the game confirmed.
+  const quiet = await page.evaluate(() => Object.keys(D.supply.facts[0]).find(slug => !(sbData().at.get(`0|${slug}`) || []).length));
+  assert.ok(quiet, 'a line of the hub with no change');
+  await page.evaluate(slug => {
+    pgRecord({id: `imports|hub#1|${slug}|weekly|1`, family: 'imports', target: {depot: 'hub#1', slug}, expect: {contracts: [], inGame: 1}, rowKeys: [], label: slug});
+    pgStore().recs[`imports|hub#1|${slug}|weekly|1`].state = 'confirmed';
+  }, quiet);
+  assert.match(await pill(quiet), /Confirmed/);
+});
+
+test('Supply\'s view state is the company\'s, and keeps its sites by key', async t => {
+  const page = await board(t);
+  // One depot as the Imports scope, and its Flour under review.
+  await page.evaluate(() => { sbScope.imports = 'site:hub#1'; sbSel = {s: 0, slug: 'flour'}; sbSelOff = false; });
+  const snap = await page.evaluate(() => sbSnap());
+  assert.deepEqual([snap.sel, snap.who], [{key: 'hub#1', slug: 'flour'}, 'r8-fixture']);
+  // The same company's next board lists the hub elsewhere: the line follows it.
+  const moved = await page.evaluate(() => {
+    const d = JSON.parse(JSON.stringify(D)); const hub = d.businesses.shift(); d.businesses.push(hub);
+    takeData(d); const s = sbSel && sbSel.s; takeData(JSON.parse(JSON.stringify(D))); return s;
+  });
+  assert.equal(moved, 5);
+  // A snapshot restores by key; an entry from before keys (an index) keeps no line.
+  assert.equal(await page.evaluate(snap => { sbRestore(snap); return sbSel.s; }, snap), 5);
+  assert.equal(await page.evaluate(() => { sbRestore({sel: {s: 0, slug: 'flour'}}); return sbSel; }), null);
+  // Another company's board starts every view afresh.
+  const other = await page.evaluate(() => {
+    sbScope.imports = 'site:hub#1'; sbSel = {s: 0, slug: 'flour'}; sbArrive = {view: 'imports', s: 0, slug: 'flour', crumb: 'x'};
+    const d = JSON.parse(JSON.stringify(D)); d.meta.character = 'other-co'; takeData(d);
+    return [sbScope.imports, sbSel, sbArrive];
+  });
+  assert.deepEqual(other, ['all', null, null]);
+  // And an entry of the other company's restores nothing of its own.
+  await page.evaluate(snap => { sbRestore(snap); }, {...snap, who: 'r8-fixture'});
+  assert.deepEqual(await page.evaluate(() => [sbScope.imports, sbSel]), ['all', null]);
+});
+
+test('a site gone from the company is no scope: the view lists the company and the select says so', async t => {
+  const page = await board(t);
+  const got = await page.evaluate(() => {
+    sbScope.imports = 'site:hub#1'; sbMode.imports = 'all';
+    const d = JSON.parse(JSON.stringify(D)); d.businesses[0].key = 'hub#sold';
+    d.supply.graph.nodes.forEach(n => { if(n.id === 'hub#1') n.id = 'hub#sold'; });
+    takeData(d); drawImportsView();
+    return {inScope: sbInScope('imports', 0), shown: document.querySelector('#secImports select[data-sb-scope]').value,
+      rows: document.querySelectorAll('#secImports tr[data-slug]').length};
+  });
+  assert.equal(got.inScope, true);
+  assert.equal(got.shown, 'all');
+  assert.ok(got.rows > 0, 'the company\'s import lines, not an empty scope');
+});
+
+test('Goods flow draws the chain in the order the goods travel: Pier, Hub, Brewery, shops', async t => {
+  const page = await board(t, {data: DAY47()});
+  const got = await page.evaluate(() => {
+    sub.supply = 'flow'; drawFlowView(); drawFlow();
+    const x = id => { const r = document.querySelector(`#flow .node[data-id="${CSS.escape(id)}"] rect`); return r ? Number(r.getAttribute('x')) : null; };
+    return {heads: [...document.querySelectorAll('#flow text.col')].map(t => t.textContent),
+      pier: x('import:ba:street_pier#1'), hub: x('ba:street_eighthavenue#4'), brewery: x('ba:street_eighthavenue#8'), shop: x('ba:street_eighthstreet#5')};
+  });
+  assert.deepEqual(got.heads, ['IMPORTERS', 'DEPOTS', 'FACTORIES', 'SHOPS']);
+  assert.ok(got.pier < got.hub && got.hub < got.brewery && got.brewery < got.shop, JSON.stringify(got));
+});
+
+test('Changes counts what the Overview counts, lists only import records, and copies its scope', async t => {
+  const page = await board(t);
+  // A write the game confirmed, and a hire found elsewhere: records with no row.
+  await page.evaluate(() => {
+    pgRecord({id: 'imports|hub#1|milk|weekly|2100', family: 'imports', target: {depot: 'hub#1', slug: 'milk'}, expect: {contracts: [], inGame: 2100}, rowKeys: [], label: 'Milk'});
+    pgStore().recs['imports|hub#1|milk|weekly|2100'].state = 'confirmed';
+    pgRecord({id: 'hire|1', family: 'hire', target: {sites: ['shop#3']}, expect: {people: [{id: 'X', site: 'shop#3'}], hired: 1, moved: 0, skipped: 0}, rowKeys: [], label: '1 hired'});
+    pgStore().recs['hire|1'].state = 'changed';
+    sbStamp++; drawSupplyStrip(); drawChangesView(); wireAll();
+  });
+  const n = await page.evaluate(() => { const d = sbData(); return {total: d.rows.length, done: d.rows.filter(r => pgDone(d, r)).length}; });
+  assert.equal((await page.locator('#sbcTop .sbc-n').textContent()).replace(/\s+/g, ' '), `${n.done}of ${n.total}recorded or applied`);
+  const settled = await page.locator('#secChanges .sbc-settled .sbc-row').allTextContents();
+  assert.equal(settled.length, 1);
+  assert.match(settled[0], /Milk/);
+  // Copy remaining copies the scope on screen.
+  await page.evaluate(() => { sbScope.changes = 'factories'; drawChangesView(); wireAll(); });
+  const left = await page.evaluate(() => { const d = sbData(); return d.rows.filter(r => !pgDone(d, r) && sbInScope('changes', r.site)).length; });
+  assert.ok(left > 0 && left < n.total);
+  assert.equal(await page.locator('#sbcTop [data-sb-copy=remaining] small').textContent(), String(left));
+  assert.equal(await page.evaluate(() => (document.querySelector('#secChanges .sbc-prev pre').textContent.match(/^\[ \]/gm) || []).length), left);
+});
+
+test('Production speaks the board\'s words: no roster, shift or posting, and the bases by their names', async t => {
+  const page = await board(t);
+  await page.evaluate(() => { sbMode.production = 'all'; drawProductionView(); });
+  const words = await page.evaluate(() => {
+    const sec = document.getElementById('secProduction');
+    return [sec.textContent, ...[...sec.querySelectorAll('[data-tip]')].map(e => e.dataset.tip), SB_STAFF_WHY()].join(' \n ');
+  });
+  assert.doesNotMatch(words, /\b(roster|rostered|shifts?|posted|post)\b/i);
+  assert.doesNotMatch(words, /24\/7|under Demand/);
 });

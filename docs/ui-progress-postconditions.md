@@ -17,18 +17,26 @@ another figure, or a person is at another site. It is never shown as done. A dry
 hidden finding or a changed filter sets nothing. A write that failed, was refused, was cancelled or
 got no answer records nothing; the dialog says what happened, as before.
 
-"Later" is both: the board counter (`boardSeq`, one more for every board taken in) is past the
-write's, and the game clock the board was read at is not earlier than the link's clock at the
-write. A save file of the same company read afterwards counts only if it was saved after the write.
+"Later" is both: the company's board count (`n` in its store, one more for every board of that
+company taken in, kept across reloads) is past the write's, and the game clock the board was read
+at is not earlier than the link's clock at the write. After a reload the clock must have moved on
+too (`load` names the page load of the write): a save file read again at the write's own minute
+may hold the bytes from before it. A save file of the same company read afterwards counts only if
+it was saved after the write.
+
+Known and left: a read already in flight when the write is applied (the game paused, Update
+clicked seconds before Apply) can be judged in the same page load as later, and its pre-write
+bytes then say *Not confirmed*. A judged record is not judged again.
 
 ## Records
 
-Kept per character in `localStorage["ba_progress_v1:<character>"]` as `{v: 1, recs: {id: rec}}`.
+Kept per character in `localStorage["ba_progress_v1:<character>"]` as `{v: 1, n, recs: {id: rec}}`.
 Without a character id nothing is written, and records last as long as the page; another company's
 board reads its own key, so no record crosses companies. Storage that refuses keeps the page's copy.
 
 A record: `id`, `family`, `target`, `expect`, `rowKeys` (the checklist rows it answers, by key),
-`label`, `state`, `at` (ms), `seq` (`boardSeq` at the write), `clock` (game day, hour, minute), and
+`label`, `state`, `at` (ms), `seq` (the company's board count at the write), `load` (the page
+load), `clock` (game day, hour, minute), and
 once judged `seen` (the board's clock).
 
 ## Postconditions by family

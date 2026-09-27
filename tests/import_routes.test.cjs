@@ -132,7 +132,7 @@ test('every change on the checklist is a fact\'s figure, and sits on its task vi
       {kind: 'Shop daily top-ups', item: 'Paper Bag', current: 1400, proposed: 30, tight: false, paused: false, lower: true},
       {kind: 'Shop daily top-ups', item: 'Paper Bag', current: 1500, proposed: 30, tight: false, paused: false, lower: true},
       {kind: 'Depot daily top-ups', item: 'Cake', current: 200, proposed: 290, tight: false, paused: false},
-      // The cake line is rostered 12 of the 24 hours 24/7 sizes it for.
+      // The cake line is staffed 12 of the 24 hours full production plans it for.
       {kind: 'Factory run hours', item: 'Cake', current: 12, proposed: 24, tight: false, paused: false},
     ]);
     const views = await page.evaluate(() => Object.fromEntries(Object.entries(sbData().byView).map(([t, r]) => [t, r.length])));
@@ -279,7 +279,7 @@ test('a line short of its hours is a change at full production; under shop deman
     assert.ok(cake.tick);
     // Line, Machines, Hours a day, Makes, Ships, Held, Status after the tick.
     assert.match(cake.cells[3], /^12 24 h$/);
-    assert.match(cake.cells[7], /^short rostered 12 of the 24 hours a day it needs, planned for full production$/);
+    assert.match(cake.cells[7], /^short staffed 12 h of the 24 hours a day it needs, planned for full production$/);
     assert.match(await counted(cap), /0 of 10/);
   } finally { await cap.close(); }
   const dem = await board(fixture(), {mode: 'dem'});
@@ -340,7 +340,7 @@ test('a line with a day off reads its week, and names the thin day', async () =>
   const page = await board(data);
   try {
     const cake = (await bySlug(page, 'secProduction', 1)).cake;
-    assert.match(cake.cells[7], /rostered 12 \(Sun 0 h\) of the 24 hours a day it needs/);
+    assert.match(cake.cells[7], /staffed 12 \(Sun 0 h\) of the 24 hours a day it needs/);
     const row = await page.evaluate(() => sbData().rows.find(r => r.kind === 'Factory run hours'));
     assert.match(row.reason, /the schedule has them 12 \(Sun 0 h\)/);
   } finally { await page.close(); }
@@ -373,7 +373,9 @@ test('two lines making one item at a factory each keep their own change and tick
 test('shared product figures sit on the first line shown, after the sort and the filter', async () => {
   const data = fixture();
   const site = data.supply.factories.sites[0];
-  site.lines.push({...site.lines[0], rid: 'r-cake-2', slots: [9, 10], makes: 9999, status: 'covered', why: null, level: 'ok'});
+  // Its machines' weeks are its own slots' (12 h a day each, as the first line's).
+  site.lines.push({...site.lines[0], rid: 'r-cake-2', slots: [9, 10], gaps: site.lines[0].gaps.map((g, i) => ({...g, slot: [9, 10][i]})),
+    makes: 9999, status: 'covered', why: null, level: 'ok'});
   // Sorted by Makes / day, high first: the second line comes first and carries them.
   const page = await board(data, {which: 'all'});
   try {

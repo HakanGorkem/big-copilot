@@ -653,6 +653,10 @@ test('Review: the dry run, who goes where, one confirm with no undo, and a parti
   await phase(page, 'done');
   const writes = await page.evaluate(() => window.hrWrites.map(w => [w.kind, w.dryRun]));
   assert.deepEqual(writes, [['hire', true], ['hire', false]]);
+  // Applied from the answer: everyone the game hired or moved, and where to;
+  // Ada, whose application expired, is not in it. There is no undo to drop it.
+  assert.deepEqual(await page.evaluate(() => pgOfFamily('hire').map(r => [r.state, r.expect.hired, r.expect.moved, r.expect.skipped,
+    r.expect.people.length, r.expect.people.some(p => p.id === 'c1')])), [['applied', 6, 2, 1, 8, false]]);
   // No Undo, and where to let someone go instead; Ada's application expired
   // before the game reached her.
   assert.equal(await dlg.locator('[data-gw-b="undo"]').count(), 0);

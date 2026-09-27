@@ -1242,14 +1242,56 @@ test('imports: the Set to figure is written, and undone', async (t) => {
   assert.match(await line.locator('.gw-num').textContent(), /^from 3,800 to 4,200in stock$/);
   assert.deepEqual(await line.locator('.gw-imp').allTextContents(), ['1. 11 Pier', '2. 2 Pierstoppedno agent']);
   assert.match(await dialog(page).locator('.gw-verdict').textContent(), /The game takes the change/);
+  // The board the link reads after the write holds what it wrote.
+  await page.evaluate(() => {
+    const d = JSON.parse(window.baseData);
+    Object.values(d.supply.factories.depots).forEach((l) => ((l['ba:itemname_paperbag'] || {}).contracts || [])
+      .forEach((c) => { if (c.id === 'CONTRACTone') c.amount = 4200; }));
+    window.buildData = JSON.stringify(d);
+  });
   await dialog(page).getByRole('button', {name: 'Apply 1 change'}).click();
   await dialog(page).getByText('1 amount set in the game.').waitFor();
   const writes = await applied();
   assert.deepEqual(writes[0].body, {dryRun: false, contracts: [{id: 'CONTRACTone', activate: false,
     products: [{itemName: 'ba:itemname_paperbag', warehouse: DEPOT_ADDRESS, amount: 4200, expect: 3800}]}]});
+  // The write that went through is recorded with what the game said it holds,
+  // and confirmed by the board read after it.
+  assert.deepEqual(await page.evaluate(() => pgOfFamily('imports').map((r) => [r.expect.contracts, r.expect.value, r.rowKeys.length])),
+    [[[{id: 'CONTRACTone', amount: 4200, activate: false}], 4200, 1]]);
+  await page.waitForFunction(() => (pgOfFamily('imports')[0] || {}).state === 'confirmed');
   await dialog(page).getByRole('button', {name: 'Undo'}).click();
   await dialog(page).getByText('Undone: the imports are back as they were.').waitFor();
   assert.deepEqual((await applied()).map((w) => w.kind), ['imports', 'undo']);
+  // The undo takes the record back.
+  assert.equal(await page.evaluate(() => pgOfFamily('imports').length), 0);
+});
+
+/* The preview names the plan each line's figure was made for, as the card and
+   the copied text do: the basis on screen for a suggestion, the player's own
+   basis for a typed figure, whatever is on screen when the preview opens. */
+test('imports: the preview names each line\'s planning basis, under both bases', async (t) => {
+  const d = JSON.parse(payload);
+  const [, lines] = Object.entries(d.supply.facts).find(([, l]) => l['ba:itemname_paperbag']);
+  Object.assign(lines['ba:itemname_paperbag'], {st: 'short', why: 'order', lvl: 'critical', setTo: 4370});
+  const page = await linked(t, {approved: true, data: JSON.stringify(d)});
+  const basisOf = async () => {
+    await applyImports(page).click();
+    await ready(page);
+    const said = await dialog(page).locator('.gw-line', {hasText: 'Paperbag'}).locator('.gw-basis').textContent();
+    await dialog(page).getByRole('button', {name: 'Cancel'}).click();
+    await page.waitForFunction(() => !document.querySelector('dialog.gw-dlg[open]'));
+    return said;
+  };
+  const basis = async (mode) => { await page.evaluate((m) => { sizing = m; szPick(m); }, mode); await supply(page); };
+  await supply(page);
+  assert.equal(await basisOf(), 'Planned for full production');
+  await basis('dem');
+  assert.equal(await basisOf(), 'Planned for shop demand');
+  // Typed under shop demand, the figure keeps it on the other basis too.
+  await setTo(page, 'Paperbag', 4200);
+  assert.equal(await basisOf(), 'Your figure, planned for shop demand');
+  await basis('cap');
+  assert.equal(await basisOf(), 'Your figure, planned for shop demand');
 });
 
 test("imports: the figure written is the fact's, with no figure typed", async (t) => {
@@ -1854,6 +1896,10 @@ test('schedule: the roster is written with only the people working here, and und
   // The board has read the write: its print is the game's new one.
   await page.waitForFunction(({n, key}) => window.builds > n && D.businesses.find((b) => b.key === key).shiftPrint !== '9c98d93a',
     {n: builds, key: GIFTS});
+  // Recorded from the write's answer, and confirmed by the board read after it,
+  // which holds the week's new print.
+  assert.deepEqual(await page.evaluate((key) => pgOfFamily('schedule').map((r) => [r.state, r.target.site, r.expect.print === D.businesses.find((b) => b.key === key).shiftPrint]), GIFTS),
+    [['confirmed', GIFTS, true]]);
   const writes = await applied();
   // Neither Dee's entry (not assigned here yet) nor the hire's goes to the game.
   assert.deepEqual(writes[0].body, {dryRun: false, address: GIFTS_ADDRESS, expect: '9c98d93a', openAllHours: false,
@@ -1867,6 +1913,8 @@ test('schedule: the roster is written with only the people working here, and und
   assert.equal(await again.isDisabled(), true);
   assert.equal(await again.getAttribute('title'), 'Reading the game again…');
   assert.deepEqual((await applied()).map((w) => w.kind), ['schedule', 'undo']);
+  // The undo takes the write's record back.
+  assert.equal(await page.evaluate(() => pgOfFamily('schedule').length), 0);
   release();
   await page.waitForFunction(() => { const b = [...document.querySelectorAll('dialog.gw-dlg .gw-foot button')].find((x) => x.textContent === 'Write again'); return b && !b.disabled; });
   assert.equal(await page.evaluate((key) => D.businesses.find((b) => b.key === key).shiftPrint, GIFTS), '9c98d93a');
