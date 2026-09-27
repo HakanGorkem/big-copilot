@@ -16,16 +16,19 @@ LINE = ("line", 3)  # a second factory whose line the depot can feed
 
 
 def supply_for(factory_units, route=True, target=10000, depot_units=9000, active=True,
-               feeds_line=False):
+               feeds_line=False, second=None):
     """_supply() over a factory, a depot and a shop with no logged rounds: the
     depot's draw is the shop's sales, and a 1,000 Smart Delivery import is a
     fraction of the week's 3,500. The factory's route tops the depot up to
     `target`; with `feeds_line` the depot tops a factory up too (its line
-    draws on it). Returns the depot's import row, its fact and the order
+    draws on it); `second` is a second factory's route target, that factory
+    holding 20,000. Returns the depot's import row, its fact and the order
     findings."""
     plans = [plan(DEPOT, SHOP, 2000)] + ([plan(FACTORY, DEPOT, target)] if route else [])
     if feeds_line:
         plans.append(plan(DEPOT, LINE, 2000))
+    if second:
+        plans.append(plan(LINE, DEPOT, second))
     save = SaveStub({}, plans, [contract(1000, 1000, smart=True, active=active)])
 
     def business(site, name, kind, status, units, rate):
@@ -38,7 +41,8 @@ def supply_for(factory_units, route=True, target=10000, depot_units=9000, active
         business(FACTORY, "Food Factory", "factory", "support", factory_units, 0),
         business(DEPOT, "Depot", "warehouse", "support", depot_units, 0),
         business(SHOP, "Shop", "supermarket", "retail", 1500, SOLD),
-        business(LINE, "Line Factory", "ba:businesstype_factory", "support", 0, 0),
+        business(LINE, "Line Factory", "ba:businesstype_factory", "support",
+                 20000 if second else 0, 0),
     ]
     supply = _supply(save, Names({}), businesses, DAY, {})
     row = next(r for r in supply["imports"] if r["s"] == 1)
@@ -114,6 +118,18 @@ class HeldUpstreamTests(unittest.TestCase):
         to 400 does not cover a 500 day: resume the import."""
         row, fact, _orders = supply_for(factory_units=20000, target=400, depot_units=600,
                                         active=False)
+        self.assertNotIn("heldUpstream", row)
+        self.assertEqual(row["reason"], "paused")
+        self.assertEqual(fact["st"], "paused")
+
+    def test_two_small_routes_cover_the_week_but_not_the_busiest_day(self):
+        """Two factories each top the depot up to 300: 4,200 a week between
+        them, but the shelf never holds more than 300 of a 500 day. Active,
+        the order is not judged; paused, the import is the finding."""
+        row, _fact, _orders = supply_for(factory_units=20000, target=300, second=300)
+        self.assertTrue(row.get("heldUpstream"))
+        row, fact, _orders = supply_for(factory_units=20000, target=300, second=300,
+                                        depot_units=600, active=False)
         self.assertNotIn("heldUpstream", row)
         self.assertEqual(row["reason"], "paused")
         self.assertEqual(fact["st"], "paused")
