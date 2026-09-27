@@ -282,8 +282,14 @@ stores the bare `<id>` as `h`; `hood_key()` makes the key. Python's own English 
 and the few English tables it wrote by name (`RENT_RATES`, the demand history's snapshot
 keys) read the English name through `HOOD_LABEL`, and stay as they are.
 
-The footer's **Game names** (site only) shows those names in another of the game's
-languages. Python still writes English; the page lays a table over the payload once,
+The footer's **Language** (site only) shows those names in another of the game's
+languages, and Big Copilot's own words too where it has them (UI text, below): one
+choice, kept under `ba_dash_names`, whose list puts the languages of `UI_LANGS` first as
+"Whole page" and the rest of `GAME_NAME_LANGS` after as "Game names only". `gnChoose()`
+calls `setGameNames()` and `gnUi()`, which is `setUiLang()` for a `TT_LANGS` language and
+English otherwise. While the page's words are in a language of `UI_LANGS_DRAFTED`, a note
+under the picker links to `docs/translating.md`. The one-time offer asks "Show Big Copilot
+in …?" for such a language and "Show game names in …?" for the rest. Python still writes English; the page lays a table over the payload once,
 when a board arrives and when the choice changes: `takeData(raw)` sets
 `D = localiseNames(raw)`, a copy of the English payload with its names swapped, which
 carries the English payload along unenumerated (`dataEn()`). Every draw then reads `D`
@@ -313,8 +319,8 @@ english)`, because its matching against the help's own words needs the English.
 ## UI text
 
 Big Copilot's own words can be shown in another language; German is the first. The
-game's names are a separate layer (the footer's Game names, above), and the two meet only
-where a sentence holds a name.
+game's names are a separate layer (above), and the two meet only where a sentence holds a
+name; the footer's Language sets both.
 
 **The English stays at the call site, beside a key.** Nothing is looked up in English:
 
@@ -392,9 +398,10 @@ source notes are not labels and stay English.
   all call `tt()`. Its top-level names start `tt`/`TT_`, or are `tApply`, `enOf`,
   `setUiLocale` and `setUiLang`.
 - The site's table is `web/i18n/<lang>.json`, fetched with the build stamp
-  (`window.LEDGER_BUILD`, which `page_html()` now sets in the head for that reason). Until
-  the footer picker ships, the only switch is the developer flag `?ui=de`, which is not
-  remembered. While it loads, `html.tt-wait` hides the page for at most 400 ms. A table
+  (`window.LEDGER_BUILD`, which `page_html()` now sets in the head for that reason). At load
+  the site's page (`TT_SITE`, spliced by `render(site=True)`) takes the footer's kept
+  Language (`ttStored()`, the board's `GN_KEY`) when it is a `TT_LANGS` language; the
+  flag `?ui=de` wins over it and is not remembered. A local page reads no stored choice. While it loads, `html.tt-wait` hides the page for at most 400 ms. A table
   with no keys (the German is empty until its translation lands) counts as English,
   numbers included.
   `document.documentElement.lang` follows the UI language.

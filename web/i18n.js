@@ -15,6 +15,11 @@
 
 /* A local page built with `--lang de` carries its table: {lang, table}. */
 const TT_EMBED = /*__UI_TABLE__*/null;
+/* Whether this is the site's page (render(site=True)), whose footer offers a
+   Language and keeps the choice under TT_KEY. The board script's GN_KEY is
+   the same key: one choice sets the page's words and the game's names. */
+const TT_SITE = /*__TT_SITE__*/false;
+const TT_KEY = "ba_dash_names";
 /* The languages Big Copilot's own text comes in, English first. */
 const TT_LANGS = ["en", "de", "pt", "fr", "es", "ru"];
 /* Numbers follow the UI language: English is always en-US. */
@@ -272,9 +277,17 @@ async function setUiLang(lang){
   ttSetTable(lang, table);
   return true;
 }
-/* At load: a table the page carries, or the ?ui=de developer switch, which
-   is not remembered. While a table loads the page stays hidden, for at most
-   TT_WAIT_MS, so it does not paint in English first. */
+/* The language kept from the footer's picker on an earlier visit, on the
+   site's page only; "" for none or a storage that will not answer. */
+function ttStored(){
+  if(!TT_SITE) return "";
+  try{ return localStorage.getItem(TT_KEY) || ""; }catch(e){ return ""; }
+}
+/* At load: a table the page carries; else the ?ui=de switch, which is not
+   remembered and wins over the footer's choice; else that choice, where it is
+   a language Big Copilot's own text comes in (one that changes only the game's
+   names leaves the page English). While a table loads the page stays hidden,
+   for at most TT_WAIT_MS, so it does not paint in English first. */
 (function ttBoot(){
   if(typeof document === "undefined" || typeof location === "undefined") return;
   let want = null;
@@ -283,6 +296,7 @@ async function setUiLang(lang){
     ttSetTable(TT_EMBED.lang, TT_EMBED.table);
     return;
   }
+  if(!want) want = ttStored();
   if(!want || want === "en" || !ttKnown(want)) return;
   const html = document.documentElement;
   html.classList.add("tt-wait");
