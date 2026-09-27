@@ -32455,7 +32455,9 @@ if(D) boot();
 wireGameNames();
 if(!GN_EMBED && gnPickers().length){
   const want = gnStored();
-  if(want && want !== "en" && gnKnown(want)) setGameNames(want);
+  /* The picker shows the kept language while its tables load, so picking
+     another (English included) is a change that wins over the load. */
+  if(want && want !== "en" && gnKnown(want)){ gnPaint(want); setGameNames(want); }
   else if(!want) gnOffer();
 }
 
