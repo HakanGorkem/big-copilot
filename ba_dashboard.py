@@ -145,31 +145,38 @@ def footer_html(landing: bool = False, site: bool = False) -> str:
     # On the site the source strip under the masthead already names the save, so
     # only the CLI's page, which has no strip, repeats it down here.
     file_slot = "" if landing or site else '<span class="sf-meta" id="footFile"></span>'
-    # The game's names in another language: the tables sit beside the site's
-    # page (web/names/), so only the site offers the choice; a local page gets
-    # its language from --lang instead. The board script wires every copy.
-    # The control is a button and a listbox the board script hangs off <body>
-    # (gnOpen()), drawn like the Theme switch beside it. The choices are the
-    # hidden list inside it, one per entry of GAME_NAME_LANGS: the script reads
-    # them from there, so a choice is added here and nowhere else.
+    # The language: Big Copilot's own words (web/i18n/) and the game's names
+    # (web/names/). The tables sit beside the site's page, so only the site
+    # offers the choice; a local page gets its language from --lang instead.
+    # The board script wires every copy. The control is a button and a listbox
+    # the board script hangs off <body> (gnOpen()), drawn like the Theme switch
+    # beside it. The choices are the hidden list inside it, one per entry of
+    # GAME_NAME_LANGS, the languages the whole page comes in first (UI_LANGS,
+    # data-group="page") and those that change only the game's names after
+    # (data-group="names"): the script reads them from there, so a choice is
+    # added here and nowhere else.
     names = ""
     if site:
         head = f"gnHead{'L' if landing else ''}"
-        options = "".join(f'<li data-value="{code}" lang="{code}" translate="no">{html_escape(word)}</li>'
-                          for code, word in GAME_NAME_LANGS.items())
+        order = [c for c in GAME_NAME_LANGS if c in UI_LANGS] + [c for c in GAME_NAME_LANGS if c not in UI_LANGS]
+        options = "".join(f'<li data-value="{code}" data-group="{"page" if code in UI_LANGS else "names"}" '
+                          f'lang="{code}" translate="no">{html_escape(GAME_NAME_LANGS[code])}</li>'
+                          for code in order)
         code, word = next(iter(GAME_NAME_LANGS.items()))
-        names = (f'<div class="sf-col sf-gn">\n        <h2 class="sf-head" id="{head}" data-tt="foot.names.head">Game names</h2>\n'
-                 f'        <div class="gn-pick" data-gn-pick data-value="{code}">'
+        note = (f'<a class="gn-note" data-gn-note href="{TRANSLATING_URL}" target="_blank" rel="noopener" hidden>'
+                f'<span data-tt="foot.lang.drafted">Machine-translated. Help check it</span></a>')
+        names = (f'<div class="sf-col sf-gn">\n        <h2 class="sf-head" id="{head}" data-tt="foot.lang.head">Language</h2>\n'
+                 f'        <div class="gn-pick" data-gn-pick data-value="{code}" data-drafted="{" ".join(UI_LANGS_DRAFTED)}">'
                  f'<button type="button" class="gn-btn" id="{head}Btn" aria-haspopup="listbox" aria-expanded="false" '
-                 f'aria-labelledby="{head} {head}Btn" data-tt-title="foot.names.tip" title="The game&#39;s own '
-                 'names for items, business types, neighbourhoods, stations and skills, in the language you '
-                 'play in. Everything else on the page stays English.">'
+                 f'aria-labelledby="{head} {head}Btn" data-tt-title="foot.lang.tip" title="Big Copilot&#39;s own '
+                 'words and the game&#39;s names for items, business types, neighbourhoods, stations and skills. '
+                 'A language under &#34;Game names only&#34; changes the names, and the rest stays English.">'
                  '<span class="gn-glyph" aria-hidden="true"><svg class="sf-ic" viewBox="0 0 24 24" width="16" height="16">'
                  '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.3 3.6 5.1 3.6 8.5s-1.2 6.2-3.6 8.5'
                  'c-2.4-2.3-3.6-5.1-3.6-8.5s1.2-6.2 3.6-8.5z"/></svg></span>'
                  f'<span class="gn-cur" lang="{code}" translate="no">{html_escape(word)}</span>'
                  '<svg class="sf-ic gn-chev" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>'
-                 f'</button><ul class="gn-opts" hidden>{options}</ul></div>\n      </div>\n      ')
+                 f'</button><ul class="gn-opts" hidden>{options}</ul></div>\n        {note}\n      </div>\n      ')
     # The board script writes the words (tt("foot.build")) into every
     # [data-foot-build], so the landing's follows the UI language too.
     build = (f'<span class="sf-meta" data-foot-build="{VERIFIED_BUILD}">Game build {VERIFIED_BUILD}</span>' if landing
@@ -485,6 +492,15 @@ GAME_NAME_LANGS = {
     "fi": "Suomi", "tr": "Türkçe", "el": "Ελληνικά", "ru": "Русский", "uk": "Українська",
     "ja": "日本語", "ko": "한국어", "zh-cn": "简体中文", "zh-tw": "繁體中文",
 }
+# The languages Big Copilot's own text comes in (TT_LANGS in web/i18n.js, one
+# i18n/<lang>.json each; tests/test_game_names.py holds the three together).
+# The footer's Language list shows them first, as "Whole page"; every other
+# entry of GAME_NAME_LANGS changes only the game's names.
+UI_LANGS = ("en", "de", "es", "fr", "pt", "ru")
+# The ones still mostly machine-drafted (i18n/<lang>.ai.json): the footer says
+# so under the picker, with a link to help check them.
+UI_LANGS_DRAFTED = ("es", "fr", "pt", "ru")
+TRANSLATING_URL = f"{REPO_URL}/blob/main/docs/translating.md"
 # A language whose file names fewer of the English name keys than this is left
 # out rather than shown half in English (the game's ar.json names none).
 NAME_COVERAGE = 0.5
@@ -638,6 +654,11 @@ RESELLER_TYPES = RETAIL_TYPES - {
     "ba:businesstype_hairdresser",
     "ba:businesstype_theater",
 }
+
+# Tickets a cinema or theater issues at the kiosk or booth: sold like a product,
+# but nothing imports, makes or shelves them, so no plan, top-up, pressure or
+# on-hand figure applies to them.
+ISSUED_ITEMS = {"ba:itemname_cinematicket", "ba:itemname_theaterticket"}
 
 # The office agencies left out of RETAIL_TYPES above. Their customers are digital,
 # so nothing a shop floor needs (amenities, uniforms, shelves) applies, but they
@@ -964,6 +985,7 @@ _RECIPE_LINK_RE = re.compile(r"\[([^\]]+)\]\(recipes-([a-z0-9_]+)\)")
 # the same ba:itemname_ slug underneath.
 _BUSINESS_HELP_RE = re.compile(r"^help_(ba:businesstype_[a-z0-9_]+)_content$")
 _SELLS_HEADER_RE = re.compile(r"Businesses of this type (?:primarily sell|can sell):")
+_EXTRAS_HEADER_RE = re.compile(r"can additionally sell:")
 _SOLD_ITEM_RE = re.compile(r"\[([^\]]+)\]\((?:products|fees)-([a-z0-9_]+)\)")
 
 SERVICE_SKILL = "ba:skill_customerservice"
@@ -2543,6 +2565,7 @@ def _business(save, names, b, addr, latest, history, staff_by_addr, day) -> dict
                 "revenue": money(revenue_by_item[item] / span),
                 "soldPerDay": round(units_sold[item] / span),
                 "soldPerWeek": round(units_sold[item] / span * 7),
+                **({"issued": True} if item in ISSUED_ITEMS else {}),
                 # Unrounded, for _products() alone, which takes them off the
                 # payload: a price from rounded units is no price.
                 "_sold": units_sold[item] / span,
@@ -11816,10 +11839,12 @@ def _plan(
     # good a shop stocks or a factory makes, so no fee belongs in a chain the
     # sliders plan. Every business help page is read once: its fees classify
     # services across the whole game, and its text is kept for the furniture
-    # block a service type's range is read from below.
+    # block a service type's range is read from below. A ticket is issued, not
+    # made or imported, so it counts as a service too, though its page links it
+    # as a product.
     fee_re = re.compile(r"\[([^\]]+)\]\(fees-([a-z0-9_]+)\)")
     good_re = re.compile(r"\[([^\]]+)\]\(products-([a-z0-9_]+)\)")
-    services = set()
+    services = set(ISSUED_ITEMS)
     pages = {}
     for key, text in names.locale.items():
         match = _BUSINESS_HELP_RE.match(key)
@@ -11845,6 +11870,13 @@ def _plan(
             # block above its sell list names them with product links. Those
             # links, deduplicated, are what the planner can plan for the type.
             physical.update("ba:itemname_" + s for _n, s in good_re.findall(before))
+        if sold & ISSUED_ITEMS and header:
+            # A cinema or theater's ticket is its whole primary range, so its
+            # concessions (popcorn, martinis) are what the planner can plan.
+            extra = _EXTRAS_HEADER_RE.search(text, header.end())
+            if extra:
+                block = text[extra.end() :].lstrip("\n").split("\n\n", 1)[0]
+                physical.update("ba:itemname_" + s for _n, s in good_re.findall(block))
         catalogue_out[kind] = {
             "type": names.label(kind),
             "products": sorted(physical),
@@ -12138,7 +12170,9 @@ def _alerts(
         office = b["status"] == "office"
         silent.add(b["key"])
         priced = [l for l in b["lines"] if l["price"] > 0]
-        stocked = [l for l in priced if l["units"] > 0]
+        # A ticket is issued, never shelved, so only the other lines need stock.
+        shelved = [l for l in priced if not l.get("issued")]
+        stocked = [l for l in shelved if l["units"] > 0]
         # Which of the six pre-flight checks fail is the finding, so the slugs
         # are kept on the business beside the words: the site panel reads the
         # same list and the two cannot drift apart. An office sells hours, not
@@ -12155,21 +12189,21 @@ def _alerts(
         if not priced:
             failed.append("prices")
             reasons.append(msg("f.notrading.prices", "no prices set"))
-        elif not office and not stocked:
+        elif not office and shelved and not stocked:
             failed.append("stock")
             reasons.append(msg("f.notrading.stock", "no stock"))
-        elif not office and len(stocked) * 2 < len(priced):
+        elif not office and len(stocked) * 2 < len(shelved):
             failed.append("shelves")
             reasons.append(msg("f.notrading.shelves", "{n} of {of} shelves bare",
-                               n=len(priced) - len(stocked), of=len(priced)))
-        if not office and b["key"] not in planned:
+                               n=len(shelved) - len(stocked), of=len(shelved)))
+        if not office and (shelved or not priced) and b["key"] not in planned:
             failed.append("plan")
             reasons.append(msg("f.notrading.plan", "no delivery plan"))
         b["notTrading"] = failed
         if not reasons:
             reasons.append(
                 msg("f.notrading.ready.office", "staffed and priced, no trading day booked yet")
-                if office else
+                if office or not shelved else
                 msg("f.notrading.ready", "staffed and stocked, no trading day booked yet")
             )
         note(
@@ -13556,7 +13590,10 @@ def render(
     # placeholder's .replace() runs over the table, and a marker inside the
     # payload is left alone.
     with open(os.path.join(asset_root, "i18n.js"), encoding="utf-8") as fh:
-        i18n_script = fh.read().replace("/*__UI_TABLE__*/null", ui_json)
+        # The site's page also remembers the footer's Language (TT_SITE); a
+        # local page's language is its --lang.
+        i18n_script = (fh.read().replace("/*__TT_SITE__*/false", "true" if site else "false", 1)
+                       .replace("/*__UI_TABLE__*/null", ui_json))
     map_payload = ""
     if data is not None and not live and not map_external:
         import base64
@@ -16194,6 +16231,16 @@ tr.ss-ring > td{animation:ss-flash 2.4s ease-out}
 .gn-pop:focus-visible .gn-opt.gn-on{box-shadow:inset 0 0 0 1px var(--accent)}
 .gn-opt[aria-selected="true"]{color:var(--accent);font-weight:600}
 .gn-opt[aria-selected="true"] .sf-ic{visibility:visible}
+/* A group's heading in the list: the languages the whole page comes in, then
+   those that change only the game's names. */
+.gn-grp{padding:10px 12px 4px;color:var(--ink-2);font:600 10.5px/1.2 Archivo,"Helvetica Neue",Arial,sans-serif;
+  letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.gn-group:first-child .gn-grp{padding-top:6px}
+/* Under the picker while the page's words are machine-drafted. */
+.gn-note{display:inline-block;max-width:240px;color:var(--ink-2);font-size:12px;line-height:1.4;
+  text-decoration:underline;text-decoration-color:var(--rule);text-underline-offset:3px}
+.gn-note:hover{color:var(--accent)}
+.gn-note[hidden]{display:none}
 @keyframes gnpop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.gn-pop,.gn-chev{animation:none;transition:none}}
 /* The one-time offer of the player's own language, hung off <body>. */
@@ -17849,7 +17896,48 @@ function gnPaint(lang = gnLang){
        language would drop the mark. */
     if(o.getAttribute("translate") === "no") cur.setAttribute("translate", "no"); else cur.removeAttribute("translate");
   });
+  gnNote();
   if(gnPopFor) gnMark();
+}
+/* The page's own words for a language picked, where Big Copilot has them
+   (TT_LANGS in web/i18n.js); English for a language that changes only the
+   game's names. */
+const gnUiLang = lang => typeof ttKnown === "function" && ttKnown(lang) ? lang : "en";
+/* One Language choice, both layers or neither: the page's words and the
+   game's names are both fetched first, and only then kept and put in force.
+   A table that will not load leaves the page, the names, the picker and the
+   kept choice as they were. The latest choice wins a race. */
+let gnSwitchSeq = 0, gnHold = 0, gnPending = false;
+async function gnSwitch(lang){
+  if(!gnKnown(lang)) lang = "en";
+  const seq = ++gnSwitchSeq, ui = gnUiLang(lang);
+  const canUi = typeof setUiLang === "function" && typeof ttLoad === "function";
+  try{
+    await Promise.all([lang !== "en" ? gnLoad(lang) : null, canUi && ui !== "en" ? ttLoad(ui) : null]);
+  }catch(e){
+    if(seq === gnSwitchSeq) gnPaint();
+    return false;
+  }
+  if(seq !== gnSwitchSeq) return false;
+  gnRemember(lang);
+  /* Both layers change, and the board is drawn once, after both. */
+  gnHold++;
+  try{
+    const [names] = await Promise.all([setGameNames(lang),
+      canUi && ui !== (typeof ttWant === "string" ? ttWant : "en") ? setUiLang(ui) : true]);
+    return names;
+  }finally{
+    if(!--gnHold && gnPending){ gnPending = false; gnRedraw(); }
+  }
+}
+/* "Machine-translated. Help check it" under every picker, while the page's
+   words are in a language still mostly machine-drafted (its data-drafted). */
+function gnNote(){
+  const ui = typeof ttLang === "string" ? ttLang : "en";
+  gnPickers().forEach(p => {
+    const note = p.parentNode && p.parentNode.querySelector("[data-gn-note]");
+    if(note) note.hidden = !(p.dataset.drafted || "").split(" ").includes(ui);
+  });
 }
 /* Switch the game names: the whole board is drawn again, as for another save,
    from the English payload it already holds. A table that will not load leaves
@@ -17868,6 +17956,8 @@ async function setGameNames(lang){
   return true;
 }
 function gnRedraw(){
+  /* While gnSwitch() puts both layers in force, one redraw waits for both. */
+  if(gnHold){ gnPending = true; return; }
   if(typeof hasData === "function" && hasData()){
     D = localiseNames(D);
     renderCalm(false);
@@ -17877,7 +17967,7 @@ function gnRedraw(){
 }
 /* A change of the UI language (web/i18n.js): numbers follow it (English is
    always en-US, German de-DE), and the board redraws the same way. */
-if(typeof ttOnChange === "function") ttOnChange(() => { NUM_LOCALE = ttNumLocale(); gnRedraw(); });
+if(typeof ttOnChange === "function") ttOnChange(() => { NUM_LOCALE = ttNumLocale(); gnNote(); gnRedraw(); });
 /* The browser's languages, first to last, to the game's code: the first that
    is English or one the game has decides, so a reader who puts English first is
    never offered anything. */
@@ -17904,8 +17994,10 @@ function gnOfferClose(el, answer){
   el.remove();
 }
 /* Once, ever: a reader whose browser prefers a language the game has is asked
-   whether the game's names should follow it. Either answer is kept, and a
-   choice already made in the footer counts as one. */
+   whether the page should follow it: the whole page where Big Copilot has the
+   language, else the game's names. Either answer is kept, and a choice already
+   made in the footer counts as one. The question is English, the language the
+   page is in when it is asked. */
 function gnOffer(){
   if(!gnPickers().length || gnStored() || gnOfferDone() || document.querySelector(".gn-offer")) return null;
   const lang = gnBrowserLang(navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language]);
@@ -17915,21 +18007,23 @@ function gnOffer(){
   const el = document.createElement("div");
   el.className = "gn-offer";
   el.setAttribute("role", "dialog");
-  el.setAttribute("aria-label", "Game names");
-  el.innerHTML = `<p>Show game names in <span lang="${attr(lang)}">${spEsc(word)}</span>?</p>
+  el.setAttribute("aria-label", "Language");
+  const whole = typeof ttKnown === "function" && ttKnown(lang);
+  el.innerHTML = `<p>${whole ? "Show Big Copilot in" : "Show game names in"} <span lang="${attr(lang)}">${spEsc(word)}</span>?</p>
     <div class="gn-offer-acts"><button type="button" class="gn-yes">Yes</button><button type="button" class="gn-no">No thanks</button></div>`;
-  el.querySelector(".gn-yes").onclick = () => { gnOfferClose(el, "yes"); gnRemember(lang); setGameNames(lang); };
+  el.querySelector(".gn-yes").onclick = () => { gnOfferClose(el, "yes"); gnSwitch(lang); };
   el.querySelector(".gn-no").onclick = () => gnOfferClose(el, "no");
   document.body.appendChild(el);
   return el;
 }
-/* A language picked in the footer: kept, the offer answered, the names switched. */
+/* A language picked in the footer: the offer answered, the picker showing it
+   while its tables load, then the page's words and the game's names switched
+   and the choice kept. */
 function gnChoose(lang){
-  gnRemember(lang);
   const offer = document.querySelector(".gn-offer");
   if(offer) gnOfferClose(offer, "picked");
   gnPaint(lang);
-  return setGameNames(lang);
+  return gnSwitch(lang);
 }
 function wireGameNames(){
   gnPickers().forEach(p => {
@@ -18078,7 +18172,27 @@ function gnOpen(p, key){
   const btn = p.querySelector(".gn-btn"), head = p.closest(".sf-gn") && p.closest(".sf-gn").querySelector(".sf-head");
   if(head && head.id) gnPop.setAttribute("aria-labelledby", head.id);
   gnPop.textContent = "";
+  /* The options in two groups, each named by its heading, so a screen reader
+     says which a language is: the languages the whole page comes in, then
+     those that change only the game's names. Headings are not options, so the
+     keys and type-ahead pass them by. */
+  const groups = {page: tt("foot.lang.page", "Whole page"), names: tt("foot.lang.names", "Game names only")};
+  let group = null, host = gnPop;
   gnOpts(p).forEach((o, i) => {
+    if(o.dataset.group && o.dataset.group !== group && groups[o.dataset.group]){
+      group = o.dataset.group;
+      host = document.createElement("div");
+      host.className = "gn-group";
+      host.setAttribute("role", "group");
+      host.setAttribute("aria-labelledby", `gnGrp-${group}`);
+      const h = document.createElement("div");
+      h.className = "gn-grp";
+      h.id = `gnGrp-${group}`;
+      h.setAttribute("role", "presentation");
+      h.textContent = groups[group];
+      host.appendChild(h);
+      gnPop.appendChild(host);
+    }
     const row = document.createElement("div");
     row.className = "gn-opt";
     row.id = `gnOpt${i}`;
@@ -18087,7 +18201,7 @@ function gnOpen(p, key){
     ["lang", "translate"].forEach(a => { if(o.getAttribute(a)) row.setAttribute(a, o.getAttribute(a)); });
     row.innerHTML = `<span class="gn-word"></span>${GN_TICK}`;
     row.firstChild.textContent = o.textContent;
-    gnPop.appendChild(row);
+    host.appendChild(row);
   });
   gnPopFor = p; gnTyped = "";
   gnMark();
@@ -21822,15 +21936,18 @@ const spHypeRow = key => {
    is failing (b.notTrading, the same list the not-trading finding reads out);
    grey was never checked, because the alert stops at the first of prices,
    stock and shelves that fails; green is in place. An office has nothing to
-   stock, shelve or deliver, so it shows three. Only a site the not-trading
+   stock, shelve or deliver, so it shows three, and so does a cinema or theater
+   that prices only its issued tickets. Only a site the not-trading
    finding looked at has the list at all, and an empty one means every check
    passed and the site simply has not booked a day yet. */
 function spPreflight(b){
   const failed = b.notTrading;
   const chain = ["prices", "stock", "shelves"];
   const stops = chain.findIndex(s => failed.includes(s));
+  const priced = (b.lines || []).filter(l => l.price > 0);
+  const nothingShelved = b.status === "office" || (priced.length && priced.every(l => l.issued));
   return ["closed", "staff", "prices", "stock", "shelves", "plan"]
-    .filter(s => b.status !== "office" || s === "closed" || s === "staff" || s === "prices")
+    .filter(s => !nothingShelved || s === "closed" || s === "staff" || s === "prices")
     .map(s => ({slug: s, state: failed.includes(s) ? "no"
       : stops >= 0 && chain.indexOf(s) > stops ? "unk" : "ok"}));
 }
@@ -23855,11 +23972,11 @@ function drawSite(){
                 num(f.setTo)}</b></span>` : num(deal)}<small ${SMALL} data-tip="${attr(t.wholesaleDay
                 ? tt("sp.shelf.wholesale.day", "Delivered by a wholesale store each {day}", {day: WEEKDAY_NAMES.includes(t.wholesaleDay) ? ttDay(WEEKDAY_NAMES.indexOf(t.wholesaleDay)) : t.wholesaleDay})
                 : tt("sp.shelf.wholesale.week", "Delivered by a wholesale store each week"))}">${tt("sp.stock.wholesale", "/wk wholesale")}</small>`
-            : !t || !t.target ? (sp ? `<span class="sp-noplan" data-el="noplan">${spIcon("route")}${tt("sp.noplan", "no plan")}</span>` : "—")
+            : !t || !t.target ? (sp && !l.issued ? `<span class="sp-noplan" data-el="noplan">${spIcon("route")}${tt("sp.noplan", "no plan")}</span>` : "—")
             : over ? `<span class="sp-up${f.st === "short" ? " bad" : ""}" data-el="raise">${num(t.target)} ${spIcon("right")} <b>${
                 num(f.setTo)}</b></span>` : num(t.target)}</td>
           <td class="gauge${f.st === "short" ? " low" : ""}">${gauge(t, f)}</td>
-          <td>${sp && !l.units ? `<span class="sp-red">${num(l.units)}</span>` : num(l.units)}</td></tr>`;
+          <td>${l.issued ? "—" : sp && !l.units ? `<span class="sp-red">${num(l.units)}</span>` : num(l.units)}</td></tr>`;
       }).join("")}</tbody></table>` : `<p class="quiet">${tt("sp.shelf.none", "Nothing stocked here.")}</p>`;
   const shelfMore = shelved && !office && sideShelves.length ? `
     <p class="quiet" style="margin:12px 0 0"><a class="link" href="#" id="shelfToggle" aria-expanded="${showAllShelves}">${
@@ -35809,13 +35926,16 @@ function boot(){
    as the in-browser board does, boots on the first delivery. */
 if(D) takeData(D);
 if(D) boot();
-/* The footer's "Game names": a choice kept from an earlier visit is fetched
-   now, and a board that arrives first is drawn in English and again once the
-   table is in. A page built with --lang has its table already and no picker. */
+/* The footer's "Language": a choice kept from an earlier visit is fetched now
+   (its page words already are, by web/i18n.js), and a board that arrives first
+   is drawn in English and again once the table is in. A page built with --lang
+   has its tables already and no picker. */
 wireGameNames();
 if(!GN_EMBED && gnPickers().length){
   const want = gnStored();
-  if(want && want !== "en" && gnKnown(want)) setGameNames(want);
+  /* The picker shows the kept language while its tables load, so picking
+     another (English included) is a change that wins over the load. */
+  if(want && want !== "en" && gnKnown(want)){ gnPaint(want); setGameNames(want); }
   else if(!want) gnOffer();
 }
 

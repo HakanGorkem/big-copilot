@@ -3,10 +3,5 @@
     "id": "break-even-time",
     "title": "Time to break even",
     "description": "Estimate how many in-game days each business needs to earn back its setup costs, based on its net profit."
-  },
-  {
-    "id": "multilingual-support",
-    "title": "Multilingual support",
-    "description": "The board's own wording in other languages, with names read from the language file your game runs in."
   }
 ]

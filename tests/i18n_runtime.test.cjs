@@ -264,7 +264,7 @@ function boot(search, {table = {'nav.today': 'Heute'}, hang = false, source = SO
 const tick = () => new Promise(r => setImmediate(r));
 
 test('without ?ui the page is English and asks for nothing', async () => {
-  for(const search of ['', '?ui=en', '?ui=fr', '?x=1']){
+  for(const search of ['', '?ui=en', '?ui=xx', '?x=1']){
     const b = boot(search);
     await tick();
     assert.deepEqual(b.fetched, [], search);
@@ -333,5 +333,5 @@ test('a language switch tells the board, which redraws', async () => {
   assert.deepEqual(seen, ['de', 'en']);
   // The board registers its listener with a guard, so a page without i18n.js
   // still runs: numbers follow the language, then the board redraws.
-  assert.match(BOARD, /if\(typeof ttOnChange === "function"\) ttOnChange\(\(\) => \{ NUM_LOCALE = ttNumLocale\(\); gnRedraw\(\); \}\);/);
+  assert.match(BOARD, /if\(typeof ttOnChange === "function"\) ttOnChange\(\(\) => \{ NUM_LOCALE = ttNumLocale\(\); gnNote\(\); gnRedraw\(\); \}\);/);
 });

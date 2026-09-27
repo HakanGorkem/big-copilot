@@ -14,8 +14,8 @@ from pathlib import Path
 
 import build_web
 from ba_dashboard import (
-    GAME_NAME_LANGS, NAME_COVERAGE, NAME_PREFIXES, cli_names, footer_html, name_coverage, name_table,
-    render,
+    GAME_NAME_LANGS, NAME_COVERAGE, NAME_PREFIXES, UI_LANGS, UI_LANGS_DRAFTED, cli_names, footer_html, name_coverage,
+    name_table, render,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -141,16 +141,42 @@ class Picker(unittest.TestCase):
         for landing in (False, True):
             with self.subTest(landing=landing):
                 markup = footer_html(landing=landing, site=True)
-                self.assertIn(">Game names</h2>", markup)
-                self.assertIn('<div class="gn-pick" data-gn-pick data-value="en">', markup)
+                self.assertIn(">Language</h2>", markup)
+                self.assertIn('<div class="gn-pick" data-gn-pick data-value="en" data-drafted="es fr pt ru">', markup)
                 self.assertIn('aria-haspopup="listbox"', markup)
                 # The button shows the first choice until the script paints the kept one.
                 self.assertIn('<span class="gn-cur" lang="en" translate="no">English</span>', markup)
-                options = re.findall(r'<li data-value="([^"]+)" lang="\1" translate="no">([^<]+)</li>', markup)
-                self.assertEqual([c for c, _ in options], list(GAME_NAME_LANGS))
+                options = re.findall(r'<li data-value="([^"]+)" data-group="(page|names)" lang="\1" translate="no">'
+                                     r'([^<]+)</li>', markup)
+                # The languages the whole page comes in first, then the names-only ones, each in table order.
+                self.assertEqual([c for c, _, _ in options],
+                                 [c for c in GAME_NAME_LANGS if c in UI_LANGS]
+                                 + [c for c in GAME_NAME_LANGS if c not in UI_LANGS])
+                self.assertEqual({c for c, g, _ in options if g == "page"}, set(UI_LANGS))
+                options = [(c, w) for c, _, w in options]
                 self.assertEqual(options[0], ("en", "English"))
                 self.assertIn(("de", "Deutsch"), options)
                 self.assertIn(("ja", "日本語"), options)
+
+    def test_the_whole_page_languages_are_the_ones_with_ui_text(self):
+        # UI_LANGS (the footer's "Whole page"), TT_LANGS in web/i18n.js and the
+        # translations under i18n/ name the same languages.
+        script = (ROOT / "web/i18n.js").read_text(encoding="utf-8")
+        tt = re.search(r"const TT_LANGS = \[([^\]]*)\]", script).group(1)
+        self.assertEqual(sorted(re.findall(r'"([a-z-]+)"', tt)), sorted(UI_LANGS))
+        ours = sorted(n[:-5] for n in os.listdir(ROOT / "i18n") if n.endswith(".json") and n.count(".") == 1)
+        self.assertEqual(ours, sorted(set(UI_LANGS) - {"en"}))
+        self.assertTrue(set(UI_LANGS) <= set(GAME_NAME_LANGS))
+
+    def test_the_drafted_note_names_the_languages_still_mostly_unreviewed(self):
+        # The footer's "Machine-translated" note shows for a language while more
+        # than half its table awaits a native speaker (i18n/<lang>.ai.json).
+        def drafted(lang):
+            table = json.loads((ROOT / f"i18n/{lang}.json").read_text(encoding="utf-8"))
+            ai = ROOT / f"i18n/{lang}.ai.json"
+            marks = json.loads(ai.read_text(encoding="utf-8")) if ai.exists() else {}
+            return len(marks) * 2 > len(table)
+        self.assertEqual(sorted(UI_LANGS_DRAFTED), sorted(l for l in UI_LANGS if l != "en" and drafted(l)))
 
     def test_the_two_pickers_label_themselves_apart(self):
         # Both footers are in the page until the board replaces the landing.

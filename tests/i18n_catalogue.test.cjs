@@ -160,7 +160,8 @@ test("the Wiki guides' labels are keyed from guideUi, one wiki.ui key per entry,
 
 /* The translations: flat JSON of strings, and every key that is translated
    carries the placeholders and plural forms of the English it came from. */
-const LANGS = fs.readdirSync(path.join(ROOT, 'i18n')).filter(n => n.endsWith('.json') && !n.endsWith('.base.json'))
+const LANGS = fs.readdirSync(path.join(ROOT, 'i18n'))
+  .filter(n => n.endsWith('.json') && !n.endsWith('.base.json') && !n.endsWith('.ai.json'))
   .map(n => n.slice(0, -5));
 
 test('i18n/ holds German, as flat JSON of strings beside its base', () => {
@@ -343,6 +344,58 @@ print(json.dumps([i18n.shipped("de", english), i18n.status("de", english)]))`);
   assert.deepEqual(status.mismatch.sort(), ['f.b', 'f.m_few']);
   assert.deepEqual(status.stale.filter(k => !status.mismatch.includes(k)).sort(), ['f.a', 'f.d']);
   assert.deepEqual(status.missing, []);
+});
+
+test('a machine draft fills only what no person wrote, is marked by model, and reviewing clears the mark', () => {
+  const out = python(`
+import json
+from tools import i18n
+english = {"f.a": "Lost {w:$}", "f.b": "No staff", "f.c": "Fresh", "f.d": "Closed",
+           "f.m_one": "{n} machine", "f.m_other": "{n} machines", "f.p_one": "{n} pallet", "f.p_other": "{n} pallets",
+           "f.q_one": "{n} crate", "f.q_other": "{n} crates"}
+files = {"de.json": {"f.b": "Niemand", "f.c": "Frisch (alt)"},
+         "de.base.json": {"f.b": "No staff", "f.c": "Fresh before"}, "de.ai.json": {}}
+i18n.load = lambda lang, root=i18n.ROOT: (dict(files[lang + ".json"]), dict(files[lang + ".base.json"]))
+i18n.drafted = lambda lang, root=i18n.ROOT: dict(files[lang + ".ai.json"])
+i18n._write = lambda name, data: files.__setitem__(name, dict(data))
+draft = {"f.a": "Verlust {w:$}", "f.b": "Kein Personal", "f.c": "Frisch", "f.d": "Zu {x}",
+         "f.m_one": "{n} Automat", "f.m_other": "{n} Automaten",
+         "f.m_many": "{n} Automaten", "f.gone": "Weg", "f.p_other": "{n} Paletten",
+         "f.q_one": "{n} {k}", "f.q_other": "{n} Kisten"}
+got = i18n.import_draft("de", draft, "gpt-6-luna", english, {})
+after_import = json.loads(json.dumps(files))
+i18n.reviewed("de", ["f.a"], english)
+after_review = json.loads(json.dumps(files))
+# A person fixes f.c and accepts it: the mark goes, and a new draft leaves it alone.
+files["de.json"]["f.c"] = "Frisch!"
+del english["f.m_one"], english["f.m_other"]
+i18n.accept("de", ["f.c"], english)
+# Only f.p_other's English changes: a draft of that one form is enough.
+files["de.json"].update({"f.p_one": "{n} Palette", "f.p_other": "{n} Paletten"})
+files["de.base.json"].update({"f.p_one": "{n} pallet", "f.p_other": "{n} pallet(s)"})
+again = i18n.import_draft("de", {"f.c": "Frisch (v2)", "f.p_other": "{n} Paletten!"}, "gpt-6-sol", english, {})
+print(json.dumps([got, after_import, after_review, files, again]))`);
+  assert.equal(out.status, 0, out.stderr);
+  const [got, drafted, reviewed, accepted, again] = JSON.parse(out.stdout);
+  // f.b is current and a person's: kept. f.c is stale: redrafted.
+  assert.deepEqual(got.kept, ['f.b']);
+  assert.deepEqual(got.taken, ['f.a', 'f.c', 'f.m_one', 'f.m_other']);
+  // f.q_one breaks a placeholder, so f.q_other goes with it: a plural comes whole.
+  assert.deepEqual(Object.keys(got.refused).sort(), ['f.d', 'f.gone', 'f.m_many', 'f.p_other', 'f.q_one', 'f.q_other']);
+  assert.match(got.refused['f.p_other'], /lacks the plural forms one/);
+  assert.equal(drafted['de.json']['f.b'], 'Niemand');
+  assert.equal(drafted['de.base.json']['f.c'], 'Fresh');
+  assert.equal(drafted['de.base.json']['f.m_one'], '{n} machine');
+  assert.deepEqual(Object.keys(drafted['de.ai.json']).sort(), got.taken);
+  assert.equal(drafted['de.ai.json']['f.a'], 'gpt-6-luna');
+  // Reviewing f.a drops its mark and nothing else.
+  assert.deepEqual(Object.keys(reviewed['de.ai.json']).sort(), got.taken.filter(k => k !== 'f.a'));
+  assert.equal(reviewed['de.json']['f.a'], 'Verlust {w:$}');
+  // accept dropped f.c's mark and those of f.m, whose English went; only the redrafted f.p_other is marked.
+  assert.deepEqual(Object.keys(accepted['de.ai.json']), ['f.p_other']);
+  assert.deepEqual(again.kept, ['f.c']);
+  assert.deepEqual(again.taken, ['f.p_other']);
+  assert.equal(accepted['de.json']['f.c'], 'Frisch!');
 });
 
 test("a translation may write a game name's token its calls pass beside the English, and nothing they do not", () => {

@@ -577,13 +577,17 @@ test('votes: one vote per IP is idempotent under duplicates and races, per-IP fl
     'duplicates and races must store exactly one vote row',
   );
 
-  const both = await expectJSON(
-    await postJSON(mf, origin, '/api/community/vote', { featureId: f1 }, ip1),
-    200,
-    'same IP votes the other feature',
-  );
-  assert.equal((both.feature ?? both).id, f1);
-  assert.equal((both.feature ?? both).votes, 1, 'the other feature starts at its own first vote');
+  // With a second feature on the ballot, one IP may vote for each.
+  if (f1) {
+    const both = await expectJSON(
+      await postJSON(mf, origin, '/api/community/vote', { featureId: f1 }, ip1),
+      200,
+      'same IP votes the other feature',
+    );
+    assert.equal((both.feature ?? both).id, f1);
+    assert.equal((both.feature ?? both).votes, 1, 'the other feature starts at its own first vote');
+  }
+  const rows = f1 ? 3 : 2;
 
   const other = await expectJSON(
     await postJSON(mf, origin, '/api/community/vote', { featureId: f0 }, ip2),
@@ -594,13 +598,13 @@ test('votes: one vote per IP is idempotent under duplicates and races, per-IP fl
 
   assert.equal(
     await tableRowCount(SCHEMA.votesTable),
-    3,
-    'two rows for the first feature, one for the second',
+    rows,
+    'two rows for the first feature, one for the second (if there is one)',
   );
 
   // Stored identity must be a hash, never the raw IP.
   const voteRows = (await db.prepare(`SELECT * FROM "${SCHEMA.votesTable}"`).all()).results;
-  assert.equal(voteRows.length, 3);
+  assert.equal(voteRows.length, rows);
   for (const row of voteRows) {
     const hash = String(row[SCHEMA.votesIpHash]);
     assert.match(hash, /^[0-9a-f]{64}$/i, 'stored voter identity is a 64-hex digest');
@@ -617,11 +621,15 @@ test('votes: one vote per IP is idempotent under duplicates and races, per-IP fl
   assert.equal(mine.find((f) => f.id === f0).voted, true, 'ip1 sees its own vote');
   const theirs = await getFeatures(origin, ip2);
   assert.equal(theirs.find((f) => f.id === f0).voted, true, 'ip2 sees the feature it voted for');
-  assert.equal(
-    theirs.find((f) => f.id === f1).voted,
-    false,
-    'ip2 must never see ip1’s voted flag (no cache leakage)',
-  );
+  if (f1) {
+    assert.equal(
+      theirs.find((f) => f.id === f1).voted,
+      false,
+      'ip2 must never see ip1’s voted flag (no cache leakage)',
+    );
+  }
+  const stranger = await getFeatures(origin, nextIp());
+  assert.equal(stranger.find((f) => f.id === f0).voted, false, 'an IP that never voted sees no voted flag (no cache leakage)');
   assert.equal(theirs.find((f) => f.id === f0).votes, 2, 'public totals are shared, flags are not');
 });
 
