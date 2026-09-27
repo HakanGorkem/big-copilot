@@ -36,6 +36,9 @@ function seamSource(){
 }
 const LANGS = ['en', 'cs', 'da', 'de', 'es', 'fr', 'it', 'lt', 'hu', 'nl', 'pl', 'pt', 'ro', 'fi', 'tr',
   'el', 'ru', 'uk', 'ja', 'ko', 'zh-cn', 'zh-tw'];
+/* The footer's list: the languages the whole page comes in, then the rest. */
+const PAGE_LANGS = ['en', 'de', 'es', 'fr', 'pt', 'ru'];
+const LIST = [...PAGE_LANGS, ...LANGS.filter(l => !PAGE_LANGS.includes(l))];
 function seam({table = null, lang = 'de'} = {}){
   const opts = LANGS.map(value => ({dataset: {value}, textContent: value, getAttribute: () => value}));
   const picker = {dataset: {value: 'en'}, querySelectorAll: sel => sel === '.gn-opts [data-value]' ? opts : [],
@@ -251,7 +254,8 @@ test('the offer shows once, in the language the browser prefers, and a No is kep
   const {page, errors, context} = await site(t, {locale: 'de-DE'});
   const offer = page.locator('.gn-offer');
   await offer.waitFor();
-  assert.equal((await offer.locator('p').textContent()).trim(), 'Show game names in Deutsch?');
+  // German is a language the whole page comes in, so the offer is for the page.
+  assert.equal((await offer.locator('p').textContent()).trim(), 'Show Big Copilot in Deutsch?');
   assert.equal(await offer.locator('[lang="de"]').textContent(), 'Deutsch');
   await offer.locator('.gn-no').click();
   assert.equal(await offer.count(), 0);
@@ -321,7 +325,7 @@ test('the picker is a listbox button: every choice listed, the current one marke
   assert.equal(await page.evaluate(() => {
     const b = document.querySelector('.sf-landing .gn-btn');
     return b.getAttribute('aria-labelledby').split(' ').map(id => document.getElementById(id).textContent.trim()).join(' ');
-  }), 'Game names English');
+  }), 'Language English');
   await btn.click();
   assert.equal(await btn.getAttribute('aria-expanded'), 'true');
   const pop = page.locator('#gnPop');
@@ -331,7 +335,14 @@ test('the picker is a listbox button: every choice listed, the current one marke
   assert.equal(await page.evaluate(() => document.getElementById('gnPop').parentElement === document.body), true);
   assert.equal(await pop.evaluate(e => getComputedStyle(e).position), 'fixed');
   const rows = await pop.locator('[role="option"]').evaluateAll(els => els.map(e => [e.dataset.value, e.getAttribute('lang'), e.textContent]));
-  assert.deepEqual(rows.map(r => r[0]), LANGS);
+  assert.deepEqual(rows.map(r => r[0]), LIST);
+  // Each group has its heading, which is not an option.
+  assert.deepEqual(await pop.locator('.gn-grp').evaluateAll(els => els.map(e => [e.textContent, e.getAttribute('role'),
+    e.nextElementSibling.dataset.value])), [['Whole page', 'presentation', 'en'], ['Game names only', 'presentation', 'cs']]);
+  // Each group names its options, so a screen reader says which group a language is in.
+  assert.deepEqual(await pop.locator('[role="group"]').evaluateAll(els => els.map(e => [
+    document.getElementById(e.getAttribute('aria-labelledby')).textContent, e.querySelectorAll('[role="option"]').length])),
+    [['Whole page', 6], ['Game names only', 16]]);
   assert.deepEqual(rows.find(r => r[0] === 'ja'), ['ja', 'ja', '日本語']);
   assert.deepEqual(await pop.locator('[aria-selected="true"]').evaluateAll(els => els.map(e => e.dataset.value)), ['en']);
   // 22 rows scroll inside a list that stays within the window.
@@ -360,7 +371,7 @@ test('the picker works from the keyboard alone', async t => {
   await page.keyboard.press('ArrowDown');
   assert.deepEqual(await popState(page), {open: true, active: 'en', focus: 'list'});
   await page.keyboard.press('ArrowDown');
-  assert.equal((await popState(page)).active, 'cs');
+  assert.equal((await popState(page)).active, 'de');
   await page.keyboard.press('End');
   assert.equal((await popState(page)).active, 'zh-tw');
   // The last row is scrolled into view.
@@ -380,9 +391,9 @@ test('the picker works from the keyboard alone', async t => {
   assert.equal((await popState(page)).active, 'de');
   await page.waitForTimeout(600);
   await page.keyboard.type('p');
-  assert.equal((await popState(page)).active, 'pl');
-  await page.keyboard.type('p');
   assert.equal((await popState(page)).active, 'pt');
+  await page.keyboard.type('p');
+  assert.equal((await popState(page)).active, 'pl');
   await page.waitForTimeout(600);
   // Enter picks, closes and hands focus back; the names switch and are kept.
   await page.keyboard.type('deu');
@@ -409,12 +420,77 @@ test('the picker works from the keyboard alone', async t => {
   await btn.focus();
   await page.keyboard.press('Enter');
   await page.keyboard.type('d');
-  assert.equal((await popState(page)).active, 'da');
+  assert.equal((await popState(page)).active, 'de');
   await page.waitForTimeout(600);
   await page.keyboard.press('Space');
-  await page.waitForFunction(() => gnLang === 'da');
+  await page.waitForFunction(() => gnLang === 'de');
   assert.equal((await popState(page)).open, false);
   assert.deepEqual(errors, []);
+});
+
+test("a whole-page language switches the page's words with the names, and says it is machine-translated", async t => {
+  const {page, errors, context} = await site(t);
+  const note = picker(page).locator('xpath=..').locator('[data-gn-note]');
+  assert.equal(await note.isHidden(), true);
+  await choose(page, 'fr');
+  await page.waitForFunction(() => gnLang === 'fr' && ttLang === 'fr');
+  assert.equal(await page.evaluate(() => document.documentElement.lang), 'fr');
+  assert.equal(await page.locator('.sf-landing [data-tt="foot.lang.head"]').textContent(), 'Langue');
+  assert.equal(await note.isVisible(), true);
+  // A language that changes only the names leaves the page English, and the note goes.
+  await choose(page, 'pl');
+  await page.waitForFunction(() => gnLang === 'pl' && ttLang === 'en');
+  assert.equal(await page.locator('.sf-landing [data-tt="foot.lang.head"]').textContent(), 'Language');
+  assert.equal(await note.isHidden(), true);
+  // German is reviewed: no note.
+  await choose(page, 'de');
+  await page.waitForFunction(() => ttLang === 'de');
+  assert.equal(await note.isHidden(), true);
+  // Kept: the next visit opens in German, words and names.
+  const again = await site(t, {context});
+  await again.page.waitForFunction(() => ttLang === 'de' && gnLang === 'de');
+  assert.deepEqual(errors, []);
+});
+
+test("one choice is both layers or neither: a page table that will not load leaves everything as it was", async t => {
+  const {page, errors} = await site(t);
+  await page.route('**/i18n/fr.json*', route => route.fulfill({status: 404, body: ''}));
+  await choose(page, 'fr');
+  await page.waitForFunction(() => document.querySelector('.sf-landing [data-gn-pick]').dataset.value === 'en');
+  assert.deepEqual(await page.evaluate(() => [gnLang, ttLang, localStorage.getItem('ba_dash_names')]), ['en', 'en', null]);
+  assert.deepEqual(errors, []);
+});
+
+test('a switch draws the open board once, after both layers are in', async t => {
+  const {page, errors} = await site(t);
+  await boardOn(page);
+  await page.evaluate(() => { window.__draws = 0; const was = renderCalm; window.renderCalm = (...a) => { window.__draws++; return was(...a); }; });
+  await page.evaluate(() => gnChoose('fr'));
+  assert.deepEqual(await page.evaluate(() => [gnLang, ttLang, window.__draws]), ['fr', 'fr', 1]);
+  // A names-only language over an English page loads no page table and draws once.
+  await page.evaluate(async () => { await gnChoose('en'); window.__draws = 0; await gnChoose('pl'); });
+  assert.deepEqual(await page.evaluate(() => [gnLang, ttLang, window.__draws]), ['pl', 'en', 1]);
+  assert.deepEqual(errors, []);
+});
+
+test('?ui= wins over the kept language for the page words, and is not kept', async t => {
+  const {page, context} = await site(t);
+  await choose(page, 'de');
+  await page.waitForFunction(() => ttLang === 'de');
+  const flagged = (await site(t, {context})).page;
+  await flagged.goto('http://names.test/?ui=fr');
+  await flagged.waitForFunction(() => ttLang === 'fr');
+  assert.equal(await flagged.evaluate(() => localStorage.getItem('ba_dash_names')), 'de');
+});
+
+test('the offer of a names-only language is for the names', async t => {
+  const {page} = await site(t, {locale: 'pl-PL'});
+  const offer = page.locator('.gn-offer');
+  await offer.waitFor();
+  assert.equal((await offer.locator('p').textContent()).trim(), 'Show game names in Polski?');
+  await offer.locator('.gn-yes').click();
+  await page.waitForFunction(() => gnLang === 'pl');
+  assert.equal(await page.evaluate(() => ttLang), 'en');
 });
 
 test('a language whose table will not load leaves the picker on the one before', async t => {
