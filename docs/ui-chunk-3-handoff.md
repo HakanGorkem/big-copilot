@@ -67,7 +67,7 @@ could be inert on a visit that never opened a business page. `wireAll()` binds t
 - **A business's page summarises its week and links to Schedules** (the coordinator's "decide"):
   one planner, on Staffing › Schedules, keeps its id `#sp-roster`. `tests/roster.test.cjs` now
   draws the planner there (`schedPick()`; the four tests that need its layout open the route), with
-  its assertions unchanged except two: hovering a shift lights that person's entries in the planner
+  its assertions unchanged except two: hovering a schedule entry lights that person's entries in the planner
   (the crew pills are on the business's page now, not beside the planner), and the plan is picked
   in the planner beside Schedules' list, which follows at once, where it used to be picked on the
   business's page.
@@ -147,3 +147,49 @@ real zoom does not produce.
 - **Two tabs** learn of each other's writes a moment after they happen; two tabs acting within that
   moment can still cross (documented in the postconditions).
 - **Changelog `pr`** is a placeholder (167).
+
+## Round 1 fixes (27 September 2026)
+
+Three reviews of `adf1d5b` (Opus code, Sol code, Sol QA): all HOLD, no MUST-FIX. Each SHOULD below
+has a test that fails on `adf1d5b` (the new tests run on a `git archive adf1d5b` copy, its own
+`web/` included) and passes now.
+
+| # | Finding | Fix | Test (fails on `adf1d5b`) |
+| --- | --- | --- | --- |
+| 1 | Sol + QA SHOULD: an open Preferences sheet kept the old language after a switch from its own picker | The sheet's markup is `pxRender()`; a `ttOnChange()` listener draws an open sheet again in the new language, where it was scrolled, the keyboard back on the picker's new copy (`#pxGnBtn`) or in the row it was in | `businesses_expansion`: "an open Preferences sheet is drawn again in a language picked…" (web target: the real picker, Deutsch; CLI target: the same listener fed a table) |
+| 2 | Sol SHOULD: the average sold price divided the rounded daily revenue by the rounded rate ($14.30 for one $10 sale in a week; none when the rate rounds to 0) | Extraction carries `soldPrice` on each line: the takings over the units, unrounded, `None` where nothing sold; Products & prices reads it and shows "—" where the board has none (an older payload included). Payload snapshots regenerated: the only change is the new field | `tests/test_wiki_prices.py`: "sold price is takings over units unrounded"; `businesses_expansion`: the Products & prices test ($10.00, and "—") |
+| 3 | Opus S1: Find a location's demand card opened Demand with an arrival whose way back was Demand itself | `routeCarry()` never carries an arrival whose `back` is the route being opened; browser Back returns to the finder, whose own strip leads to Demand | `businesses_expansion`: "Find a location keeps a picked building…" now clicks through: no strip on Demand, Back to the finder, its strip back to Demand |
+| 4 | Opus S2: a Headquarters page offered Imports and Deliveries, which opened empty views and left the scope stuck | `spActs()` draws a Supply action only for a site the Supply views scope (its supply facts, and its tab: a warehouse's Imports and Deliveries, a factory's Production, a shop's Deliveries); none for a Headquarters | `businesses_expansion`: "a headquarters page offers no Supply action…" (a Headquarters added to the fixture; the warehouse and factory keep theirs; scopes untouched) |
+| 5 | Opus S3: the uniform write's progress was missing on the business's page, beside the write | `spStandards()` draws `pgUniformState()`'s pill beside the write (`.sp-unipg`) | `game_link_write`: "uniforms from a business page: the progress stands beside the write…" (through the real `gwUniforms` dialog and the mock: Applied, then Confirmed by the board the game gives after, on the page and on Standards; the toast's Undo takes it back); `businesses_expansion`: the uniform test asserts the page's pill |
+| 6 | Opus S4: Company finances said "cash watched from day N" for the comparison day | "cash compared with day N" (`co.fin.hist.cash2`); the reference doc says what the day is | `businesses_expansion`: the Results test |
+| 7 | Sol LOW: Standards sorted offices after shops | Every shop and office together, lowest satisfaction first, the unscored last | `businesses_expansion`: the Standards test adds an office at 10%, first |
+| 8 | QA LOW: "Plan a chain" on the planner's heading and Demand's row links | "Plan a factory" (`gr.plan.title2`, `gr.planLink2`) | `businesses_expansion`: "Plan a factory names itself so…"; `market` test wording updated |
+| 9 | Opus L1: Forget history in Preferences gave no feedback, and the finances link focused that button | The row says "History forgotten…" (`role="status"`) after the click; `pxOpen(…, row)` focuses the row itself | `businesses_expansion`: the Preferences test (web target, where the control exists) |
+| 10 | Opus L2: Supply › Changes' clear also removed uniform records | `pgClearSettled(family = "imports")` | `businesses_expansion`: the uniform test clears and keeps the record; the two-tab clear test names its family |
+| 11 | Opus L3: an office on Products & prices kept the shop's column words | "Average billed price" and "Hours billed / day" for an office | `businesses_expansion`: the Products & prices test |
+| 12 | Opus NITs | Search's "Daily result" is "Company results" (`nav.search.daily.title2`); a product's landing reads "Businesses › Products & prices · {item}" (`nav.search.item.sales`); the changelog counts the five places right; the dead `[data-sched-open]` handler is gone | `businesses_expansion` (search title) |
+| 13 | QA NIT: "hovering a shift" in this handoff | "hovering a schedule entry" | – |
+
+New English went to new keys; German, Spanish, French, Portuguese and Russian drafted for the six
+by Opus 5.5 (`import-draft --model claude-opus-5-5`, marked for review): `status` 0 missing, 0
+stale, 0 mismatch in all five.
+
+Files: `ba_dashboard.py`; `web/changelog.json`; `i18n/{de,es,fr,pt,ru}.json`, `.base.json`,
+`.ai.json`; `docs/ui-chunk-3-handoff.md`, `docs/dashboard-reference.md`,
+`docs/ui-progress-postconditions.md`; tests `tests/businesses_expansion.test.cjs`,
+`tests/game_link_write.test.cjs`, `tests/market.test.cjs`, `tests/progress.test.cjs`,
+`tests/test_wiki_prices.py`, `tests/fixtures/payload_snapshot/data_day40.json`,
+`data_day47_history.json`; generated `web/index.html`, `web/py/ba_dashboard.py`, `web/version.json`,
+`web/i18n/*.json`.
+
+Validation, in the foreground, Edge, `--test-concurrency=2`, on the final source:
+
+| Command | Result |
+| --- | --- |
+| The new and changed tests on a `git archive adf1d5b` copy | `businesses_expansion`: 8 of its 15 tests fail (every fix's test above but L1, which only the web target exercises), 7 pass; `test_wiki_prices`: the new test errors (no `soldPrice`); `game_link_write`, the new dialog test: fails waiting for the page's pill |
+| `node --test` (CLI target) on `businesses_expansion`, `progress`, `flow_chain`, `roster`, `shell_routes`, `navigation`, `search`, `site_panel`, `findability`, `i18n_*`, `game_link_write`, `market` | 543 tests, 543 pass |
+| `BOARD_TARGET=web` on `businesses_expansion`, `progress`, `shell_routes` | 67 tests, 67 pass |
+| `python -m unittest discover -s tests` | 1371 tests, OK, 1 skipped |
+| `python -m unittest tests.test_css_integrity tests.test_doc_registries tests.test_release_latest tests.test_wiki_prices tests.test_payload_snapshot` | 26 tests, OK |
+| `python -m unittest discover -s tests -p "test_i18n*.py"` | 35 tests, OK |
+| `python build_web.py`, then `python build_web.py --check` | exit 0, "web/ is up to date" |

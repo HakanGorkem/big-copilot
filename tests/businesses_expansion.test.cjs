@@ -70,6 +70,9 @@ test('Results carries Company finances: cash beside profit, the loans and what t
   assert.match(tiles[0], /CASH ON HAND \$25,560/i);
   assert.match(tiles[1], /OWED ON LOANS \$29,900 1 loan · \$40 a day interest, \$300 a day repaid/i);
   assert.match(tiles[2], /HISTORY SINCE day 26 Daily results: 21 days/i);
+  // The cash line is a comparison with a day, not where cash history starts (round 1, S4).
+  assert.match(tiles[2], /cash compared with day 40/);
+  assert.doesNotMatch(tiles[2], /watched from/);
   assert.match(await page.locator('#dailyHead h2').innerText(), /Company results/);
   // Wages in detail: the canonical Payroll, one click away.
   await page.locator('#secFinance a[data-ov-route="staffing/payroll"]').click();
@@ -79,18 +82,26 @@ test('Results carries Company finances: cash beside profit, the loans and what t
 test('Standards compares every shop and office: satisfaction against the 80 line, promotion, amenity lamps, uniforms', async t => {
   const page = await board(t, {hash: '#businesses/standards'});
   const k = await keys(page);
+  // An office scored at 10% sorts with the shops, first (round 1, Sol LOW).
+  await page.evaluate(() => {
+    const shop = D.businesses.find(b => /Gifts/.test(b.name));
+    D.businesses.push({...JSON.parse(JSON.stringify(shop)), key: 'ba:street_testoffice#1', name: 'HART. Law', status: 'office', type: 'Law Firm',
+      typeSlug: 'ba:businesstype_lawfirm', satisfaction: {overall: 10}, amenities: null, uniformGaps: [], uniformGapSkills: []});
+    drawStandards(); wireAll();
+  });
   const rows = await page.$$eval('#secStandards tr[data-std-row]', trs => trs.map(tr => ({key: tr.dataset.stdRow,
     sat: (tr.querySelector('.bz-sat .bz-v') || {}).textContent || null,
     lamps: [...tr.querySelectorAll('.sp-lampb')].map(l => `${[...l.classList].find(c => ['bathroom', 'toiletprivacy', 'sink', 'music', 'interior'].includes(c))}:${
       ['ok', 'miss', 'unk'].find(s => l.classList.contains(s))}`),
     uni: tr.querySelector('.bz-uni').innerText.trim()})));
   // The lowest satisfaction first.
-  assert.deepEqual(rows.map(r => r.key), [k.gifts, k.spirits]);
-  assert.deepEqual(rows.map(r => r.sat), ['64%', '82%']);
-  const gifts = rows[0];
+  assert.deepEqual(rows.map(r => r.key), ['ba:street_testoffice#1', k.gifts, k.spirits]);
+  assert.deepEqual(rows.map(r => r.sat), ['10%', '64%', '82%']);
+  await page.evaluate(() => { D.businesses.pop(); drawStandards(); wireAll(); });
+  const gifts = rows[1];
   assert.ok(gifts.lamps.includes('bathroom:ok') && gifts.lamps.includes('sink:miss') && gifts.lamps.includes('music:miss'), gifts.lamps.join());
   assert.match(gifts.uni, /no uniform locker/);
-  assert.match(rows[1].uni, /^set/);
+  assert.match(rows[2].uni, /^set/);
   // A business opens on its own evidence, under Standards; Back returns.
   await page.locator(`#secStandards a[data-std-site="${k.gifts}"]`).click();
   await page.waitForFunction(() => siteOpen);
@@ -110,6 +121,32 @@ test('Products & prices: a shop picked shows its prices beside the market\'s low
   const head = await page.$$eval('#secPrices .bz-prices th', ths => ths.map(th => th.textContent.trim()).filter(Boolean));
   assert.deepEqual(head.slice(0, 5), ['Product', 'Your price', 'Lowest market price · Lower Manhattan', 'Average sold price', 'Sells / day']);
   assert.match(await page.locator('#secPrices .bz-foot').innerText(), /Comparisons, not recommended prices/);
+  // The average sold price is the line's own (extraction's takings over
+  // units), never rounded revenue over a rounded rate (round 1, Sol SHOULD):
+  // one $10 sale in a week reads $10.00, a line that sold nothing reads none.
+  const avg = await page.evaluate(key => {
+    const b = D.businesses.find(x => x.key === key);
+    const l = b.lines.find(x => x.soldPerDay > 0);
+    Object.assign(l, {soldPrice: 10, revenue: 1.43, rate: 0.1});
+    const none = b.lines.find(x => x !== l && spShelfListed(b, x));
+    if(none) none.soldPrice = null;
+    drawPriceShops(); wireAll();
+    const cells = [...document.querySelectorAll('#secPrices .bz-prices tbody tr')].map(tr => [tr.cells[0].textContent.trim(), tr.cells[3].textContent.trim()]);
+    return {item: l.item, cells, other: none ? none.item : null};
+  }, k.gifts);
+  assert.deepEqual(avg.cells.find(c => c[0] === avg.item), [avg.item, '$10.00']);
+  // An office's row reads as fees billed (round 1, L3).
+  const officeHead = await page.evaluate(key => {
+    const shop = D.businesses.find(x => x.key === key);
+    D.businesses.push({...JSON.parse(JSON.stringify(shop)), key: 'ba:street_testoffice#2', name: 'HART. Law', status: 'office', type: 'Law Firm',
+      lines: shop.lines.map(l => ({...l, price: 50, configuredPrice: 50}))});
+    bzPriceLit = 'ba:street_testoffice#2'; drawPriceShops();
+    const head = [...document.querySelectorAll('#secPrices .bz-prices th')].map(th => th.textContent.trim()).filter(Boolean);
+    D.businesses.pop(); bzPriceLit = key; drawPriceShops(); wireAll();
+    return head;
+  }, k.gifts);
+  assert.deepEqual([officeHead[0], officeHead[3], officeHead[4]], ['Fee', 'Average billed price', 'Hours billed / day']);
+  if(avg.other) assert.equal(avg.cells.find(c => c[0] === avg.other)[1], '—');
   // Sales across the company follow on the same view.
   assert.match(await page.locator('#secProducts .sechead h2').innerText(), /Sales across the company/);
   // The pick is the entry's: Back to Spirits' visit and Forward to Gifts'.
@@ -119,6 +156,15 @@ test('Products & prices: a shop picked shows its prices beside the market\'s low
   await page.reload();
   await page.waitForFunction(() => typeof hasData === 'function' && hasData() && route === 'businesses/prices');
   assert.equal(await picked(), k.spirits, 'a reload keeps the shop on screen');
+});
+
+test('Plan a factory names itself so on its page and on Demand\'s rows; search knows Company results', async t => {
+  const page = await board(t, {hash: '#expansion/factory'});
+  assert.equal(await page.locator('#secPlan .sechead h2').first().innerText(), 'Plan a factory');
+  await page.evaluate(() => openRoute('expansion/demand'));
+  const links = await page.$$eval('#market .mk-plan', as => as.map(a => a.textContent.trim()));
+  assert.ok(links.length && links.every(t => t === 'Plan a factory ›'), links.join());
+  assert.equal(await page.evaluate(() => SS_VIEWS.find(v => v.id === 'daily').t), 'Company results');
 });
 
 test('Milestones: the career goals with their bars, and the totals', async t => {
@@ -154,6 +200,23 @@ test('a business\'s page summarises its week and links to the one planner; the w
   await page.locator('#sitePanel .sp-acts [data-site-go="businesses/prices"]').click();
   assert.equal((await where(page)).route, 'businesses/prices');
   assert.equal(await page.evaluate(() => bzPriceLit), k.spirits);
+});
+
+test('a headquarters page offers no Supply action; a warehouse keeps Imports and Deliveries, a factory Production', async t => {
+  const page = await board(t);
+  const acts = key => page.evaluate(key => { openSite(key); return [...document.querySelectorAll('#sitePanel .sp-acts [data-site-go]')].map(b => b.dataset.siteGo); }, key);
+  const hub = await page.evaluate(() => D.businesses.find(b => /Hub/.test(b.name)).key);
+  const brewery = await page.evaluate(() => D.businesses.find(b => /Brewery/.test(b.name)).key);
+  assert.deepEqual(await acts(hub), ['supply/imports', 'supply/deliveries']);
+  assert.deepEqual(await acts(brewery), ['supply/production']);
+  // A headquarters: a support site the Supply views do not scope.
+  await page.evaluate(() => {
+    const hub = D.businesses.find(b => /Hub/.test(b.name));
+    D.businesses.push({...JSON.parse(JSON.stringify(hub)), key: 'ba:street_testhq#1', name: 'HART. Group HQ', type: 'Headquarters',
+      typeSlug: 'ba:businesstype_headquarters', status: 'overhead', lines: []});
+  });
+  assert.deepEqual(await acts('ba:street_testhq#1'), [], 'no Imports or Deliveries that would land on empty views');
+  assert.deepEqual(await page.evaluate(() => [sbScopeOf('imports'), sbScopeOf('deliveries')]), ['all', 'all']);
 });
 
 test('two shops from Results, their prices and standards, then a canonical action and the way back', async t => {
@@ -197,6 +260,10 @@ test('uniforms: Applied from the write\'s answer, Confirmed once a later board s
   }, [k.gifts, skill]);
   assert.equal(await state(), 'applied');
   assert.match(await pill(), /Applied · awaiting refresh/);
+  // The business's own page shows it beside the write too (round 1, S3).
+  await page.evaluate(key => openSite(key), k.gifts);
+  assert.match(await page.locator('#sp-standards .sp-unipg').innerText(), /Applied · awaiting refresh/);
+  await page.evaluate(() => openRoute('businesses/standards'));
   // The same board judges nothing: a click is not proof.
   await page.evaluate(() => pgEvaluate());
   assert.equal(await state(), 'applied');
@@ -212,6 +279,9 @@ test('uniforms: Applied from the write\'s answer, Confirmed once a later board s
   await later(false);
   assert.equal(await state(), 'confirmed');
   assert.match(await pill(), /Confirmed · day 47/);
+  // Supply › Changes clears the import records it lists, not this one (round 1, L2).
+  await page.evaluate(() => pgClearSettled());
+  assert.equal(await state(), 'confirmed');
   // An undo takes the record back.
   await page.evaluate(() => pgDrop(window.ids));
   assert.equal(await state(), null);
@@ -291,10 +361,19 @@ test('Find a location keeps a picked building through a detour, and its ways on 
   await page.evaluate(() => openRoute('expansion/factory'));
   await back(page);
   await page.waitForFunction(k => cityMapPage.selected === k, key);
-  // The demand card goes back to Demand with the type's row ringed.
+  // The demand card goes back to Demand with the type's row ringed, and
+  // carries no strip whose way back would be Demand itself (round 1, S1).
   await page.locator('#finderCtx [data-fx="demand"]').click();
   assert.equal((await where(page)).route, 'expansion/demand');
   assert.equal(await page.locator('#market .r.mk-arrive[data-slug="ba:businesstype_liquorstore"]').count(), 1);
+  assert.equal(await page.locator('#arrive').isVisible(), false, 'no arrival back to the page it is on');
+  // Browser Back: the finder, with the cell's own strip; its way back is Demand.
+  await back(page);
+  assert.equal((await where(page)).route, 'expansion/finder');
+  assert.match(await page.locator('#arrive').innerText(), /Demand for Liquor Store in Midtown/);
+  await page.locator('#arrive [data-nx="back"]').click();
+  await page.waitForTimeout(250);
+  assert.equal((await where(page)).route, 'expansion/demand', 'the strip leads back to Demand');
 });
 
 test('the City map is the plain map: the masthead switches the finder off, and the finder\'s switch is a visit Back undoes', async t => {
@@ -339,13 +418,38 @@ test('Preferences is a sheet: the theme, the checks panel over it, Escape in ord
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#pxSheet').isVisible(), false);
   assert.equal(await page.evaluate(() => document.activeElement.id), 'navMore');
-  // Company finances' history link opens the sheet on its History row.
+  // Company finances' history link opens the sheet on its History row, the
+  // row itself focused, not Forget history (round 1, L1); a click says so there.
   await page.evaluate(() => openRoute('businesses/results'));
-  await page.locator('#secFinance [data-open-prefs]').count().then(async n => {
-    if(!n) return;  // the CLI page keeps its history in a file, with no browser control to open
+  const n = await page.locator('#secFinance [data-open-prefs]').count();
+  if(n){  // the CLI page keeps its history in a file, with no browser control to open
     await page.locator('#secFinance [data-open-prefs]').click();
     assert.equal(await page.locator('#pxSheet .px-row.px-lit').getAttribute('data-px'), 'history');
-  });
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.px), 'history');
+    await page.locator('#pxSheet [data-px-do="forget"]').click();
+    assert.match(await page.locator('#pxSheet [data-px="history"] .px-said').innerText(), /History forgotten/);
+  }
+});
+
+test('an open Preferences sheet is drawn again in a language picked, the keyboard where it was', async t => {
+  const page = await board(t);
+  await page.evaluate(() => pxOpen('prefs', document.getElementById('navMore')));
+  const head = () => page.locator('#pxSheet [data-px="appearance"] h3').innerText();
+  assert.equal(await head(), 'Appearance');
+  if(await page.locator('#pxSheet .gn-btn').count()){
+    // The web page: its own Language picker, the real switch.
+    await page.locator('#pxSheet .gn-btn').click();
+    await page.locator('#gnPop .gn-opt[data-value="de"]').click();
+    await page.waitForFunction(() => document.querySelector('#pxSheet [data-px="appearance"] h3').textContent === 'Darstellung');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'pxGnBtn', 'the keyboard stays on the picker');
+    assert.equal(await page.locator('#pxSheet [data-px="language"] h3').innerText(), 'Sprache');
+  } else {
+    // The CLI page has no picker (its language is --lang): the same listener, fed a table.
+    await page.evaluate(() => { document.querySelector('#pxSheet [data-px="checks"] button').focus(); ttSetTable('de', {'nav.px.app.title': 'Darstellung', 'foot.lang.head': 'Sprache'}); });
+    assert.equal(await head(), 'Darstellung');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.px), 'checks', 'the keyboard stays in its row');
+  }
+  assert.equal(await page.locator('#pxSheet').isVisible(), true);
 });
 
 test('Help & feedback is a sheet with the ways to ask, the changelog and the project\'s links', async t => {

@@ -2358,3 +2358,33 @@ test('hire: a refused row answers 409 with its scope, and nothing is written', a
   assert.deepEqual([refused.status, refused.error], [409, 'changed']);
   assert.deepEqual(await applied(), []);
 });
+
+/* Chunk 3, round 1 (Opus S3): the uniform write made from a business's own
+   page, through the real dialog: its progress stands beside the write there,
+   and on Standards; the board the game gives after the write, with the role
+   dressed, confirms it; an undo takes the record back. */
+test('uniforms from a business page: the progress stands beside the write, there and on Standards, and an undo takes it back', async (t) => {
+  const page = await linked(t, {approved: true});
+  await page.evaluate((k) => { openSite(k); }, GIFTS);
+  // The game's board after the write: the role has its uniform.
+  await page.evaluate((k) => {
+    const d = JSON.parse(window.baseData);
+    const b = d.businesses.find((x) => x.key === k);
+    b.uniformGapSkills = []; b.uniformGaps = [];
+    window.buildData = JSON.stringify(d);
+  }, GIFTS);
+  await page.locator('#sp-standards [data-gw="uniforms"]').first().click();
+  await ready(page);
+  await dialog(page).getByRole('button', {name: SET}).click();
+  await dialog(page).getByText('Default is on 1 role at HART. Gifts.').waitFor();
+  assert.notEqual(await page.evaluate((k) => pgUniformState(k), GIFTS), null, 'recorded from the answer');
+  await dialog(page).locator('.gw-foot').getByRole('button', {name: 'Close'}).click();
+  await page.waitForFunction((k) => (pgUniformState(k) || {}).state === 'confirmed', GIFTS);
+  await page.locator('#sp-standards .sp-unipg').getByText(/Confirmed · day \d+/).waitFor();
+  await page.evaluate(() => openRoute('businesses/standards'));
+  assert.match(await page.locator(`#secStandards tr[data-std-row="${GIFTS}"] .nx-st`).innerText(), /Confirmed/);
+  // Undo, from the strip: the record goes.
+  await page.locator('#gwToast').getByRole('button', {name: 'Undo'}).click();
+  await dialog(page).getByText('Undone: 1 role back to no uniform.').waitFor();
+  assert.equal(await page.evaluate((k) => pgUniformState(k), GIFTS), null);
+});

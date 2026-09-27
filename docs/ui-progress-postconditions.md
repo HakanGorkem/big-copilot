@@ -10,7 +10,7 @@ section in `ba_dashboard.py` (`pgRecord()`, `PG_CHECK`, `pgEvaluate()`, `pgPill(
 | --- | --- | --- | --- |
 | **Marked by you** | outlined tick, neutral grey pill | the player's own tick on a change (Supply) or on every entry of a week (Schedules) | the player (untick, *Clear my marks*), or the change itself changing (a new figure is a new row) |
 | **Applied · awaiting refresh** | blue link glyph and pill | a successful answer to a supported game-link write (imports, a schedule, a hire or move, uniforms), and nothing else | a later board judging it (below), an Undo of that write, or 14 game days |
-| **Confirmed** | solid green tick and pill, "Confirmed · day N" | a board built **after** the write whose data shows the write's postcondition | the player (*Clear these* on Changes), or 14 game days |
+| **Confirmed** | solid green tick and pill, "Confirmed · day N" | a board built **after** the write whose data shows the write's postcondition | the player (*Clear these* on Changes, which clears the import records it lists), or 14 game days |
 
 *Not confirmed* (amber) is what a later board says when it shows something else: the game holds
 another figure, or a person is at another site. It is never shown as done. A dry run, a click, a
@@ -71,7 +71,9 @@ Undo: an undo of an import, schedule or uniform write takes that write's records
 a hire has no undo and no record is taken back.
 
 Where a uniform record shows (chunk 3): Businesses › Standards, in the shop's Uniforms cell beside
-the write button (`stdTable()`); the Overview's uniform finding (`ovStatePill()`). Both read
+the write button (`stdTable()`); the business's own page, beside the write in its Satisfaction
+block (`spStandards()`); the Overview's uniform finding (`ovStatePill()`). Supply › Changes' clear
+(`pgClearSettled()`, imports only) leaves it. Both read
 `pgUniformState()`. The write marks Standards and the Overview out of date (`pgUniformStale()`),
 so they say the new state when next drawn.
 

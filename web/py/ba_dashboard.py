@@ -2563,6 +2563,11 @@ def _business(save, names, b, addr, latest, history, staff_by_addr, day) -> dict
                 "price": money(prices.get(item, 0)),
                 "configuredPrice": _configured_price(prices.get(item)),
                 "revenue": money(revenue_by_item[item] / span),
+                # What a unit sold for over the window: the takings over the
+                # units, both unrounded (a slow line's rounded rate would
+                # skew it); None where nothing sold.
+                "soldPrice": (round(revenue_by_item[item] / units_sold[item], 2)
+                              if units_sold[item] > 0 else None),
                 "soldPerDay": round(units_sold[item] / span),
                 "soldPerWeek": round(units_sold[item] / span * 7),
                 **({"issued": True} if item in ISSUED_ITEMS else {}),
@@ -16522,6 +16527,7 @@ body.nx-arrived .ss-crumbs .ss-crumb.from{display:none}
 .px-head h2{margin:0;font-size:26px;font-weight:600;letter-spacing:-.02em;outline:none}
 .px-body{padding:6px 28px 40px}
 .px-row{display:grid;grid-template-columns:200px minmax(0,1fr);gap:10px 28px;padding:20px 0;border-bottom:1px solid var(--rule-soft)}
+.px-row:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:6px}
 .px-row.px-lit{background:linear-gradient(90deg,var(--accent-soft),transparent 70%);box-shadow:inset 3px 0 0 var(--accent);padding-left:12px}
 .px-l h3{margin:0 0 4px;font-size:15px;font-weight:600}
 .px-l p{margin:0;font-size:12.5px;line-height:1.45;color:var(--ink-2)}
@@ -17420,7 +17426,7 @@ dialog.hs-sheet::backdrop{background:#000;opacity:.45}
     </section>
 
     <section class="sec rv" id="secPlan" data-sub="plan">
-      <div class="sechead"><h2 data-tt="gr.plan.title">Plan a chain</h2>
+      <div class="sechead"><h2 data-tt="gr.plan.title2">Plan a factory</h2>
         <span class="why" data-tt-tip="gr.plan.why" data-tip="Every machine runs 24 hours at its rated rate, so a line makes its full quantity whether or not the shelves need it. Build the factory first; the shops come after, and what they do not take is exported. Step a single line up when one product deserves more, down to none to buy it in instead." tabindex="0"><i>?</i></span>
         <span class="quiet" id="planNote"></span>
         <div class="aside" id="planPicker"></div></div>
@@ -22293,10 +22299,14 @@ function spStandards(b){
       ? ` · ${tt("sp.uniform.count", {one: "{n} role without a uniform", other: "{n} roles without a uniform"}, {n: roles.length})}` : ""}`;
   /* In linked mode, the write that dresses them. */
   const writes = roles.length && !b.missingUniformLocker && (b.uniformGapSkills || []).length ? gwUniformButtons(b, false) : "";
+  /* A uniform write made here or on Standards: its progress, beside the
+     write (docs/ui-progress-postconditions.md), as Standards shows it. */
+  const u = typeof pgUniformState === "function" ? pgUniformState(b.key) : null;
+  const pill = u ? `<span class="sp-unipg">${pgPill(u.state, u.rec)}</span>` : "";
   return `${eq}
     <div class="sp-lamps">${lamps}${roles.map(r => `<span class="sp-role" data-el="uniform" data-read="${attr(
       tt("sp.uniform.role", "{role} <b>has no uniform set</b>", {role: spEsc(r)}))}">${spEsc(roleCode(r))}</span>`).join("")}</div></div></div>
-    <div class="sp-read sp-readout">${read}</div>${writes ? `<div class="gw-acts gw-panel">${writes}</div>` : ""}`;
+    <div class="sp-read sp-readout">${read}</div>${writes || pill ? `<div class="gw-acts gw-panel">${writes}${pill}</div>` : ""}`;
 }
 const SP_AMENITY_ICON = {bathroom: "toilet", toiletprivacy: "door", sink: "sink",
                          music: "music", interior: "interior"};
@@ -24414,12 +24424,21 @@ function spSchedSummary(b){
    this business picked: its week, its deliveries, its prices; a depot's
    imports; a factory's lines and hours. */
 function spActs(b, kind){
+  /* A Supply view scopes the sites it has rows for (sbScopeSelect()): a
+     shop, a warehouse or a factory the supply facts know. A headquarters,
+     or a site the facts leave out, gets no Supply action: it would open an
+     empty view on a scope that is none of its choices. */
+  const s = D.businesses.indexOf(b);
+  const supplied = !!(D.supply && (D.supply.facts || {})[s]);
+  const tab = supplied && typeof sbTabOf === "function" ? sbTabOf(s) : null;
   const go = (route, label, ic) => `<button type="button" class="nx-btn sm" data-site-go="${route}" data-site-key="${attr(b.key)}">${spIcon(ic)}<span>${label}</span></button>`;
-  const acts = kind === "retail" ? [go("staffing/schedules", tt("sp.act.schedule", "Schedule"), "roster"), go("supply/deliveries", tt("sp.act.deliveries", "Deliveries"), "truck"), go("businesses/prices", tt("sp.act.prices", "Prices"), "tag")]
+  const acts = kind === "retail" ? [go("staffing/schedules", tt("sp.act.schedule", "Schedule"), "roster"),
+      tab === "shops" ? go("supply/deliveries", tt("sp.act.deliveries", "Deliveries"), "truck") : "", go("businesses/prices", tt("sp.act.prices", "Prices"), "tag")]
     : kind === "office" ? [go("staffing/schedules", tt("sp.act.schedule", "Schedule"), "roster"), go("businesses/prices", tt("sp.act.fees", "Fees"), "tag")]
-    : kind === "depot" ? [go("supply/imports", tt("sp.act.imports", "Imports"), "crate"), go("supply/deliveries", tt("sp.act.deliveries", "Deliveries"), "truck")]
-    : kind === "factory" ? [go("supply/production", tt("sp.act.production", "Production"), "gear")] : [];
-  return acts.length ? `<div class="sp-acts" role="group" aria-label="${attr(tt("sp.act.label", "Plan this business"))}">${acts.join("")}</div>` : "";
+    : kind === "depot" && tab === "warehouses" ? [go("supply/imports", tt("sp.act.imports", "Imports"), "crate"), go("supply/deliveries", tt("sp.act.deliveries", "Deliveries"), "truck")]
+    : kind === "factory" && tab === "factories" ? [go("supply/production", tt("sp.act.production", "Production"), "gear")] : [];
+  const shown = acts.filter(Boolean);
+  return shown.length ? `<div class="sp-acts" role="group" aria-label="${attr(tt("sp.act.label", "Plan this business"))}">${shown.join("")}</div>` : "";
 }
 
 /* The site cell of the redesign's tables: the hood pill, the short name, and
@@ -25111,9 +25130,11 @@ const pgSettled = family => Object.values(pgStore().recs).filter(r => (!family |
   && (r.state === "confirmed" || r.state === "changed"));
 /* Clear what the player can clear: their marks are cleared by the checklist;
    judged records by this. */
-function pgClearSettled(){
+function pgClearSettled(family = "imports"){
   const {recs, memo} = pgStore();
-  Object.keys(recs).forEach(id => { if(recs[id].state === "confirmed" || recs[id].state === "changed"){ delete recs[id]; memo.gone.add(id); memo.mine.delete(id); } });
+  /* Supply › Changes lists the judged import records, and clears those: a
+     uniform's or a schedule's stays with the page that shows it. */
+  Object.keys(recs).forEach(id => { if(recs[id].family === family && (recs[id].state === "confirmed" || recs[id].state === "changed")){ delete recs[id]; memo.gone.add(id); memo.mine.delete(id); } });
   pgSave();
 }
 /* A write's records, by family. Imports: one a line written, its contracts'
@@ -30127,8 +30148,7 @@ function stdTable(){
   const sites = D.businesses.filter(b => b.status === "retail" || b.status === "office");
   if(!sites.length) return `<p class="quiet bz-none">${tt("co.std.nosites", "No shop or office yet: standards are what customers find at one.")}</p>`;
   const score = b => b.revenue && Number.isFinite(b.satisfaction && b.satisfaction.overall) ? b.satisfaction.overall : null;
-  const order = sites.slice().sort((a, z) => (a.status === "office") - (z.status === "office")
-    || (score(a) === null) - (score(z) === null) || (score(a) ?? 0) - (score(z) ?? 0));
+  const order = sites.slice().sort((a, z) => (score(a) === null) - (score(z) === null) || (score(a) ?? 0) - (score(z) ?? 0));
   const finds = nxFindings(STD_KINDS);
   const lamp = (b, slug) => {
     const label = SP_AMENITY_WORD[slug];
@@ -30201,7 +30221,7 @@ function drawFinance(){
   const histSub = [
     first ? tt("co.fin.hist.daily", {one: "Daily results: {n} day, from the save's own books", other: "Daily results: {n} days, from the save's own books"}, {n: D.daily.length})
       : tt("co.fin.hist.nodaily", "No finished day in this save yet"),
-    cf ? tt("co.fin.hist.cash", "cash watched from day {d}", {d: cf.fromDay}) : "",
+    cf ? tt("co.fin.hist.cash2", "cash compared with day {d}", {d: cf.fromDay}) : "",
     web ? tt("co.fin.hist.web", "kept in this browser: Preferences › History")
       : tt("co.fin.hist.cli", "kept beside the board, in market_history.json"),
   ].filter(Boolean).join(" · ");
@@ -30258,7 +30278,9 @@ function bzPriceTable(b){
     const mine = money2(set) && set > 0 ? money2(set) : null;
     const cell = ((market.get(l.slug) || {}).cells || []).find(c => c && c.hood === b.neighbourhood);
     const low = cell ? money2(cell.marketPrice) : null;
-    const sold = l.rate > 0 && l.revenue ? l.revenue / l.rate : null;
+    /* Extraction's own average (takings over units, unrounded); a board
+       without it says nothing rather than dividing rounded figures. */
+    const sold = Number.isFinite(l.soldPrice) ? l.soldPrice : null;
     const cmp = !mine ? `<span class="bz-cmp warn">${tt("co.prices.cmp.none", "no price")}</span>`
       : low === null ? ""
       : Math.abs(set - cell.marketPrice) < 0.005 ? `<span class="bz-cmp">${tt("co.prices.cmp.same", "at the lowest")}</span>`
@@ -30275,7 +30297,7 @@ function bzPriceTable(b){
     office ? tt("co.prices.fees.page", "Its fees, on its page") : tt("co.prices.page", "Its shelves, on its page")}${icon("go")}</button></div>`
     + (lines.length ? `<div class="scrollx"><table class="bz-t bz-prices"><thead><tr><th class="l">${office ? tt("sp.fees.col.fee", "Fee") : tt("co.prod.col.product", "Product")}</th><th>${
       tt("co.prices.col.yours", "Your price")}</th><th>${hood ? tt("co.prices.col.low.hood", "Lowest market price · {hood}", {hood: spEsc(hood)}) : tt("co.prices.col.low", "Lowest market price")}</th><th>${
-      tt("co.prices.col.sold", "Average sold price")}</th><th>${tt("co.prices.col.sells", "Sells / day")}</th><th></th></tr></thead><tbody>${lines.map(row).join("")}</tbody></table></div>`
+      office ? tt("co.prices.col.billed", "Average billed price") : tt("co.prices.col.sold", "Average sold price")}</th><th>${office ? tt("sp.fees.col.hours", "Hours billed / day") : tt("co.prices.col.sells", "Sells / day")}</th><th></th></tr></thead><tbody>${lines.map(row).join("")}</tbody></table></div>`
       : `<p class="quiet">${office ? tt("sp.fees.none", "Nothing billed here yet.") : tt("sp.shelf.none", "Nothing stocked here.")}</p>`)
     + `<p class="bz-foot">${tt("co.prices.foot", "Comparisons, not recommended prices. Your price is the one set in the game; the lowest market price is what this save shows for the item in the neighbourhood, your own shops included; the average sold price is the line's takings over its units sold, the last seven days.")}</p>`;
 }
@@ -31010,6 +31032,10 @@ function openRoute(id, o = {}){
    inside the area they arrived in. */
 function routeCarry(id){
   const a = routeArrival;
+  /* An arrival whose way back is the route being opened would lead nowhere
+     (Find a location's demand card, back to Demand): the browser's Back is
+     the way back there. */
+  if(a && a.back === id) return null;
   return a && routeArea(id) === routeArea(route) && routeArea(route) !== "overview" ? {...a, depth: (a.depth || 1) + 1} : null;
 }
 
@@ -32765,7 +32791,7 @@ const SS_VIEWS = [
    get p(){ return tt("nav.search.help.line", "Ask, report a bug, vote on features"); }, ic: "wiki",
    syn: ["help", "feedback", "bug", "report", "discord", "vote", "support"],
    go(){ ssClose(false); pxOpen("help", $("navMore")); }},
-  {id: "daily", get t(){ return tt("nav.search.daily.title", "Daily result"); },
+  {id: "daily", get t(){ return tt("nav.search.daily.title2", "Company results"); },
    get p(){ return tt("nav.search.daily.line", "Businesses › Results"); }, ic: "profit", syn: ["profit", "revenue", "chart", "income", "why did profit move"],
    go: () => reveal("secDaily")},
   {id: "portfolio", get t(){ return tt("nav.search.portfolio.title", "Portfolio"); },
@@ -32985,7 +33011,7 @@ function ssBuild(){
       const it = item(p.slug, p.item);
       it.parts.push(tt("nav.search.item.sold", {one: "Sold in {n} store · {u} a day · {w}", other: "Sold in {n} stores · {u} a day · {w}"},
         {n: p.stores, u: ssNum(p.units), w: compact(p.revenue)}));
-      if(!it.kind) Object.assign(it, {kind: "sold", ic: "shelves", land: tt("nav.search.item.products", "Company › Products · {item}", {item: p.item}), go(){
+      if(!it.kind) Object.assign(it, {kind: "sold", ic: "shelves", land: tt("nav.search.item.sales", "Businesses › Products & prices · {item}", {item: p.item}), go(){
         const at = D.products.findIndex(x => x.slug === p.slug);
         if(at >= PRODUCTS_TOP && !showAllProducts){ showAllProducts = true; drawProducts(); }
         reveal("secProducts");
@@ -33780,11 +33806,6 @@ const wireAdapters = once(() => {
   on("click", "[data-pay-site]", (a, e) => { e.preventDefault(); routeOpenSite(a.dataset.paySite, "#sp-crew", "staffing/payroll"); });
   on("click", "[data-sched-site]", (a, e) => { e.preventDefault(); routeOpenSite(a.dataset.schedSite, "", "staffing/schedules"); });
   on("click", "[data-sched-hours]", (a, e) => { e.preventDefault(); routeOpenSite(a.dataset.schedHours, "#sp-hours", "staffing/schedules"); });
-  on("click", "[data-sched-open]", (btn, e) => {
-    e.preventDefault();
-    const b = D.businesses.find(x => x.key === btn.dataset.schedOpen);
-    routeOpenSite(btn.dataset.schedOpen, nxStaffInto(b), "staffing/schedules");
-  });
   on("click", "[data-need-hire]", (a, e) => { e.preventDefault(); settleScroll($("secStaff")); });
   on("click", "#finderCtx [data-fx]", (a, e) => {
     if(e.button > 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
@@ -33986,6 +34007,22 @@ function pxHelpHtml(){
 function pxOpen(which, from = null, focusRow = null){
   if(typeof nxMenuClose === "function") nxMenuClose(false);
   pxWhich = which; pxFrom = from || document.activeElement;
+  pxRender(which);
+  pxScrim.hidden = false; pxSheet.hidden = false;
+  document.body.classList.add("px-on");
+  if(typeof wireTips === "function") wireTips();
+  const row = focusRow ? pxSheet.querySelector(`[data-px="${focusRow}"]`) : null;
+  if(row){
+    /* The row itself takes the keyboard, not its first control: from
+       Company finances that would be Forget history, one click from gone. */
+    row.classList.add("px-lit"); row.tabIndex = -1; row.scrollIntoView({block: "nearest"});
+    row.focus({preventScroll: true});
+    return;
+  }
+  $("pxTitle").focus({preventScroll: true});
+}
+/* The sheet's markup, in the UI language now in force. */
+function pxRender(which){
   const title = which === "help" ? tt("nav.more.help", "Help & feedback") : tt("nav.more.prefs2", "Preferences");
   pxSheet.innerHTML = `<div class="px-head"><h2 id="pxTitle" tabindex="-1">${title}</h2><button type="button" class="ibtn px-x" data-px-close aria-label="${attr(tt("nav.dlg.close", "Close"))}">${gwSvg("close")}</button></div>`
     + `<div class="px-body">${which === "help" ? pxHelpHtml() : pxPrefsHtml()}</div>`;
@@ -34001,17 +34038,25 @@ function pxOpen(which, from = null, focusRow = null){
     slot.appendChild(copy);
     if(typeof wireGameNames === "function") wireGameNames();
   }
-  pxScrim.hidden = false; pxSheet.hidden = false;
-  document.body.classList.add("px-on");
-  if(typeof wireTips === "function") wireTips();
-  const row = focusRow ? pxSheet.querySelector(`[data-px="${focusRow}"]`) : null;
-  if(row){
-    row.classList.add("px-lit"); row.scrollIntoView({block: "nearest"});
-    const b = row.querySelector("button, a");
-    if(b){ b.focus({preventScroll: true}); return; }
-  }
-  $("pxTitle").focus({preventScroll: true});
 }
+/* A new UI language while a sheet is open (its own Language picker, or any
+   other): the sheet is drawn again in it, where it was scrolled, and the
+   keyboard goes back where it was -- the picker, whose copy is drawn anew,
+   or the row it was in. */
+if(typeof ttOnChange === "function") ttOnChange(() => {
+  if(pxSheet.hidden || !pxWhich) return;
+  const at = document.activeElement;
+  const inPicker = !!(at && at.closest && at.closest("#pxGn"));
+  const row = at && at.closest && at.closest("#pxSheet [data-px]");
+  const lit = q(".px-row.px-lit", pxSheet);
+  const top = pxSheet.scrollTop;
+  pxRender(pxWhich);
+  if(lit){ const again = q(`[data-px="${lit.dataset.px}"]`, pxSheet); if(again){ again.classList.add("px-lit"); again.tabIndex = -1; } }
+  pxSheet.scrollTop = top;
+  if(typeof wireTips === "function") wireTips();
+  const to = inPicker ? $("pxGnBtn") : row ? q(`[data-px="${row.dataset.px}"]`, pxSheet) : $("pxTitle");
+  if(to){ if(!to.matches("button, a")) to.tabIndex = -1; to.focus({preventScroll: true}); }
+});
 function pxClose(focus = true){
   if(pxSheet.hidden) return;
   if(typeof gnPopFor !== "undefined" && gnPopFor && pxSheet.contains(gnPopFor) && typeof gnClose === "function") gnClose(false);
@@ -34030,7 +34075,17 @@ pxSheet.addEventListener("click", e => {
   const what = b.dataset.pxDo;
   if(what === "locale"){ const c = $("localeChip"); if(c) c.click(); }
   else if(what === "localeReset"){ const r = $("localeReset"); if(r) r.click(); pxOpen(pxWhich, pxFrom, "gametext"); }
-  else if(what === "forget"){ const f = $("forgetHistory"); if(f) f.click(); }
+  else if(what === "forget"){
+    const f = $("forgetHistory");
+    if(!f) return;
+    f.click();
+    /* Said in the row, where the reader is: the web page's own note goes to
+       the source strip, under the sheet. */
+    const row = b.closest("[data-px]");
+    let said = row && q(".px-said", row);
+    if(row && !said){ said = document.createElement("p"); said.className = "px-note px-said"; said.setAttribute("role", "status"); b.closest(".px-c").appendChild(said); }
+    if(said) said.textContent = tt("app.history.forgotten", "History forgotten. The next save starts a fresh record.");
+  }
   else if(what === "search"){ pxClose(false); if(typeof ssOpen === "function") ssOpen(); }
   else if(what === "saves"){
     /* The save-location help lives in the source menu on the web page. */
@@ -34339,7 +34394,7 @@ function growthPlanType(slug, isType){
   return holds.find(k => k === planType) || holds.find(k => (D.plan.own || {})[k]) || holds[0] || "";
 }
 const growthPlanLink = kind => kind
-  ? `<a class="link mk-plan" href="#secPlan" data-plan="${attr(kind)}">${tt("gr.planLink", "Plan a chain")} ›</a>` : "";
+  ? `<a class="link mk-plan" href="#secPlan" data-plan="${attr(kind)}">${tt("gr.planLink2", "Plan a factory")} ›</a>` : "";
 /* The finder's Demand figure comes back here: the By type view, the type's row
    scrolled to and ringed once, its cells with it. A type the grid has no row
    for lands on the grid itself. */

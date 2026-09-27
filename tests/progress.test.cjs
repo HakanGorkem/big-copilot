@@ -693,7 +693,7 @@ test('two tabs: a clear in one stands even after the other has judged the record
   await b.evaluate(d => { takeData(d); pgEvaluate(); }, fixture());
   await laterBoard(1)(a);
   await laterBoard(1)(b);
-  await b.evaluate(() => pgClearSettled());
+  await b.evaluate(() => pgClearSettled('schedule'));
   await pgSees(a, [], ['X']);
   await laterBoard(2)(a);
   assert.deepEqual(await pgStored(a), [], 'the clear stands');
