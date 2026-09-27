@@ -1,6 +1,15 @@
 # Big Copilot redesign — fresh-session handover
 
-## Current checkpoint — 27 September 2026, chunk 2 accepted
+## Current checkpoint — 27 September 2026, all three chunks accepted
+
+**This section is the current state; the checkpoints below are history.**
+
+- **The redesign is complete and integrated locally.** `codex/ui-redesign-integration` at `55d9924` holds accepted chunks 1, 2 and 3 and origin/main `a8f17d7` (#160–#165). It is 20 commits ahead of origin/main and 0 behind (as of 27 Sep). Nothing is pushed, deployed or merged to main.
+- **Chunk 3** (Businesses, Expansion, references, utilities): owner Opus 5.5 session `738bea7b-01ee-4472-ba72-e1053d73ea39`, implementation `adf1d5b`, fixes `ecc7785`; handoff `docs/ui-chunk-3-handoff.md`; full ledger in `docs/ui-structure-proposal.md` section 12. Round 2 review: Opus 5.5 code, GPT-6 Sol code, GPT-6 Sol QA all READY. Full suites on `ecc7785`: Node 1,254/1,255 (1 skipped), Python 1,371 OK (1 skipped).
+- **Open, low (not fixed):** the office Products & prices footnote still describes shop sales; `docs/dashboard-reference.md` and two code comments still say "Plan a chain"; from a business page, the arrival strip survives a tab switch and its button lands on the list, not the page (older than chunk 3).
+- **Before release (Peter's decisions):** replace the changelog's placeholder PR number 167 with the real one; machine-drafted translations await native review; phone and human discovery checks were not done. Opening a PR, merging to main and deploying need Peter's go-ahead.
+
+## Fourth checkpoint — 27 September 2026, chunk 2 accepted (history)
 
 **This section is the current state; the checkpoints below are history.**
 
