@@ -705,9 +705,12 @@ def ship(check: bool = False, root: str = ROOT, english: dict | None = None,
 
 def accept(lang: str, keys: list[str], english: dict | None = None) -> list[str]:
     """Record the current English as what each key was translated from. With
-    no keys, every translated key that has no base yet."""
+    no keys, every translated key that has no base yet. A person accepting a
+    key has checked it, so any machine-draft mark on it goes too, and so do
+    the marks of keys no longer translated or no longer in the English."""
     english = catalogue() if english is None else english
     table, base = load(lang)
+    marks = drafted(lang)
     keys = keys or [k for k in table if k not in base]
     done = []
     for k in keys:
@@ -719,7 +722,17 @@ def accept(lang: str, keys: list[str], english: dict | None = None) -> list[str]
         base[k] = text
         done.append(k)
     _write(f"{lang}.base.json", base)
+    if marks:
+        _write(f"{lang}{AI_SUFFIX}", {k: m for k, m in marks.items() if k not in set(done)
+                                      and k in table and _english_for(k, english)[0] is not None})
     return done
+
+
+def live_marks(lang: str, english: dict) -> dict:
+    """drafted() minus the marks of keys no longer translated or no longer in
+    the English: the drafts a native speaker still has to check."""
+    table, _ = load(lang)
+    return {k: m for k, m in drafted(lang).items() if k in table and _english_for(k, english)[0] is not None}
 
 
 def import_draft(lang: str, draft: dict, model: str, english: dict | None = None,
@@ -737,7 +750,7 @@ def import_draft(lang: str, draft: dict, model: str, english: dict | None = None
     st = status(lang, english, params)
     redo = set(st["stale"]) | set(st["mismatch"]) | set(marks)
     forms = PLURALS.get(lang, ("one", "other"))
-    taken, kept, refused = [], [], {}
+    kept, refused, good = [], {}, {}
     # A plural comes whole: every form the language has, or none of them.
     given = collections.defaultdict(set)
     for k in draft:
@@ -759,8 +772,16 @@ def import_draft(lang: str, draft: dict, model: str, english: dict | None = None
         elif k in table and k not in redo:
             kept.append(k)
         else:
-            table[k], base[k], marks[k] = text, _english_text(k, english), model
-            taken.append(k)
+            good[k] = text
+    # A form the language lacks is refused alone; any other refused form takes its group with it.
+    broken = {_base_key(k) for k in refused if PLURAL_SUFFIX.search(k) and PLURAL_SUFFIX.search(k).group(1) in forms}
+    taken = []
+    for k, text in good.items():
+        if PLURAL_SUFFIX.search(k) and _base_key(k) in broken:
+            refused[k] = "another plural form of it was refused"
+            continue
+        table[k], base[k], marks[k] = text, _english_text(k, english), model
+        taken.append(k)
     _write(f"{lang}.json", table)
     _write(f"{lang}.base.json", base)
     _write(f"{lang}{AI_SUFFIX}", marks)
@@ -769,12 +790,11 @@ def import_draft(lang: str, draft: dict, model: str, english: dict | None = None
 
 def reviewed(lang: str, keys: list[str], english: dict | None = None) -> list[str]:
     """A native speaker has checked these keys against today's English: accept
-    them and drop their machine-draft mark. With no keys, every drafted key."""
-    marks = drafted(lang)
-    keys = keys or sorted(marks)
-    done = accept(lang, keys, english) if keys else []
-    _write(f"{lang}{AI_SUFFIX}", {k: v for k, v in marks.items() if k not in set(done)})
-    return done
+    them, which drops their machine-draft marks. With no keys, every drafted
+    key still translated and still in the English."""
+    english = catalogue() if english is None else english
+    keys = keys or sorted(live_marks(lang, english))
+    return accept(lang, keys, english) if keys else []
 
 
 # -------------------------------------------------------- the game's words
@@ -838,7 +858,7 @@ def draft_sheet(lang: str, english: dict | None = None, terms: dict | None = Non
     table, base = load(lang)
     marks = drafted(lang)
     if review:
-        st = {"review": [k for k in sorted(marks) if k in table]}
+        st = {"review": sorted(live_marks(lang, english))}
     else:
         st = {s: v for s, v in status(lang, english).items() if s in ("missing", "stale")}
     rows = []
@@ -914,7 +934,7 @@ def main(argv=None) -> int:
                 for kind, keys in st.items():
                     for k in keys:
                         print(f"  {kind}: {k}")
-                marks = drafted(lang)
+                marks = live_marks(lang, english)
                 if marks:
                     models = collections.Counter(marks.values())
                     print(f"  {len(marks)} machine-drafted, awaiting review ("
@@ -944,8 +964,10 @@ def main(argv=None) -> int:
         elif args.cmd == "reviewed":
             if not args.keys and not args.all:
                 raise CatalogueError("name the reviewed keys, or give --all")
-            done = reviewed(args.lang, args.keys)
-            print(f"i18n/{args.lang}{AI_SUFFIX}: {len(done)} keys reviewed, {len(drafted(args.lang))} left")
+            english = catalogue()
+            done = reviewed(args.lang, args.keys, english)
+            print(f"i18n/{args.lang}{AI_SUFFIX}: {len(done)} keys reviewed, "
+                  f"{len(live_marks(args.lang, english))} left")
         elif args.cmd == "glossary":
             path = _outside_repo(args.out)
             terms = glossary(args.lang)
