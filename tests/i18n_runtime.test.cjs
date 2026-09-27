@@ -264,7 +264,7 @@ function boot(search, {table = {'nav.today': 'Heute'}, hang = false, source = SO
 const tick = () => new Promise(r => setImmediate(r));
 
 test('without ?ui the page is English and asks for nothing', async () => {
-  for(const search of ['', '?ui=en', '?ui=fr', '?x=1']){
+  for(const search of ['', '?ui=en', '?ui=xx', '?x=1']){
     const b = boot(search);
     await tick();
     assert.deepEqual(b.fetched, [], search);
