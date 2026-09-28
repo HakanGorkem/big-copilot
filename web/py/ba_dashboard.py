@@ -14963,7 +14963,8 @@ html:has(dialog:modal){overflow:hidden}
    leaves the table about 890 px); the status and the figures' second lines
    give instead. */
 #pageSupply [data-sb-table="factory-lines"] .sb-t tr > :nth-child(2){min-width:220px}
-#pageSupply [data-sb-table="factory-lines"] .sb-t td.st{min-width:120px}
+#pageSupply [data-sb-table="factory-lines"] .sb-t td.st{min-width:104px}
+@media (max-width:1400px){#pageSupply [data-sb-table="factory-lines"] .sb-t th,#pageSupply [data-sb-table="factory-lines"] .sb-t td{padding-left:6px;padding-right:6px}}
 #pageSupply [data-sb-table="factory-lines"] .sb-t td .sub{white-space:normal}
 /* Column heads never wrap (Peter's testing, A5): the Supply tables take
    tighter cells and a narrower status instead, so Imports fits beside the
