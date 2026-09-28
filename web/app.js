@@ -655,7 +655,10 @@
   // path's: only where they come from is different. One watcher, two sources,
   // in checkFolder(): the folder's scan, or the link's /health.
   const LINK_KEY = "ledger_link";
-  const LINK_POLL_MS = 1000;
+  // How often a wait for a moving stamp asks /health. The mod answers it from
+  // what its pump caches once a second, so a quarter-second poll costs nothing
+  // and reads a new stamp within a quarter second of the mod having it.
+  const LINK_POLL_MS = 250;
   let linkUrl = null;     // the mod's base URL while the link is the source
   let lastLinkStamp = ""; // the stamp of the bytes behind the board on screen
   // The /health body read with the newest bytes, for the strip; after a
@@ -892,7 +895,9 @@
     return true;
   }
 
-  async function loadFromLink(why, gen) {
+  // `look` false: no look after the build (lookAgain()), for a caller that
+  // goes on reading the game itself.
+  async function loadFromLink(why, gen, look = true) {
     if (gen === undefined) gen = sourceGen;
     if (!startAttempt(gen)) return;
     note("");
@@ -935,6 +940,7 @@
         if (wrongVersion(health, gen)) return;
       }
     }
+    let built = false;  // the board took these bytes
     if (health.stamp === lastLinkStamp && onBoard()) {
       finishAttempt(gen);
       state("ok", () => tt("app.link.same", "No newer state from the game"), () => linkLine(health));
@@ -976,10 +982,34 @@
         // board, so the next check reads the same bytes again.
         await buildFrom(file, "", gen);
         if (gen !== sourceGen) return;
+        built = lastLinkStamp === file.linkStamp;
       }
     }
     lastCheck = Date.now();
     armWatch();  // polling /health is also what keeps the mod attached
+    if (built && look) await lookAgain(gen);
+  }
+
+  // After a build from the link, the watcher's check once more, now: a
+  // refresh that landed while the board was building (the one the mod makes
+  // when a page attaches, an hourly one) is read now, not up to thirty
+  // seconds later on the next tick. A newer stamp builds once and looks once
+  // more, the cadence of a running game; one that has not moved, or a build
+  // that did not take, ends it. A loop, not a recursion: the builds a look
+  // starts come back here and only ask for the next turn.
+  let looking = null;       // the source whose builds are being looked after
+  let lookedNewer = false;  // a build since this turn's look began
+  async function lookAgain(gen) {
+    if (looking === gen) { lookedNewer = true; return; }
+    looking = gen;
+    try {
+      do {
+        lookedNewer = false;
+        await checkLink();
+      } while (lookedNewer && gen === sourceGen);
+    } finally {
+      if (looking === gen) looking = null;
+    }
   }
 
   // Why the game would not serialize (a 409 to /refresh), and what to do.
@@ -1004,7 +1034,11 @@
     // will move on its own, and the quiet window after one, where nothing
     // will. So a throttle is waited out and the request made once more;
     // whatever the second answer is, it is handled like the first, and a
-    // second throttle means a refresh really is in flight.
+    // second throttle means a refresh really is in flight. /health tells the
+    // two apart: in the quiet window the mod may already hold bytes newer
+    // than the board, and those are built while the window runs out. The
+    // refresh is still asked for after it, so Update ends on a state the game
+    // took after the click, whatever the player changed just before it.
     let before = lastLinkStamp;
     for (let round = 0; round < 2; round++) {
       let res;
@@ -1031,9 +1065,35 @@
         let retryAfter = 5;
         try { retryAfter = (await res.json()).retryAfter || 5; } catch (e) {}
         const wait = Math.min(20, Math.max(1, retryAfter));
-        state("busy", () => tt("app.link.already", "The game is already serializing"),
-          () => `${linkUrl} · ${tt("app.link.waiting", "waiting {s} s", {s: wait})}`);
-        await linkWait(wait * 1000);
+        const askAt = Date.now() + wait * 1000;
+        // A health that cannot be read is judged as a refresh in flight, as
+        // before; the next request says whether the game is still there.
+        let health = NOT_READY;
+        try { health = await readHealth(); } catch (e) {}
+        if (gen !== sourceGen) return;
+        if (wrongVersion(health, gen)) return;
+        const inFlight = !!health.busy;
+        if (!inFlight && health.stamp && health.stamp !== lastLinkStamp) {
+          // No look after this build: Update goes on to ask for a refresh, and
+          // takes the attempt back before any click or tick can come between.
+          await loadFromLink(() => tt("app.link.reading", "Reading the game"), gen, false);
+          // A build that failed, or a game gone, is on screen; it stands.
+          if (gen !== sourceGen || strip.tone === "bad" || !startAttempt(gen)) return;
+          before = lastLinkStamp;
+        }
+        // What is left of the window once any build is done; a build that
+        // outlasted it asks again at once.
+        const left = Math.max(0, askAt - Date.now());
+        if (!left) continue;
+        const s = Math.ceil(left / 1000);
+        if (inFlight) {
+          state("busy", () => tt("app.link.already", "The game is already serializing"),
+            () => `${linkUrl} · ${tt("app.link.waiting", "waiting {s} s", {s})}`);
+        } else {
+          state("busy", () => tt("app.link.recent", "The game refreshed moments ago"),
+            () => `${linkUrl} · ${tt("app.link.askagain", "asking again in {s} s", {s})}`);
+        }
+        await linkWait(left);
         if (gen !== sourceGen) return;
         continue;
       }

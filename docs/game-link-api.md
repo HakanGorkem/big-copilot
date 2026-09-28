@@ -155,7 +155,9 @@ the mod sees it. Browsers' `fetch` and Python's `urllib` send it; curl does not,
   the main thread takes it). The clients' wait allows that. Clients time out a call
   after five seconds; the mod never holds one longer than that.
 - `429 {"error": "throttled", "retryAfter": <seconds>}` inside the 15-second window
-  or while one is in flight; the client waits and polls `/health` as above.
+  or while one is in flight. The client reads `/health` to tell the two apart: in the
+  quiet window (`busy` false) it may build a newer stamp the mod already holds; either
+  way it waits out `retryAfter`, asks again, and polls `/health` as above.
 - `409 {"error": "cannot_save", "reason": "saving" | "placement" | "interior" | "casino" | "other"}`
   when the game refuses; the client shows the reason and keeps the last bytes.
   `"other"` is `CanSave()` false for a reason the mod cannot name, no loaded game
@@ -646,8 +648,13 @@ unverified.
    `schemaVersion`, say the same about the port; with one this client does not know,
    stop and say which version it needs.
 3. If `stamp` differs from the stamp of the board on screen and `busy` is false,
-   `GET /save` with `If-None-Match` and build from the bytes.
-4. Update means `POST /refresh`, then step 1 until the stamp moves.
+   `GET /save` with `If-None-Match` and build from the bytes. After a build the page
+   takes step 1 once more at once, so a refresh that landed while it built is read now,
+   not on the next watch; a stamp that has not moved ends it there.
+4. Update means `POST /refresh`, then step 1 until the stamp moves (the page asks every
+   250 ms, which the mod answers from its cache). A `429` is handled as that answer
+   says above: the page builds a newer stamp the mod already holds, then still asks
+   again once the window lifts, so Update ends on a refresh taken after the click.
 5. Watching means step 1 every 30 seconds while the page is visible, which also keeps
    the mod attached. A watcher that meets ten answers in a row that were never health,
    or a health object that is not this client's version, says so once under the board
