@@ -61,6 +61,7 @@ function harness({routes = {}} = {}) {
     // the app helpers the section is allowed to touch
     $: el, strip,
     company: 'Costy Co', sourceGen: 1, busy: false, attempt: null, readerError: null, handlers: null,
+    watchTimer: 1,  // watching the game; null is the player's pause
     lastGood: {}, lastCheck: null, lastEntries: null, watchChecking: false,
     savePicker: {hidden: false},
     // app.js hands state() and note() its words as text or as a function
@@ -77,8 +78,15 @@ function harness({routes = {}} = {}) {
     closeSavePicker() {}, place() {}, armWatch() {}, stopWatch() {}, syncWatchBtn() {}, linkMoved() {},
     pickedOnce() {},
     idleState() { seen.states.push(['idle']); strip.tone = 'ready'; },
-    startAttempt: () => true, finishAttempt() {},
-    async buildFrom(file) { seen.builds.push(file); },
+    // The page's attempt, as app.js keeps it: one read at a time, per source.
+    startAttempt(gen) {
+      if (gen !== context.sourceGen) return false;
+      if (!context.attempt) context.attempt = {gen};
+      return true;
+    },
+    finishAttempt(gen) { if (context.attempt && context.attempt.gen === gen) context.attempt = null; },
+    // A build ends the attempt whether the board takes the bytes or not.
+    async buildFrom(file, dir, gen) { seen.builds.push(file); context.finishAttempt(gen); },
     async scanHandle() { return []; },
     async refreshSaveMenu() { return ''; },
     chooseFrom: () => ({}),
@@ -425,7 +433,8 @@ test('a throttle followed by a refusal reports the refusal', async () => {
 // `ms` of the clock.
 function taking(h, ms = 0) {
   h.context.__builds = h.seen.builds;
-  h.run(`buildFrom = async (file) => { __builds.push(file); __advance(${ms}); lastLinkStamp = file.linkStamp; state("ok", "Up to date"); }`);
+  h.run(`buildFrom = async (file, dir, gen) => { __builds.push(file); __advance(${ms}); finishAttempt(gen);
+    lastLinkStamp = file.linkStamp; state("ok", "Up to date"); }`);
 }
 const healthCalls = (h) => h.seen.calls.filter(([url]) => url.endsWith('/health')).length;
 const saveFor = (stamp) => reply(200, null, {'X-Game-Link-Stamp': stamp});
@@ -437,6 +446,7 @@ test('the wait for a moving stamp after Update polls every quarter second, for 4
   assert.equal(h.seen.states.at(-1)[1], 'The game did not finish serializing');
   assert.ok(h.waits.every((ms) => ms === 250), 'every poll a quarter second');
   assert.equal(h.waits.reduce((a, b) => a + b, 0), 45000, 'the deadline is time, not a count of polls');
+  assert.equal(h.run('attempt'), null);
 });
 
 test('a stamp that moves during the wait is read within a quarter second', async () => {
@@ -468,6 +478,7 @@ test('Update inside the quiet window builds the newer bytes the mod holds, then 
   taking(h, 3500);
   h.run('linkUrl = "http://127.0.0.1:8322"; lastLinkStamp = "s1"');
   await h.run('update()');
+  await h.run('lookRun');
   assert.deepEqual(h.seen.builds.map((f) => f.linkStamp), ['s2', 's3'], 'the newest bytes at once, then the refresh after the click');
   assert.equal(asked, 2, 'the refresh is asked for again once the window lifts');
   assert.equal(h.waits[0], 2500, 'only what is left of the window after the build');
@@ -480,6 +491,7 @@ test('Update inside the quiet window builds the newer bytes the mod holds, then 
   // The throttle's read and s2's; the poll and s3's; one look, after Update's
   // own build only: the build inside the window is followed by the ask.
   assert.equal(healthCalls(h), 5);
+  assert.equal(h.run('attempt'), null, 'no attempt left held');
 });
 
 test('Update inside the quiet window with nothing newer waits it out and asks again, saying so', async () => {
@@ -494,9 +506,11 @@ test('Update inside the quiet window with nothing newer waits it out and asks ag
   taking(h);
   h.run('linkUrl = "http://127.0.0.1:8322"; lastLinkStamp = "s1"');
   await h.run('update()');
+  await h.run('lookRun');
   assert.deepEqual(h.seen.builds.map((f) => f.linkStamp), ['s2']);
   assert.equal(h.waits[0], 6000);
   assert.ok(h.seen.states.some((st) => st[1] === 'The game refreshed moments ago' && /asking again in 6 s$/.test(st[2])));
+  assert.equal(h.run('attempt'), null);
 });
 
 test('a throttle while the game is serializing says so, and builds nothing early', async () => {
@@ -512,9 +526,38 @@ test('a throttle while the game is serializing says so, and builds nothing early
   taking(h);
   h.run('linkUrl = "http://127.0.0.1:8322"; lastLinkStamp = "s1"');
   await h.run('update()');
+  await h.run('lookRun');
   assert.deepEqual(h.seen.states.find((st) => /serializing$|moments ago/.test(st[1])),
     ['busy', 'The game is already serializing', 'http://127.0.0.1:8322 · waiting 4 s']);
   assert.deepEqual(h.seen.builds.map((f) => f.linkStamp), ['s3'], 'only the finished refresh is built');
+  assert.equal(h.run('attempt'), null);
+});
+
+test('a throttle whose health cannot be judged is not called serializing', async () => {
+  for (const unread of [reply(503, {error: 'x'}), null]) {
+    let asked = 0, reads = 0;
+    const h = harness({
+      routes: {
+        refresh: () => (++asked === 1 ? reply(429, {error: 'throttled', retryAfter: 4}) : reply(202, {accepted: true, stamp: 's1'})),
+        // The read right after the throttle is not health (or does not
+        // answer at all); the poll after the second ask finds s2.
+        health: () => {
+          reads += 1;
+          if (reads === 1 && !unread) throw new TypeError('Failed to fetch');
+          return reads === 1 ? unread : {...HEALTH, stamp: 's2'};
+        },
+        save: saveFor('s2'),
+      },
+    });
+    taking(h);
+    h.run('linkUrl = "http://127.0.0.1:8322"; lastLinkStamp = "s1"');
+    await h.run('update()');
+    await h.run('lookRun');
+    assert.deepEqual(h.seen.states.find((st) => /serializing$|moments ago/.test(st[1])),
+      ['busy', 'The game refreshed moments ago', 'http://127.0.0.1:8322 · asking again in 4 s'], String(unread && unread.status));
+    assert.deepEqual(h.seen.builds.map((f) => f.linkStamp), ['s2']);
+    assert.equal(h.run('attempt'), null);
+  }
 });
 
 test('a build from the link looks once more, and an unchanged stamp ends it', async () => {
@@ -522,13 +565,15 @@ test('a build from the link looks once more, and an unchanged stamp ends it', as
   taking(h);
   h.run('linkUrl = "http://127.0.0.1:8322"; lastLinkStamp = "s1"');
   await h.run('checkFolder()');
+  await h.run('lookRun');
   assert.equal(h.seen.builds.length, 1);
   // The watcher's check, the read's own health, and one look after the build.
   assert.equal(healthCalls(h), 3);
   assert.equal(h.waits.length, 0, 'the look waits for nothing');
+  assert.equal(h.run('attempt'), null);
 });
 
-test('a refresh that landed during the first build is read at once, and the look after it ends there', async () => {
+test('a refresh that landed during the first build is read at once', async () => {
   let builds = 0;
   const h = harness({
     routes: {
@@ -539,13 +584,40 @@ test('a refresh that landed during the first build is read at once, and the look
   });
   taking(h);
   const take = h.context.buildFrom;
-  h.context.buildFrom = async (file) => { await take(file); builds += 1; };
+  h.context.buildFrom = async (file, dir, gen) => { await take(file, dir, gen); builds += 1; };
   await h.run('linkToGame()');
+  await h.run('lookRun');
   assert.deepEqual(h.seen.builds.map((f) => f.linkStamp), ['s1', 's2']);
   assert.equal(h.run('lastLinkStamp'), 's2');
-  // Linking reads health once; the look after s1 finds s2 and reads it (two
-  // reads); the look after s2 finds it unchanged (one).
+  assert.equal(h.run('attempt'), null);
+});
+
+test("a look's own build does not look again: the watcher takes it from there", async () => {
+  // The game refreshes through every build, as at top speed on a slow machine.
+  let n = 0;
+  const stamp = () => `s${n + 2}`;
+  const h = harness({routes: {health: () => ({...HEALTH, stamp: stamp()}), save: () => saveFor(stamp())}});
+  taking(h);
+  const take = h.context.buildFrom;
+  h.context.buildFrom = async (file, dir, gen) => { await take(file, dir, gen); n += 1; };
+  h.run('linkUrl = "http://127.0.0.1:8322"; lastLinkStamp = "s1"');
+  await h.run('checkFolder()');
+  await h.run('lookRun');
+  assert.deepEqual(h.seen.builds.map((f) => f.linkStamp), ['s2', 's3'], 'the build, and the one its look found; no third');
+  // The check and its read; the look and its read; nothing after.
   assert.equal(healthCalls(h), 4);
+  assert.equal(h.run('attempt'), null);
+});
+
+test('a paused watcher is not followed by a look after a build', async () => {
+  const h = harness({routes: {health: {...HEALTH, stamp: 's2'}, save: saveFor('s2')}});
+  taking(h);
+  h.run('linkUrl = "http://127.0.0.1:8322"; lastLinkStamp = "s1"; watchTimer = null');
+  await h.run('loadFromLink("Reading the game")');
+  assert.equal(h.seen.builds.length, 1);
+  assert.equal(healthCalls(h), 1, 'the read only; no look while the player has paused watching');
+  assert.equal(h.run('lookRun'), null);
+  assert.equal(h.run('attempt'), null);
 });
 
 test('a build that did not take never loops on the same stamp', async () => {
@@ -555,19 +627,32 @@ test('a build that did not take never loops on the same stamp', async () => {
   await h.run('checkFolder()');
   assert.equal(h.seen.builds.length, 1);
   assert.equal(healthCalls(h), 2, 'no look after a build the board did not take');
+  assert.equal(h.run('lookRun'), null);
+  assert.equal(h.run('attempt'), null);
 });
 
-test('a game refreshing through every build is followed one build at a time, without deepening', async () => {
-  let n = 0;
-  const stamp = () => `s${Math.min(n, 5) + 2}`;
-  const h = harness({routes: {health: () => ({...HEALTH, stamp: stamp()}), save: () => saveFor(stamp())}});
+test("a write's follow reports on its own build, not on the look after it", async () => {
+  let builds = 0;
+  const told = [];
+  const h = harness({
+    routes: {
+      // The write's refresh is s2; the game moves on to s3 while it builds,
+      // and the save the look asks for is not served.
+      health: () => ({...HEALTH, stamp: builds === 0 ? 's2' : 's3'}),
+      save: () => (builds === 0 ? saveFor('s2') : reply(503, {error: 'no_save_yet'})),
+    },
+  });
   taking(h);
   const take = h.context.buildFrom;
-  h.context.buildFrom = async (file) => { await take(file); n += 1; };
+  h.context.buildFrom = async (file, dir, gen) => { await take(file, dir, gen); builds += 1; };
+  h.context.handlers = {followDone: () => told.push('done'), followFailed: () => told.push('failed')};
   h.run('linkUrl = "http://127.0.0.1:8322"; lastLinkStamp = "s1"');
-  await h.run('checkFolder()');
-  assert.deepEqual(h.seen.builds.map((f) => f.linkStamp), ['s2', 's3', 's4', 's5', 's6', 's7']);
-  assert.equal(h.run('looking'), null, 'the look is over');
+  await h.run('followWrite("s1")');
+  assert.deepEqual(told, ['done'], 'told as soon as its own build is on the board');
+  await h.run('lookRun');
+  assert.deepEqual(told, ['done'], "the look's failure is not the follow's");
+  assert.equal(h.seen.states.at(-1)[1], 'Could not read the game', 'the look said its own trouble');
+  assert.equal(h.run('attempt'), null);
 });
 
 test('a mod that did not take the refresh is not reported as absent', async () => {

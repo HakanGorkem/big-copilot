@@ -648,9 +648,10 @@ unverified.
    `schemaVersion`, say the same about the port; with one this client does not know,
    stop and say which version it needs.
 3. If `stamp` differs from the stamp of the board on screen and `busy` is false,
-   `GET /save` with `If-None-Match` and build from the bytes. After a build the page
-   takes step 1 once more at once, so a refresh that landed while it built is read now,
-   not on the next watch; a stamp that has not moved ends it there.
+   `GET /save` with `If-None-Match` and build from the bytes. While watching, after a
+   build the page takes step 1 once more at once, so a refresh that landed while it
+   built is read now, not on the next watch. Once only: a build that look starts leaves
+   the rest to the watch.
 4. Update means `POST /refresh`, then step 1 until the stamp moves (the page asks every
    250 ms, which the mod answers from its cache). A `429` is handled as that answer
    says above: the page builds a newer stamp the mod already holds, then still asks
