@@ -322,6 +322,39 @@ test('a schedule is confirmed by its shift print on a later read; a hire by each
   assert.equal((await hire())[0], 'changed');
 });
 
+test('a write at a fractional link minute is judged by a board at that same whole minute (a paused game)', async t => {
+  const data = fixture();
+  data.businesses[2].shiftPrint = 'aaaaaaaa';
+  data.meta.day = 96; data.meta.hour = 7; data.meta.minute = 16;
+  const key = data.businesses[2].key;
+  const page = await board(t, {data});
+  // The link reads the game's float minute; the save holds the whole one.
+  await page.evaluate(k => {
+    SOURCE.link = () => ({day: 96, hour: 7, minute: 16.3715});
+    pgScheduleDone(k, {row: {full: false}}, {after: {print: 'bbbbbbbb'}, added: 3, removed: 2});
+    const d = JSON.parse(JSON.stringify(D)); d.businesses.find(b => b.key === k).shiftPrint = 'bbbbbbbb'; takeData(d); pgEvaluate();
+  }, key);
+  assert.equal(await page.evaluate(() => pgOfFamily('schedule')[0].state), 'confirmed');
+});
+
+test('a board at the write\'s own minute that still shows the old week says nothing; a later one says Not confirmed', async t => {
+  const data = fixture();
+  data.businesses[2].shiftPrint = 'aaaaaaaa';
+  data.meta.day = 96; data.meta.hour = 7; data.meta.minute = 16;
+  const key = data.businesses[2].key;
+  const page = await board(t, {data});
+  const state = () => page.evaluate(() => pgOfFamily('schedule')[0].state);
+  // A read taken just before the write, arriving just after it.
+  await page.evaluate(k => {
+    SOURCE.link = () => ({day: 96, hour: 7, minute: 16.3715});
+    pgScheduleDone(k, {row: {full: false}}, {after: {print: 'bbbbbbbb'}, added: 3, removed: 2});
+    takeData(JSON.parse(JSON.stringify(D))); pgEvaluate();
+  }, key);
+  assert.equal(await state(), 'applied');
+  await page.evaluate(() => { const d = JSON.parse(JSON.stringify(D)); d.meta.minute = 17; takeData(d); pgEvaluate(); });
+  assert.equal(await state(), 'changed');
+});
+
 // --- round 1 of the chunk's review -------------------------------------------
 
 /* The synthetic company of tests/save_fixtures.py on day 47, as a payload:
