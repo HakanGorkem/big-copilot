@@ -25172,8 +25172,7 @@ const PG_KEEP_DAYS = 14;
 const pgMemo = new Map();
 const pgWho = () => (typeof D !== "undefined" && D && D.meta && D.meta.character) || "";
 /* The company's boards are counted in its store (`n`), so "a board after
-   the write" holds across a reload; `PG_LOAD` names this page load. */
-const PG_LOAD = `${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`;
+   the write" holds across a reload. */
 function pgStore(){
   const who = pgWho();
   if(!pgMemo.has(who)){
@@ -25252,7 +25251,7 @@ function pgClockNow(){
 function pgRecord(rec){
   const {recs, memo} = pgStore();
   memo.gone.delete(rec.id); memo.mine.add(rec.id); memo.synced.delete(rec.id);
-  recs[rec.id] = Object.assign({}, rec, {state: "applied", at: Date.now(), seq: memo.n, load: PG_LOAD, clock: pgClockNow()});
+  recs[rec.id] = Object.assign({}, rec, {state: "applied", at: Date.now(), seq: memo.n, clock: pgClockNow()});
   pgSave();
   if(typeof sbStamp !== "undefined") sbStamp++;
 }
@@ -25314,11 +25313,10 @@ function pgPeopleSites(){
 }
 /* Every Applied record is judged once on each board built after its write:
    the company's board count must be past the write's and the game's clock not
-   earlier. After a reload the clock must have moved on too: a save file read
-   again at the write's own minute may hold the bytes from before it. A board
-   at the write's own minute may confirm it but never says Not confirmed: a
-   read taken just before the write can arrive just after it, and Not
-   confirmed is final. A record stays PG_KEEP_DAYS game days, then goes; a
+   earlier. A board at the write's own minute may confirm it but never says
+   Not confirmed: a read taken just before the write can arrive just after it,
+   and a save file read again after a reload may hold the bytes from before
+   it, and Not confirmed is final. A record stays PG_KEEP_DAYS game days, then goes; a
    judged one keeps what it saw. */
 let pgJudged = 0;
 function pgEvaluate(){
@@ -25331,7 +25329,7 @@ function pgEvaluate(){
     const made = pgMinutes(rec.clock);
     if(now !== null && made !== null && now - made > PG_KEEP_DAYS * 1440){ delete recs[id]; memo.gone.add(id); memo.mine.delete(id); touched = true; return; }
     if(!["applied", "partly", "unseen"].includes(rec.state) || !(memo.n > rec.seq)) return;
-    if(now !== null && made !== null && (now < made || (now === made && rec.load !== PG_LOAD))) return;
+    if(now !== null && made !== null && now < made) return;
     let v = null;
     try{ v = PG_CHECK[rec.family] ? PG_CHECK[rec.family](rec) : null; }catch(e){ v = null; }
     if(!v || (v.state === "changed" && now !== null && now === made)) return;

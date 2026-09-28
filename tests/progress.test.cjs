@@ -387,7 +387,7 @@ const takeAgain = (page, data) => page.evaluate(data => {
   drawSupplyStrip(); drawChangesView(); wireAll();
 }, data);
 
-test('a write made before a reload is confirmed by a later board after it; the same save read again at its minute says nothing', async t => {
+test('after a reload, a board at the write\'s minute that holds the old week says nothing; one that holds the new week confirms it (a paused game)', async t => {
   const data = fixture();
   data.businesses[2].shiftPrint = 'aaaaaaaa';
   const key = data.businesses[2].key;
@@ -402,10 +402,10 @@ test('a write made before a reload is confirmed by a later board after it; the s
   await page.reload();
   // The save file read again at the write's own minute may hold the bytes from before it.
   await takeAgain(page, data);
-  assert.equal(await state(), 'applied', 'a read at the write\'s minute after a reload judges nothing');
-  // A later read that holds the week written: Confirmed, after the reload.
+  assert.equal(await state(), 'applied', 'the old week at the write\'s minute after a reload judges nothing');
+  // A read at the same minute that holds the week written: Confirmed, after the reload.
   const later = JSON.parse(JSON.stringify(data));
-  later.businesses[2].shiftPrint = 'bbbbbbbb'; later.meta.minute = (later.meta.minute || 0) + 5;
+  later.businesses[2].shiftPrint = 'bbbbbbbb';
   await takeAgain(page, later);
   assert.equal(await state(), 'confirmed');
 });
