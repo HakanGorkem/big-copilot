@@ -15146,7 +15146,7 @@ html:has(dialog:modal){overflow:hidden}
 #pageSupply td.imp-to > .chip{margin-left:6px}
 #pageSupply .imp-contracts{min-width:12rem}
 #pageSupply .imp-contracts > span{display:block}
-#pageSupply .imp-contracts > .imp-order{font-style:italic}
+#pageSupply .imp-contracts > .imp-lvl{color:var(--ink)}
 #pageSupply .up{cursor:default}
 
 @media(max-width:760px){
@@ -25879,7 +25879,7 @@ function supplyChecklistRows(){
               /* What the import must bring: none where a route covers it, and none
                  to resume where the contract is paused and Python does not call it so. */
               covered, need: covered || (setting.paused && fact.st !== "paused") ? 0 : fact.need, users: drawers[`${s}|${slug}`] || [], ...setting, impId,
-              arrived: contract.arrivedLastWeek, contracts: contract.contracts || [], stock: held(s, slug)};
+              arrived: contract.arrivedLastWeek, contracts: contract.contracts || [], levelId: contract.levelId ?? null, stock: held(s, slug)};
     }).sort((a, b) => (b.total || 0) - (a.total || 0));
     if(rows.length) importRows.push({s, rows});
   });
@@ -26504,12 +26504,12 @@ function sbImportCtx(d){
     : tt("sb.imp.route.backup", "A route brings what leaves; the import is a backup");
   const unit = smart => smart ? `<small class="imp-unit" data-tip="${attr(SMART_TIP)}">${tt("sb.unit.stock", "in stock")}</small>`
     : `<small class="imp-unit">${tt("sb.unit.week", "a week")}</small>`;
-  /* Beside a level: which contract holds it, a plain amount delivered before
-     it (which counts toward the level, as the top-up is only what is
-     missing), and one delivered after it (which comes on top). */
+  /* Beside a level: a plain amount delivered before it (which counts toward
+     the level, as the top-up is only what is missing), and one delivered
+     after it (which comes on top). Which contract holds the level is marked
+     in the contract list. */
   const aroundLevel = r => !r.smart ? ""
-    : (r.levelName && (r.contracts || []).length > 1 ? `<span class="sub">${tt("sb.imp.at", "at {name}", {name: attr(r.levelName)})}</span>` : "")
-    + (!r.plainBefore ? "" : r.plainBefore >= r.inGame
+    : (!r.plainBefore ? "" : r.plainBefore >= r.inGame
       ? `<span class="sub" data-tip="${attr(tt("sb.imp.before.over.tip", "A plain contract the game delivers before the level already brings the level or more, so the level brings nothing"))}">${
         r.plainBefore > r.inGame ? tt("sb.imp.before.passes", "{n:,} a week delivered first already passes it", {n: r.plainBefore})
           : tt("sb.imp.before.reaches", "{n:,} a week delivered first already reaches it", {n: r.plainBefore})}</span>`
@@ -26559,12 +26559,14 @@ function sbImportCtx(d){
   const resetTip = r => suggests(r) ? tt("sb.imp.reset.suggestion", "Back to the board's suggestion, {n:,}", {n: r.suggested})
     : tt("sb.imp.reset.game", "Back to the figure in game, {n:,}", {n: r.inGame ?? 0});
   /* Two or more contracts on one line: each is listed in the order the game
-     delivers them, with its importer, how it is set and whether it runs. */
+     delivers them, with its importer, how it is set and whether it runs. The
+     one whose level the box sets stands out; where the order is set is the
+     list's tip. */
   const contractLines = r => r.contracts.length < 2 ? ""
-    : `<span class="sub imp-contracts">${r.contracts.map((c, i) => `<span>${i + 1}. ${attr(c.importer || tt("sb.imp.importer", "Importer"))} · ${
+    : `<span class="sub imp-contracts" data-tip="${attr(tt("sb.imp.order", "In delivery order, set at the headquarters in game"))}">${
+      r.contracts.map((c, i) => `<span${r.smart && c.id === r.levelId ? ` class="imp-lvl"` : ""}>${i + 1}. ${attr(c.importer || tt("sb.imp.importer", "Importer"))} · ${
         c.smart ? tt("sb.imp.keeps", "keeps {n:,} in stock", {n: c.amount}) : tt("sb.imp.perWeek", "{n:,} a week", {n: c.amount})}${
-        c.active ? "" : ` · ${tt("sb.imp.paused", "paused")}`}</span>`).join("")}<span class="imp-order">${
-        tt("sb.imp.order", "In delivery order, set at the headquarters in game")}</span></span>`;
+        c.active ? "" : ` · ${tt("sb.imp.paused", "paused")}`}</span>`).join("")}</span>`;
   /* The setting cell: the figure in game, the arrow, the Set to box, and what
      the box is about. */
   const cell = r => {
