@@ -174,7 +174,7 @@ label issue.
 | Staffing | Schedules, Payroll, Staff needs | Each business's week of hours, wages by role, staff demands and whom to hire. |
 | Expansion | Demand, Find a location, Plan a factory | Market demand by neighbourhood and business type, premises to rent, and factory planning. |
 | City map | | The city with your premises, findings and owned buildings as layers; pick a place for its card. |
-| Game guide | | Search the game's help, browse categories, and explore each business type's setup, products, recipes and suppliers. No save required. |
+| Wiki | | Search the game's help, browse categories, and explore each business type's setup, products, recipes and suppliers. No save required. |
 
 See the [dashboard reference](docs/dashboard-reference.md) for calculations,
 assumptions and detailed views. Recommendations are estimates to apply in-game;

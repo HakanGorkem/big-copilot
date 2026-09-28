@@ -94,11 +94,11 @@ function board({saved = {}, data = {}} = {}) {
 /* The redesign's sidebar (docs/ui-route-migration.md): five destinations,
    then the two references, then the foot's ···. The pages behind them are
    hosts, which keep their ids. */
-test('the sidebar is Overview, Businesses, Supply, Staffing, Expansion, then City map and Game guide', () => {
+test('the sidebar is Overview, Businesses, Supply, Staffing, Expansion, then City map and Wiki', () => {
   const b = board();
   assert.deepEqual([...vm.runInContext('AREAS.map(a => a.label)', b.context)],
     ['Overview', 'Businesses', 'Supply', 'Staffing', 'Expansion']);
-  assert.deepEqual([...vm.runInContext('REFS.map(r => r.label)', b.context)], ['City map', 'Game guide']);
+  assert.deepEqual([...vm.runInContext('REFS.map(r => r.label)', b.context)], ['City map', 'Wiki']);
   assert.ok(!vm.runInContext('PAGES.some(p => p.id === "results")', b.context),
     'Results is a view inside Businesses, not a page of its own');
   for (const id of ['overview', 'businesses', 'supply', 'staffing', 'expansion'])
@@ -106,7 +106,7 @@ test('the sidebar is Overview, Businesses, Supply, Staffing, Expansion, then Cit
   assert.match(b.$('navRefs').innerHTML, /data-id="map"/);
   assert.match(b.$('navRefs').innerHTML, /data-id="wiki"/);
   // The utilities are the foot's ···, after the references, inside the sidebar.
-  const side = between(source, '<nav class="sd" id="mast"', '</nav>\n<div class="wrap">');
+  const side = between(source, '<nav class="sd" id="mast"', '<div class="wrap">');
   assert.ok(side.indexOf('id="navRefs"') < side.indexOf('class="sd-foot"')
     && side.indexOf('class="sd-foot"') < side.indexOf('id="navMore"'), 'the utilities menu sits in the foot, after the references');
   assert.doesNotMatch(b.$('navRefs').innerHTML, /navMore/);

@@ -1026,7 +1026,7 @@ test('Quick hire leaves out a new shift that meets one already there', async (t)
   assert.match(await dlg.locator('.gw-body').textContent(), /Hours from HART\. Gifts's plan: 24 h a week; nobody else's hours change\./);
 });
 
-test('Quick hire whose plan hours all meet shifts already there joins with no hours', async (t) => {
+test('Quick hire whose plan hours all meet hours already set there joins with no hours', async (t) => {
   const d = JSON.parse(payload);
   // Ana on Gifts' register Friday to Sunday: all of the open week.
   d.staffing.find(r => r.key === G).current.list.push({d: 5, s: 0, f: 8, t: 20, p: 0}, {d: 6, s: 0, f: 8, t: 20, p: 0}, {d: 0, s: 0, f: 8, t: 20, p: 0});
@@ -1037,7 +1037,7 @@ test('Quick hire whose plan hours all meet shifts already there joins with no ho
   const r = await page.evaluate(() => { const r = hrQuickRequest(hrQuickModel(hrModel())); return {sites: r.body.sites, given: r.given, clashed: r.clashed}; });
   assert.deepEqual(r, {sites: [{address: addr(G), expect: null, days: null}], given: 0, clashed: 1});
   const dlg = await quickConfirm(page);
-  assert.match(await dlg.locator('.gw-body').textContent(), /Their plan hours meet shifts already there: they join with no hours\./);
+  assert.match(await dlg.locator('.gw-body').textContent(), /Their plan hours meet hours already set there: they join with no hours\./);
 });
 
 test('Quick hire takes a role Open places had filled while its confirm is open, and Open places shrinks', async (t) => {
@@ -1367,7 +1367,7 @@ test('a plan week whose slots are all unusable is no clash: no open hours', asyn
   const dlg = await quickConfirm(page);
   const text = await dlg.locator('.gw-body').textContent();
   assert.match(text, /No open hours in HART\. Gifts's plan: they join with no hours\./);
-  assert.doesNotMatch(text, /meet shifts already there/);
+  assert.doesNotMatch(text, /meet hours already set there/);
 });
 
 test('a desk or chair demand is judged at the desk the week is on, and a pick goes to one that meets it', async (t) => {
@@ -1704,4 +1704,24 @@ test('an office write is refused while a shift cannot be carried, and nothing to
     return {blocked, sent: written.sent, listed: gwScheduleSites().includes(O)};
   }, [O]);
   assert.deepEqual(out, {blocked: 1, sent: 0, listed: false});
+});
+
+// --- user testing, 28 September 2026 ---------------------------------------------------
+
+test('Staff needs has one heading over its filters; beside the full sidebar at 1280 px the roles table is whole, its panel under it, and beside it wider', async (t) => {
+  const page = await board(t, {viewport: {width: 1280, height: 1400}});
+  const heads = await page.$$eval('#secStaff h2, #secStaff h3', hs => hs.map(h => h.textContent.trim()));
+  assert.ok(!heads.includes('Open places'), JSON.stringify(heads));
+  const fit = () => page.evaluate(() => {
+    const t = document.querySelector('#secStaff table.hs-roles'), box = t.closest('.hs-scroll');
+    return {right: t.getBoundingClientRect().right, box: box.getBoundingClientRect().right, over: box.scrollWidth - box.clientWidth,
+      tracks: getComputedStyle(document.querySelector('#secStaff .hs-split')).gridTemplateColumns.trim().split(/\s+/).length};
+  });
+  let f = await fit();
+  assert.ok(f.over <= 1 && f.right <= f.box + 1, `nothing cut off: ${JSON.stringify(f)}`);
+  assert.equal(f.tracks, 1, 'the panel goes under the table');
+  await page.setViewportSize({width: 1700, height: 1400});
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('#secStaff .hs-split')).gridTemplateColumns.trim().split(/\s+/).length === 2);
+  f = await fit();
+  assert.ok(f.over <= 1 && f.right <= f.box + 1, JSON.stringify(f));
 });

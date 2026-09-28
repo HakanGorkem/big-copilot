@@ -430,6 +430,12 @@ records an intentional behavior change; "–" is none. Nothing is retired. Agent
 route and its state work; they are not proof that players find it (see the chunk-3 handoff,
 "Not verified").
 
+Updated 28 September 2026 for the declutter rounds and the sidebar ([ui-declutter.md](ui-declutter.md)):
+the masthead and its rows became a sidebar with one ··· menu at its foot (on the hosted page the
+save-source menu, which also holds What's new, Preferences and Help & feedback), theme and
+language live in the footer only, and the Game guide is called the Wiki again. The rows below
+name those places.
+
 ### Entry and discovery
 
 | ID | Destination | Evidence | Change |
@@ -437,21 +443,21 @@ route and its state work; they are not proof that players find it (see the chunk
 | E01 | Web landing: Choose the folder, drop | kept; `tests/save_location.test.cjs`, `tests/resume.test.cjs` | – |
 | E02 | Web landing: one save file | kept; `tests/resume.test.cjs` | – |
 | E03 | Web landing and source menu: Link to the game | kept; `tests/game_link.test.cjs` | – |
-| E04 | Masthead company name → source menu (save picker) | kept; `tests/save_location.test.cjs` | – |
+| E04 | Sidebar foot ··· → save source (save picker; the company name no longer opens it) | `tests/save_picker.test.cjs`, `tests/restore.test.cjs` | the ··· is the one way in (declutter S5) |
 | E05 | Source strip: remembered source, Choose the folder again | kept; `tests/resume.test.cjs` | – |
-| E06 | Masthead live dot, source strip Update | kept; `tests/calm_refresh.test.cjs` | – |
+| E06 | Live dot on the sidebar clock; Update at the sidebar foot; the source strip a warning bar only while something is wrong | `tests/calm_refresh.test.cjs`, `tests/restore.test.cjs` | Update moved to the sidebar foot |
 | E07 | Landing "Where is my save?"; source menu help; Help & feedback › Where is my save? (web) | `tests/save_location.test.cjs`; Help sheet: `tests/businesses_expansion.test.cjs` | Help & feedback opens the source menu's save help |
-| E08 | Game guide with no save (`#wiki`, landing Browse the wiki) | kept; `tests/wiki*.test.cjs` | – |
-| E09 | Preferences › Language (the footer's picker, copied) and › Game text (web) | Preferences sheet: `tests/businesses_expansion.test.cjs`; picker: `tests/i18n_*.test.cjs` | one Language choice (main's), reachable in Preferences |
+| E08 | Wiki with no save (`#wiki`, landing Browse the wiki) | kept; `tests/wiki*.test.cjs` | named Wiki again |
+| E09 | Footer › Language; Preferences › Game text (web) | Preferences sheet: `tests/businesses_expansion.test.cjs`; picker: `tests/i18n_*.test.cjs` | Language lives in the footer only (declutter X5) |
 | E10 | Preferences › History: Forget history (web), market_history.json and --backfill (CLI); Company finances › History since | `tests/businesses_expansion.test.cjs` (finances, sheet rows) | – |
-| E11 | Masthead five areas, City map, Game guide; local row | `tests/navigation.test.cjs`, `tests/shell_routes.test.cjs` | – (chunk 1) |
+| E11 | Sidebar: five areas with the open one's views, City map, Wiki; folds to a rail (views then on top of the page) | `tests/navigation.test.cjs`, `tests/shell_routes.test.cjs` | the masthead and its rows became the sidebar |
 | E12 | `#site/<slug>`, crumbs, site picker, Back/Forward, `nxRoute` | `tests/shell_routes.test.cjs`, `tests/findability.test.cjs`, `tests/businesses_expansion.test.cjs` | a business's page leads to its planners and back (`spActs()`) |
-| E13 | Masthead Search, ··· › Search the board, Help › Search | `tests/search.test.cjs` | – |
+| E13 | Sidebar Search (the rail's icon; in the phone's drawer), / and Ctrl+K, Help › Search | `tests/search.test.cjs` | – |
 | E14 | `/`, Ctrl+K; map's own buttons | `tests/search.test.cjs`, `tests/map.test.cjs` | – |
 | E15 | Overview › All tools (the seven questions stay the palette's empty state) | `tests/today_layout.test.cjs`, `tests/search.test.cjs` | – (chunk 1) |
 | E16 | Overview › All tools | `tests/today_layout.test.cjs` | – (chunk 1) |
 | E17 | New badges; news strip; ··· › What's new; Help › What's new | `tests/news.test.cjs`, `tests/release.test.cjs` | – |
-| E18 | Difficulty chip (masthead ≥1501 px, footer), Preferences › Game context | `tests/milestones.test.cjs`, `tests/fold_views.test.cjs` | also in Preferences |
+| E18 | Difficulty chip (sidebar clock ≥1501 px, else the footer), Preferences › Game context | `tests/milestones.test.cjs`, `tests/fold_views.test.cjs` | also in Preferences |
 
 ### Company and dashboard
 
@@ -524,7 +530,7 @@ route and its state work; they are not proof that players find it (see the chunk
 
 | ID | Destination | Evidence | Change |
 | --- | --- | --- | --- |
-| W01 | Game guide › categories, search | kept; `tests/wiki*.test.cjs` | – |
+| W01 | Wiki › categories, search | kept; `tests/wiki*.test.cjs` | named Wiki again |
 | W02 | Guide › business guides, setup checklists; Find a location's "setup guide" | kept; `tests/businesses_expansion.test.cjs` | linked from the finder |
 | W03 | Guide › products, fixtures, suppliers, recipes | kept | – |
 | W04 | Guide › Prices in your save; Products & prices links to it | kept; `tests/businesses_expansion.test.cjs` | – |
@@ -534,11 +540,11 @@ route and its state work; they are not proof that players find it (see the chunk
 
 | ID | Destination | Evidence | Change |
 | --- | --- | --- | --- |
-| P01 | Preferences › Appearance (theme; motion follows the system); footer Theme | `tests/businesses_expansion.test.cjs` | a sheet |
-| P02 | Preferences › Language (web); footer Language | `tests/businesses_expansion.test.cjs`, `tests/i18n_*.test.cjs` | – |
+| P01 | Footer › Theme (motion follows the system) | `tests/businesses_expansion.test.cjs` | theme lives in the footer only (declutter X5) |
+| P02 | Footer › Language | `tests/businesses_expansion.test.cjs`, `tests/i18n_*.test.cjs` | in the footer only (declutter X5) |
 | P03 | ··· › What's new, Help › What's new, footer Changelog, New badges, update banner | `tests/businesses_expansion.test.cjs`, `tests/update.test.cjs` | – |
 | P04 | Help › Feature requests (web), footer vote card | `tests/businesses_expansion.test.cjs`; `npm run test:community` (unchanged files) | – |
-| P05 | Masthead live dot's online count (web) | kept; `tests/community-browser.test.cjs` | – |
+| P05 | Live dot's online count on the sidebar clock (web) | kept; `tests/community-browser.test.cjs` | – |
 | P06 | Help › Bugs and feedback; footer | `tests/businesses_expansion.test.cjs` | – |
 | P07 | Help › The project; footer | `tests/businesses_expansion.test.cjs`, `tests/test_footer.py` | – |
 | P08 | Wordmark dot, sphere, coins | kept; `tests/search.test.cjs` (sphere) | – |

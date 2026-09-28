@@ -244,8 +244,8 @@ test('a Growth type row and the Plan a chain type link to the setup guide', asyn
           1, ['ba:neighborhood_midtown'], 0, []),
       ];
     });
-    assert.match(rows[0], /<small>1 product · <a class="link xl-guide" href="#wiki\/businesstypes-cinema">Setup guide ›<\/a><\/small>/);
-    assert.match(rows[1], /<small>Lawyer Fee · you run one · <a class="link xl-guide" href="#wiki\/businesstypes-lawfirm">Setup guide ›<\/a><\/small>/);
+    assert.match(rows[0], /<small>1 product · <a class="link xl-guide" href="#wiki\/businesstypes-cinema">Wiki page ›<\/a><\/small>/);
+    assert.match(rows[1], /<small>Lawyer Fee · you run one · <a class="link xl-guide" href="#wiki\/businesstypes-lawfirm">Wiki page ›<\/a><\/small>/);
     await page.evaluate(() => {
       D.plan = {catalogue: {'ba:businesstype_gym': {type: 'Gym', products: ['ba:itemname_proteinbar'], services: []}},
                 own: {}, workstations: {}, sources: {}, prices: {}, recipes: []};

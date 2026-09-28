@@ -645,9 +645,10 @@ test('the Growth page fits in the pseudo-locale, with a market and a plan', asyn
       const norm = s => s.replace(/[\d\s.,:;$%+\-–—×·/()!?%'"‹›…#]+/g, '');
       const where = `${width}px growth ${view}`;
       /* The page's own sideways scroll is the sweep's above; here only what
-         the Growth page itself pushes past the window counts. */
+         the Growth page itself pushes past the window counts. A table that
+         scrolls inside its own box (.scrollx, Peter's testing A5) pushes nothing. */
       const past = p => p.evaluate(() => [...document.querySelectorAll('#pageGrowth *')]
-        .filter(e => e.getClientRects().length && e.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
+        .filter(e => e.getClientRects().length && !e.closest('.scrollx') && e.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
         .map(e => `${e.tagName.toLowerCase()}.${String(e.className).split(' ')[0]}`));
       const wasPast = await past(en.page);
       assert.deepEqual((await past(xx.page)).filter(e => !wasPast.includes(e)), [], `${where}: the page scrolls sideways`);

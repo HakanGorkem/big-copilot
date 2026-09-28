@@ -443,11 +443,9 @@ test('a live refresh keeps the site followed and the open group, and lays the pi
   assert.ok((await state(page)).pipes.length >= 2);
 });
 
-/* How the picture meets a desk box (round 2 and 3 of the chunk's review):
-   it shrinks to fit down to 0.8 of its size, where the names still read,
-   its height shrinking with it; a chain wider than that scrolls sideways
-   inside the box at full size, the followed site in view and the edge where
-   it goes on faded. */
+/* How the picture meets a desk box: it opens on the whole chain, no larger
+   than 1:1, with no blank band above or below it; the reader zooms and drags
+   from there (Peter's testing, A3, replaced the sideways scroll). */
 const measure = page => page.evaluate(() => {
   const svg = document.getElementById('flow'), box = document.getElementById('sbFlowBox'), sc = document.getElementById('sbFlowScroll');
   const s = svg.getBoundingClientRect(), b = box.getBoundingClientRect();
@@ -485,62 +483,101 @@ test('the five-stage fixture chain fits a 1366 window with the sidebar folded: s
   assert.ok(m.font >= 9.2, `names at ${m.font.toFixed(1)} px`);
 });
 
-test('a six-stage chain past the floor keeps its names at full size and scrolls inside the box, faded where it goes on', async t => {
-  const page = await board(t, sixStages(), 1280);
-  const m = await measure(page);
-  assert.deepEqual(m.heads, ['IMPORTERS', 'DEPOTS', 'FACTORIES', 'DEPOTS', 'FACTORIES', 'SHOPS']);
-  assert.ok(m.scale > 0.99, `drawn 1:1, not at ${m.scale.toFixed(2)}`);
-  assert.ok(m.headGap < 30, `the heads start ${m.headGap.toFixed(0)} px under the top`);
-  assert.ok(m.bottomGap < 30, `${m.bottomGap.toFixed(0)} px under the last site`);
-  // The names at the stage's own 11.5 px (.flow .node text), not shrunk.
-  assert.ok(m.font >= 11.5, `names at ${m.font.toFixed(1)} px`);
-  assert.equal(m.scrolls, true, 'the box scrolls sideways');
-  assert.equal(m.fade, true, 'the right edge says the picture goes on');
-  assert.ok(m.page <= 0, 'the page itself does not');
-  // Scrolled to its end, the fade moves to the left edge.
-  await page.evaluate(() => { const b = document.getElementById('sbFlowScroll'); b.scrollLeft = b.scrollWidth; b.dispatchEvent(new Event('scroll')); });
-  assert.deepEqual(await page.evaluate(() => ['sb-flow-more-l', 'sb-flow-more-r'].map(c => document.getElementById('sbFlowScroll').classList.contains(c))), [true, false]);
-  // A box grown past the floor shrinks it to fit again, with no scroll and no fade.
-  await page.setViewportSize({width: 1900, height: 1000});
-  await page.waitForFunction(() => !document.getElementById('sbFlowScroll').classList.contains('sb-flow-scroll'));
-  const w = await measure(page);
-  assert.equal(await page.evaluate(() => document.getElementById('flow').style.width), '100%');
-  assert.ok(w.scale >= 0.8 && w.lastHeadRight <= w.boxRight && w.bottomGap < 30 && !w.fade, JSON.stringify(w));
+/* The picture moves like the City map (Peter's testing, A3): a camera on the
+   svg's viewBox. */
+const cam = page => page.evaluate(() => {
+  const v = document.getElementById('flow').getAttribute('viewBox').split(' ').map(Number);
+  return {x: v[0], y: v[1], w: v[2], h: v[3], s: flowScale(), cx: v[0] + v[2] / 2, cy: v[1] + v[3] / 2};
+});
+const allInside = page => page.evaluate(() => {
+  const st = document.getElementById('sbFlowScroll').getBoundingClientRect();
+  return [...document.querySelectorAll('#flow .node')].every(n => { const b = n.querySelector('rect').getBoundingClientRect();
+    return b.left >= st.left - 1 && b.right <= st.right + 1 && b.top >= st.top - 1 && b.bottom <= st.bottom + 1; });
 });
 
-test('following a shop on a chain that scrolls brings the shop into view', async t => {
+test('Goods flow moves like the map: the whole chain first, + and − zoom about the middle, ⌂ fits, a drag moves it and is no click, the wheel zooms, the keys do too', async t => {
+  const page = await board(t, sixStages(), 1280);
+  // The whole chain at first, no larger than 1:1, and nothing scrolls sideways.
+  assert.equal(await allInside(page), true);
+  const c0 = await cam(page);
+  assert.ok(c0.s <= 1, `fitted at ${c0.s}`);
+  assert.equal(await page.evaluate(() => document.getElementById('sbFlowScroll').scrollWidth <= document.getElementById('sbFlowScroll').clientWidth), true);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
+  assert.deepEqual(await page.locator('#sbFlowZoom button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label'))),
+    ['Zoom in', 'Zoom out', 'The whole chain']);
+  // + zooms in about the middle, − back out.
+  await page.click('#sbFlowZoom [data-fz="in"]');
+  const c1 = await cam(page);
+  assert.ok(c1.s > c0.s * 1.3, `${c1.s} after + from ${c0.s}`);
+  assert.ok(Math.abs(c1.cx - c0.cx) < 1 && Math.abs(c1.cy - c0.cy) < 1, 'the middle stays');
+  await page.click('#sbFlowZoom [data-fz="out"]');
+  assert.ok(Math.abs((await cam(page)).s - c0.s) < 1e-3);
+  await page.click('#sbFlowZoom [data-fz="in"]');
+  // A drag moves the picture with the pointer, and opens nothing.
+  const box = await page.locator('#sbFlowScroll').boundingBox();
+  const hash = await page.evaluate(() => location.hash), before = await cam(page);
+  const node = await page.locator('#flow .node').first().boundingBox();
+  const from = {x: Math.max(box.x + 5, Math.min(box.x + box.width - 5, node.x + node.width / 2)), y: Math.max(box.y + 5, Math.min(box.y + box.height - 5, node.y + node.height / 2))};
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x - 120, from.y - 30, {steps: 8});
+  await page.mouse.up();
+  const after = await cam(page);
+  assert.ok(Math.abs((after.x - before.x) * after.s - 120) < 4, `moved ${(after.x - before.x) * after.s}px`);
+  assert.equal(await page.evaluate(() => location.hash), hash, 'the drag was no click on a site');
+  // The wheel zooms about the pointer.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const w0 = (await cam(page)).s;
+  await page.mouse.wheel(0, -400);
+  await page.waitForFunction(s => flowScale() > s, w0);
+  // ⌂ brings the whole chain back.
+  await page.click('#sbFlowZoom [data-fz="fit"]');
+  assert.equal(await allInside(page), true);
+  // The stage takes the keyboard: + zooms, an arrow moves, 0 fits.
+  await page.locator('#sbFlowScroll').focus();
+  const k0 = await cam(page);
+  await page.keyboard.press('+');
+  assert.ok((await cam(page)).s > k0.s);
+  const k1 = await cam(page);
+  await page.keyboard.press('ArrowRight');
+  assert.ok((await cam(page)).x > k1.x);
+  await page.keyboard.press('0');
+  assert.equal(await allInside(page), true);
+});
+
+test('following a site centres it, at a size its name reads', async t => {
   const page = await board(t, sixStages(), 1280);
   await page.evaluate(() => { flowPickId = 'shop#4'; drawFlowView(); drawFlow(); applyFlow(); });
   const got = await page.evaluate(() => {
-    const box = document.getElementById('sbFlowScroll').getBoundingClientRect();
+    const st = document.getElementById('sbFlowScroll').getBoundingClientRect();
     const r = document.querySelector('#flow .node[data-id="shop#4"] rect').getBoundingClientRect();
-    return {left: r.left, right: r.right, boxLeft: box.left, boxRight: box.right, scrolled: document.getElementById('sbFlowScroll').scrollLeft};
+    return {dx: (r.left + r.width / 2) - (st.left + st.width / 2), dy: (r.top + r.height / 2) - (st.top + st.height / 2), s: flowScale()};
   });
-  assert.ok(got.scrolled > 0, 'the box scrolled');
-  assert.ok(got.left >= got.boxLeft && got.right <= got.boxRight, JSON.stringify(got));
+  assert.ok(Math.abs(got.dx) < 2 && Math.abs(got.dy) < 2, JSON.stringify(got));
+  assert.ok(got.s >= 0.9, `readable: ${got.s}`);
 });
 
 /* Carried from chunk 2's review: a live refresh redraws Goods flow, and the
-   picture stays scrolled where the reader left it (only a newly followed site
-   moves it); the legend sits outside the scrolled strip, so it stays in view. */
-test('a redraw keeps the picture scrolled where the reader left it, and the legend stays in view', async t => {
+   picture stays where the reader left it (only a newly followed site moves
+   it); the legend sits outside the stage, so it stays in view. */
+test('a redraw keeps the camera where the reader left it, and the legend stays in view', async t => {
   const page = await board(t, sixStages(), 1280);
-  const at = () => page.evaluate(() => {
-    const sc = document.getElementById('sbFlowScroll'), box = document.getElementById('sbFlowBox').getBoundingClientRect();
-    const leg = document.querySelector('#sbFlowBox .sb-flowleg').getBoundingClientRect();
-    return {x: sc.scrollLeft, legIn: leg.left >= box.left - 1 && leg.left < box.right};
-  });
-  await page.evaluate(() => { const sc = document.getElementById('sbFlowScroll'); sc.scrollLeft = 300; sc.dispatchEvent(new Event('scroll')); });
-  assert.equal((await at()).x, 300);
-  assert.equal((await at()).legIn, true, 'the legend does not scroll away');
+  await page.click('#sbFlowZoom [data-fz="in"]');
+  await page.locator('#sbFlowScroll').focus();
+  await page.keyboard.press('ArrowRight');
+  const left = await cam(page);
   // The refresh: the view and the picture drawn again from the same numbers.
   await page.evaluate(() => { D = JSON.parse(JSON.stringify(D)); drawFlowView(); drawFlow(); });
-  assert.equal((await at()).x, 300, 'the picture is where it was');
-  // Following the same site again after a redraw does not snap it either.
+  assert.deepEqual(await cam(page), left, 'the picture is where it was');
+  const leg = await page.evaluate(() => { const b = document.getElementById('sbFlowBox').getBoundingClientRect(), l = document.querySelector('#sbFlowBox .sb-flowleg').getBoundingClientRect();
+    return l.left >= b.left - 1 && l.right <= b.right + 1; });
+  assert.equal(leg, true, 'the legend does not move away');
+  // A newly followed site moves it; followed again after a redraw it does not.
   await page.evaluate(() => { flowPickId = 'shop#4'; drawFlowView(); drawFlow(); });
-  const followed = (await at()).x;
-  assert.notEqual(followed, 300, 'a newly followed site is brought into view');
-  await page.evaluate(() => { const sc = document.getElementById('sbFlowScroll'); sc.scrollLeft = 40; sc.dispatchEvent(new Event('scroll')); });
-  await page.evaluate(() => { drawFlowView(); drawFlow(); });
-  assert.equal((await at()).x, 40, 'the same followed site leaves the reader\'s scroll alone');
+  const followed = await cam(page);
+  assert.notDeepEqual(followed, left, 'a newly followed site is brought into view');
+  await page.keyboard.press('ArrowDown');
+  const moved = await cam(page);
+  await page.evaluate(() => { D = JSON.parse(JSON.stringify(D)); drawFlowView(); drawFlow(); });
+  assert.deepEqual(await cam(page), moved, 'the same site followed again does not snap back');
 });

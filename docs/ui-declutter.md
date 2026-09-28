@@ -575,3 +575,67 @@ Tests:
 Screenshots of every page, at 1440 light and dark and at 1100 light:
 `shots/after3-web/{1440-light,1440-dark,1100-light}/` and
 `shots/after3-cli/{1440-light,1440-dark,1100-light}/`, with the same file names as above.
+
+## Round 4: Peter's testing on his own saves (28 September 2026)
+
+Peter used the hosted build on his own saves (Costy Co day 191, HART. YT) and sent sixteen notes.
+Two final reviews ran on `81d2210`: Fable 5.1 reviewed the code and gpt-6-astra did QA. Every
+note was reproduced on renders of those two saves, which stay outside the repository.
+
+| # | Note | What changed |
+| --- | --- | --- |
+| A1 | Unstyled dropdowns (Imports' Whole company) | Every select that wore the browser's own arrow now has the board's look: no native chrome, a quiet chevron, the board's font, border and colours. This covers Supply's scope, Plan a factory's type, the recipe pickers and the landing's save-folder select. Native lists follow the theme's `color-scheme` |
+| A2 | "Copy the change" | Gone from the import card; Manual instructions says the same, and Changes keeps Copy remaining |
+| A3 | Goods flow: drag and zoom like the map | The picture is a camera on its viewBox, as the City map's is. Drag moves it, the wheel or + and − zoom it (pinch too), and ⌂ shows the whole chain. On the stage the arrow keys move, + and − zoom, and 0 fits. A redraw keeps the camera, and a newly followed site is centred at a readable size. The sideways scroll and its 0.8 floor are gone. `flowFit()`, `flowZoom()`, `flowWirePan()` |
+| A4 | "The game link does not write factory hours or hires here" | Removed, with the other notes that restate an absent button: "by hand; no game-link write" on Changes rows and the card's purchase, and "Not written by the game link." in the manual steps |
+| A5 | Headers on two lines (Makes / day) | Column heads never wrap. The Supply tables take tighter cells and a 130 px status column, so Imports fits beside the full sidebar at 1440 px and Deliveries and Production at 1280. What still cannot fit (Imports at 1280) scrolls inside its box, and so does the ingredients table in a longer language |
+| A6 | "Full production vs Shop demand seems to not change anything" | See below |
+| A7 | "staff-hours that buy nothing", "Customers by hour, on its page" | The finding reads "{site} has 214 staffed hours a week more than its customers need: …, at 3 customers an hour". The link labels read "See customers by hour", "Open its shelves" and "Open its fees". At capacity reads "…, with $X/day of sales in those hours. Cash registers are the limit; the fix is …". "Ask for nobody" is now "need nobody" |
+| A8 | "Demand data complete: switch to the demand plan" on the demand plan | Shown only beside Full cover 24/7, the plan it hands over from |
+| A9 | "0 of 67 copied" | The schedule block's ring and count are gone (the ticks and "clear ticks" stay), as are Changes' "0 of n recorded or applied" and the Overview's "Your changes" line, which said the same |
+| A10 | Staff needs: two headlines | "Open places" is gone; the filters under Whom to hire say what the table is |
+| A11 | The roles table cut off | The panel goes under the table when the section is narrower than 1080 px (a container query, since the sidebar takes its share) |
+| A12 | "Where the books part from the rates" | "Sites whose wages yesterday differ from today's rates", each row "paid $X yesterday · $Y at today's rates" |
+| A13 | "Trend history starts building from today" | Removed (Demand's note and the empty movers line) |
+| A14 | Plan a factory | The sentence under the products is gone (the Supplies cells and the Made tile's tip say it). The ingredients' cost sentence is gone too: the Total row is the cost, and where prices come from is the Cash / week head's tip. The Change column hides when no row has a change |
+| A15 | "Game guide" | Called the Wiki again: sidebar, search, links, crumbs, tips, docs and translations. The Demand and Plan a factory links read "Wiki page". Routes and aliases are unchanged |
+| A16 | The Ask strip | × puts it away and leaves the reader on the answer's page |
+
+**A6, what the basis changes.** Full production against Shop demand changes only figures that come
+from a factory line: factory-input imports, a line's hours and output, and factory staffing. On
+Costy Co the shops use nearly everything the factories make. Under Needs a change the two bases
+give the same Changes, Imports and Production, word for word. Under Everything, Imports moves
+uses/week by under 1% (2,452,800 against 2,443,068) and Production moves makes/day as little. On
+HART. YT, Imports and Production change a lot (909,655 against 408,209 uses a week, 42 against
+28 factory workers). Its Changes are the same under both, because its changes are shop imports
+and deliveries, and shop demand never makes "fewer hours would do" a change. Nothing is computed
+wrong. The switch showed wherever the company had a factory line, whether or not it changed
+anything. Now each view builds its body the other way too and compares the text; the switch shows
+only where they differ, for the view as filtered (mode, scope): `sbBasisDiffers()`. `sbData()`
+keeps one cache per basis, so the second build costs nothing twice. On Costy Co the switch now
+shows on Imports and Production under Everything only; on HART. YT on Imports and Production
+under both modes.
+
+Review items done in the same round:
+- main merged (Korean, the news strip, the unmeasured-routes hotfix);
+- the changelog entry describes the sidebar;
+- the flaky uniforms test waits for its text, and the navigation slice no longer ends on a line
+  ending;
+- a stored "full" holds only wider than 1100 px, so a window snapped to half the screen gets the
+  rail (unfolding there lasts the visit);
+- the landing's save-folder box has a **More help** link that opens the save help;
+- `docs/dashboard-reference.md` and the ledger (`docs/ui-structure-proposal.md` §12) describe the
+  sidebar, the footer and the one menu, and the reference uses no roster or shift words outside
+  code names and the game's own text;
+- Fable's NITs:
+  - "the masthead says" and "shifts" in the hire dialog are reworded;
+  - the discarded values are gone with their computations;
+  - so are `ssFitMast()`, `growthPlanLink()`, `.nx-co`, the Quick hire skill handler and the
+    second `.nx-sr`;
+  - in the phone's drawer one Escape closes the menu and a second the drawer;
+  - the phone bar is labelled "Places".
+
+Not done: the Quick hire branches of the demand popover (`hrPop.target === "quick"`) are
+unreachable but woven through the hiring code, and were left rather than risk it.
+
+Screenshots of the touched views, 1440 light: `shots/after4-web/`.

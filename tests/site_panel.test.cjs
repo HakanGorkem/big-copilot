@@ -516,14 +516,14 @@ test('every ceiling the busy hours ran into gets a chip and a lit icon', async (
     const chipLook = await page.$$eval('#sp-hours .sp-hchip.cap', els =>
       els.map(e => [e.classList.contains('sp-bcap'),
         e.querySelector('.fix') ? e.querySelector('.fix').textContent : null,
-        /so the answer is/.test(e.dataset.tip)]));
+        /the fix is/.test(e.dataset.tip)]));
     assert.deepEqual(chipLook, [
       [true, null, false],
       [false, 'more service staff on those hours', true],
       [false, 'another counter', true]]);
     const door = page.locator('#sp-hours .sp-hchip[data-show="door"]');
     assert.match(await door.getAttribute('data-tip'),
-      /^At the building's capacity 7 hours a week \(every day 9\); \$[\d.,]+k?\/day of trade goes through those hours\.$/);
+      /^At the building's capacity 7 hours a week \(every day 9\); \$[\d.,]+k?\/day of sales in those hours\.$/);
     assert.match(await door.innerText(), /at building capacity/);
     // Its hours wear the neutral ring too; the other ceilings' hours do not.
     const rings = await page.$$eval('#sp-hours .hc.cap', els =>
@@ -1722,7 +1722,7 @@ test('a roster that differs by day is told one headcount at a time, on the page 
   try {
     const worth = await page.evaluate(w => fmt(w), MIXED.row.worth);
     const runs = '2 fitness planning boards Mon 8-20; 4 fitness planning boards Tue 8-20';
-    assert.match(MIXED.row.text, new RegExp(`: ${runs} for `));
+    assert.match(MIXED.row.text, new RegExp(`: ${runs}, at `));
     await idleArrive(page, MIXED.row, MIXED);
     assert.equal((await page.locator('#hourRead').textContent()).trim(), `Overstaffed · 48 staff-hours a week · ${runs} · ${worth}/day of wages`);
     await page.locator(`.sp-find[data-id="${MIXED.row.id}"]`).hover();
@@ -1737,7 +1737,7 @@ test('a week of three headcounts names the biggest two, on the page as on Today,
   try {
     const worth = await page.evaluate(w => fmt(w), MANY.row.worth);
     const runs = '3 fitness planning boards Tue 8-20; 4 fitness planning boards Wed 8-20 (and 1 more)';
-    assert.ok(MANY.row.text.includes(`: ${runs} for `), MANY.row.text);
+    assert.ok(MANY.row.text.includes(`: ${runs}, at `), MANY.row.text);
     await idleArrive(page, MANY.row, MANY);
     assert.equal((await page.locator('#hourRead').textContent()).trim(), `Overstaffed · 72 staff-hours a week · ${runs} · ${worth}/day of wages`);
     // "(and 1 more)": every hour of the week is still lit, Monday's included.

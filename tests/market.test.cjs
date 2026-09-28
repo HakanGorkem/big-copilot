@@ -87,7 +87,7 @@ test('a type cell is the average demand of its range, and a one-product type rea
     assert.equal((await cell(page, 0, 1).innerText()).trim(), '90');
     assert.match(await cell(page, 0, 1).getAttribute('data-tip'), /demand 90 for its one product/);
     // The row ends on the way to the type's setup guide in the Wiki.
-    assert.match(await page.locator('#market .r[data-r="0"] small').innerText(), /^1 product · Setup guide ›$/);
+    assert.match(await page.locator('#market .r[data-r="0"] small').innerText(), /^1 product · Wiki page ›$/);
   } finally { await page.close(); }
 });
 
@@ -143,7 +143,7 @@ test('a shop row carries its own way into Plan a chain; an office row has none, 
     });
     // Plan a factory is the next tab, with its own type picker: no row links it (declutter E2).
     assert.equal(await page.locator('#market .mk-plan').count(), 0);
-    assert.equal(await page.locator('#market .r[data-r="0"] small').innerText(), '1 product · Setup guide ›');
+    assert.equal(await page.locator('#market .r[data-r="0"] small').innerText(), '1 product · Wiki page ›');
     // Nothing is drawn under the grid.
     assert.equal(await page.locator('#cellDetail').count(), 0);
     await page.evaluate(() => { marketView = 'mine'; drawMarket(); });

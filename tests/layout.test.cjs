@@ -112,6 +112,12 @@ test('factory metrics fit at desktop widths without crushing line names', async 
       });
       assert.ok(sizes.table <= sizes.container + 1, JSON.stringify(sizes));
       assert.ok(sizes.line >= 220, JSON.stringify(sizes));
+      // A column head never takes two lines (Peter's testing, A5).
+      const wrapped = await page.evaluate(sel => [...document.querySelectorAll(`${sel} thead th`)].filter(th => {
+        const r = document.createRange(); r.selectNodeContents(th);
+        return new Set([...r.getClientRects()].filter(x => x.width > 1).map(x => Math.round(x.top))).size > 1;
+      }).map(th => th.textContent.trim()), LINES);
+      assert.deepEqual(wrapped, [], `${width}px`);
       assert.ok(sizes.rowHeight < 150, JSON.stringify(sizes));
       // The page takes the window beside the sidebar.
       assert.ok(sizes.wrap >= width - sizes.side - 100, JSON.stringify(sizes));

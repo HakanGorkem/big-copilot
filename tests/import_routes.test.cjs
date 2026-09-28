@@ -50,8 +50,9 @@ async function board(data, {mode = 'cap', names = null, which = 'all', tab = 'im
 }
 /* Every view drawn again, as a refresh would. */
 const redraw = page => page.evaluate(() => { drawSupplyStrip(); drawChangesView(); drawImportsView(); drawDeliveriesView(); drawProductionView(); wireAll(); });
-/* The Changes count as it reads: "3 of 10 recorded or applied". */
-const counted = page => page.$eval('#sbcTop .sbc-n', el => [...el.childNodes].map(n => n.textContent.trim()).filter(Boolean).join(' '));
+/* How far along Changes is, as its road says it to a screen reader: "3 of 10
+   recorded or applied" (the words on screen went, Peter's testing A9). */
+const counted = page => page.$eval('#sbcTop .sb-road', el => el.getAttribute('aria-label').replace(' changes ', ' '));
 const actions = page => page.evaluate(() => sbData().rows.map(a =>
   ({kind: a.kind, item: a.item, current: a.current, proposed: a.proposed, tight: !!a.tight, paused: !!a.paused,
     ...(a.lower ? {lower: true} : {})})));
@@ -189,8 +190,13 @@ test('Changes counts the marks on every view, and each view counts what is left'
     assert.match(await page.locator('#secImports tr[data-slug="flour"]').getAttribute('class'), /sb-done/);
     // The same mark shows on Changes, as Marked by you.
     assert.match(await page.locator('#secChanges .sbc-row.sb-done').first().textContent(), /Marked by you/);
-    // The counter says how far along the list is; Copy remaining carries no second count.
-    assert.match(await page.locator('#sbcTop .sbc-n').textContent(), /^3\s*of 10/);
+    // The road says how far along the list is, and no counter says it again (A9);
+    // Copy remaining carries no second count.
+    assert.equal(await counted(page), '3 of 10 recorded or applied');
+    assert.equal(await page.locator('#sbcTop .sbc-n').count(), 0);
+    await page.evaluate(() => { openRoute('overview'); drawAlerts(); });
+    assert.doesNotMatch(await page.locator('#alertSection').innerText(), /Your changes/);
+    await page.evaluate(() => openRoute('supply/changes'));
     assert.equal(await page.locator('#sbcTop [data-sb-copy="remaining"] small').count(), 0);
     // The ticks are kept on the device, per character, under the key the old checklist used.
     const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('ba_order_marks_v1:r8-fixture')));
@@ -670,7 +676,6 @@ test('an unnamed line is on Production with its recipe picker', async () => {
   const page = await board(data, {which: 'changes'});
   try {
     assert.equal(await page.locator('#secProduction select.linepick').count(), 1);
-    assert.match(await page.locator('#sbcTop .sbc-n').getAttribute('data-tip'), /1 recipe to name/);
     assert.match(await tabTip(page, 'production'), /1 machine without usable recipe details/);
   } finally { await page.close(); }
 });

@@ -494,10 +494,10 @@ GAME_NAME_LANGS = {
 # i18n/<lang>.json each; tests/test_game_names.py holds the three together).
 # The footer's Language list shows them first, as "Whole page"; every other
 # entry of GAME_NAME_LANGS changes only the game's names.
-UI_LANGS = ("en", "de", "es", "fr", "pt", "ru")
+UI_LANGS = ("en", "de", "es", "fr", "pt", "ru", "ko")
 # The ones still mostly machine-drafted (i18n/<lang>.ai.json): the footer says
 # so under the picker, with a link to help check them.
-UI_LANGS_DRAFTED = ("es", "fr", "pt", "ru")
+UI_LANGS_DRAFTED = ("es", "fr", "pt", "ru", "ko")
 TRANSLATING_URL = f"{REPO_URL}/blob/main/docs/translating.md"
 # A language whose file names fewer of the English name keys than this is left
 # out rather than shown half in English (the game's ar.json names none).
@@ -3788,6 +3788,7 @@ def _supply(
     )
 
     # --- 2. depots: does the holding reach the next delivery?
+    factory_keys = {b["key"] for b in businesses if b.get("typeSlug") in FACTORY_TYPES}
     import_rows = []
     weekly_use = {}  # (depot, item) -> a week of the draw the rows below judge
     route_week = {}  # (site index, item) -> a week of what routes bring, unrounded
@@ -3880,15 +3881,6 @@ def _supply(
             def until_drop(when):
                 return max(when - day - 1 + today + (1 if rounds else 0), 0.0)
 
-            due = until_drop(supply["arrives"]) if supply["active"] else None
-            # A paused backup beside a route that brings the week has no drop
-            # to reach; the shelf is judged over a week instead, which the
-            # route's few percent of drift cannot empty.
-            horizon = covered and due is None
-            week_on = day + (6 if rounds else 7)  # a week of rounds, or of days
-            if horizon:
-                due = until_drop(week_on)
-
             # Is the standing order the right size? Last week's draw is not the
             # test — an order that exactly matched last week's use is a well
             # sized order, not a warning. The test is the week the order has to
@@ -3899,11 +3891,43 @@ def _supply(
                 import_avg * 7 if routed
                 else sum(per_day * weekly[(start + ahead) % 7] for ahead in range(7))
             )
+            # A route whose share the log cannot measure (the draw is what the
+            # shops sell, not the logged rounds) still feeds the depot while its
+            # senders hold the item: a factory used as a store tops the depot up
+            # from what it holds. Each sender counts no more than its route can
+            # bring in a week, a round a day up to the target. With a week of
+            # the need behind the route, the import is not the whole supply, so
+            # its size is not judged; the shelf still is. Not where a factory
+            # line draws on the depot too: the shops' week leaves that need out.
+            # With the import paused the route is the whole supply, so its
+            # morning top-up must also cover the busiest day, as a depot only
+            # a route feeds is judged (route_fed); short of that, the paused
+            # import is the finding.
+            routes = route_targets.get((business["key"], item), ())
+            unmeasured = (
+                not routed and basis == "sales"
+                and not any(i == item and dest in factory_keys
+                            for dest, i, _amount in edges.get(business["key"], ()))
+                and sum(min(held.get(source, {}).get(item, 0), 7 * amount)
+                        for source, amount in routes)
+                >= week_need > 0
+                and (supply["active"] or max(amount for _source, amount in routes) >= gross * factor)
+            )
+
+            due = until_drop(supply["arrives"]) if supply["active"] else None
+            # A paused backup beside a route that brings the week has no drop
+            # to reach; the shelf is judged over a week instead, which the
+            # route's few percent of drift cannot empty.
+            horizon = covered and due is None
+            week_on = day + (6 if rounds else 7)  # a week of rounds, or of days
+            if horizon:
+                due = until_drop(week_on)
+
             # Last week's order against this week's is a change of mind, not a
             # shortfall; without a measured draw the order is not judged.
             order_fit = (
                 "short" if week_need and not supply["weekly"] else _fit(week_need, supply["weekly"])
-            ) if basis != "order" else "ok"
+            ) if basis != "order" and not unmeasured else "ok"
 
             # An order sized to consumption always looks as though it runs out a
             # few hours before the next drop — that is the design, not a finding.
@@ -3951,7 +3975,9 @@ def _supply(
                 # shelf before the next morning's round.
                 level = "critical" if cover_fit == "short" else "warn"
                 reason = "shortfall"
-            elif not supply["active"]:
+            # A paused import beside a route its senders hold a week for is the
+            # backup the board calls it, not a line to resume.
+            elif not supply["active"] and not unmeasured:
                 level, reason = ("critical" if cover < 7 else "warn"), "paused"
             elif order_fit == "short":
                 level, reason = "critical", "order"
@@ -3979,6 +4005,9 @@ def _supply(
                     # The route covers all of it: a paused import beside it
                     # is a backup, not a warning.
                     "covered": covered,
+                    # Fed by a route the log cannot measure, from senders
+                    # holding a week of the need: the order is not judged.
+                    **({"heldUpstream": True} if unmeasured else {}),
                     "basis": basis,
                     "peakDay": peak_day,
                     "peakPerDay": round(gross * factor),
@@ -4919,8 +4948,14 @@ def _supply_facts(ctx: dict) -> dict:
                 "parts": {"lines": round(lines_use), "sites": round(sites), "route": round(routed)},
                 "imp": False, "wholesale": True, "day": deal["day"],
             }, "weekly"
+        # A route the log cannot measure, from senders holding a week of the
+        # need (_supply's heldUpstream): the import is not the whole supply,
+        # and pausing it asks nothing back while they hold it.
+        # Only for a depot no factory line draws on: the row's week is the
+        # shops' sales, and a line's need would not be in it.
+        upstream = bool(row and row.get("heldUpstream")) and not lines_use
         p = {}
-        if paused and use and not covered:
+        if paused and use and not covered and not upstream:
             p["paused"] = True
             p["cover"] = row["cover"] if row else (stock / (use / 7) if use else 60)
         elif not entry and use and not covered and (lines_use or not inbound):
@@ -4929,19 +4964,19 @@ def _supply_facts(ctx: dict) -> dict:
         if row is not None and row["basis"] == "order" and not lines_use:
             p["young"] = "young"
         short = []
-        if entry and not paused and use and _below(brought, use):
+        if entry and not paused and use and not upstream and _below(brought, use):
             short.append("order")
         if measured and row["coverFit"] == "short":
             short.append("shortfall")
         p["short"] = short
-        if entry and not paused and _below(brought, need):
+        if entry and not paused and not upstream and _below(brought, need):
             p["tight"] = "order"
         elif measured and row["coverFit"] == "tight":
             p["tight"] = "shortfall"
-        if covered:
+        if covered or (upstream and not short):
             p["covered"] = "route"
         set_to = None
-        if not paused and need and (_below(brought, need) if entry else p.get("noplan")):
+        if not paused and need and not upstream and (_below(brought, need) if entry else p.get("noplan")):
             set_to = _raise_import(entry, need) if entry else _ceil_ten(need)
         have = None
         if entry:
@@ -12603,30 +12638,30 @@ def _alerts(
             text = (
                 msg("f.atcap.limits", {
                     "one": "{where} fills the {noun} {when}, {n} hour a week at {rate} and "
-                           "${worth:,.0f}/day through the ceiling. {limit} are the limit, so the answer is {fix}",
+                           "${worth:,.0f}/day of sales in those hours. {limit} are the limit; the fix is {fix}",
                     "other": "{where} fills the {noun} {when}, {n} hours a week at {rate} and "
-                             "${worth:,.0f}/day through the ceiling. {limit} are the limit, so the answer is {fix}"}, **said)
+                             "${worth:,.0f}/day of sales in those hours. {limit} are the limit; the fix is {fix}"}, **said)
                 if several else
                 msg("f.atcap", {
                     "one": "{where} fills the {noun} {when}, {n} hour a week at {rate} and "
-                           "${worth:,.0f}/day through the ceiling. {limit} is the limit, so the answer is {fix}",
+                           "${worth:,.0f}/day of sales in those hours. {limit} is the limit; the fix is {fix}",
                     "other": "{where} fills the {noun} {when}, {n} hours a week at {rate} and "
-                             "${worth:,.0f}/day through the ceiling. {limit} is the limit, so the answer is {fix}"}, **said)
+                             "${worth:,.0f}/day of sales in those hours. {limit} is the limit; the fix is {fix}"}, **said)
             )
         else:
             sites = _msg_list([f["site"] for f in group])
             text = (
                 msg("f.atcap.sites.limits", {
                     "one": "{where} fill the {noun} {when}, {n} hour a week at {rate} and "
-                           "${worth:,.0f}/day through the ceiling. {limit} are the limit, so the answer is {fix}: {sites}",
+                           "${worth:,.0f}/day of sales in those hours. {limit} are the limit; the fix is {fix}: {sites}",
                     "other": "{where} fill the {noun} {when}, {n} hours a week at {rate} and "
-                             "${worth:,.0f}/day through the ceiling. {limit} are the limit, so the answer is {fix}: {sites}"}, sites=sites, **said)
+                             "${worth:,.0f}/day of sales in those hours. {limit} are the limit; the fix is {fix}: {sites}"}, sites=sites, **said)
                 if several else
                 msg("f.atcap.sites", {
                     "one": "{where} fill the {noun} {when}, {n} hour a week at {rate} and "
-                           "${worth:,.0f}/day through the ceiling. {limit} is the limit, so the answer is {fix}: {sites}",
+                           "${worth:,.0f}/day of sales in those hours. {limit} is the limit; the fix is {fix}: {sites}",
                     "other": "{where} fill the {noun} {when}, {n} hours a week at {rate} and "
-                             "${worth:,.0f}/day through the ceiling. {limit} is the limit, so the answer is {fix}: {sites}"}, sites=sites, **said)
+                             "${worth:,.0f}/day of sales in those hours. {limit} is the limit; the fix is {fix}: {sites}"}, sites=sites, **said)
             )
         # One site can be at more than one ceiling, and the limit is what keeps
         # the ids apart: a role short of people says "Gym Trainer staffing" and
@@ -12666,8 +12701,8 @@ def _alerts(
             # The waste leads, so the row's headline is the whole week's figure
             # and the shape of the hours unfolds as its detail.
             msg("f.idlestaff", {
-                "one": "{site} runs {n} staff-hour a week that buys nothing: {runs} for {seen} customers an hour",
-                "other": "{site} runs {n} staff-hours a week that buy nothing: {runs} for {seen} customers an hour",
+                "one": "{site} has {n} staffed hour a week more than its customers need: {runs}, at {seen} customers an hour",
+                "other": "{site} has {n} staffed hours a week more than its customers need: {runs}, at {seen} customers an hour",
             }, site=site, n=week["spare"], runs=runs, seen=week["seen"]),
             worth=week["worth"],
             key=finding["key"],
@@ -14819,7 +14854,7 @@ html:has(dialog:modal){overflow:hidden}
 #pageSupply .sb-t td{vertical-align:middle}
 #pageSupply .sb-t td.l{white-space:normal}
 #pageSupply .sb-t th.sb-tk,#pageSupply .sb-t td.sb-tk{width:34px;padding-left:6px;padding-right:0}
-#pageSupply .sb-t td.st{white-space:normal;min-width:190px;max-width:290px;text-align:left}
+#pageSupply .sb-t td.st{white-space:normal;min-width:130px;max-width:290px;text-align:left}
 #pageSupply .sb-t tr.sb-kid{display:none}
 #pageSupply .sb-t tr.sb-kid.sb-open{display:table-row;animation:rowin .3s ease}
 #pageSupply .sb-t tr.sb-gr{cursor:pointer}
@@ -14930,7 +14965,12 @@ html:has(dialog:modal){overflow:hidden}
 #pageSupply [data-sb-table="factory-lines"] .sb-t tr > :nth-child(2){min-width:220px}
 #pageSupply [data-sb-table="factory-lines"] .sb-t td.st{min-width:120px}
 #pageSupply [data-sb-table="factory-lines"] .sb-t td .sub{white-space:normal}
-#pageSupply [data-sb-table="factory-lines"] .sb-t thead th{white-space:normal;vertical-align:bottom}
+/* Column heads never wrap (Peter's testing, A5): the Supply tables take
+   tighter cells and a narrower status instead, so Imports fits beside the
+   full sidebar at 1440 px and Production at 1280; what still cannot fit
+   scrolls inside its own box (.scrollx). */
+#pageSupply .sb-t th,#pageSupply .sb-t td{padding-left:8px;padding-right:8px}
+#pageSupply .sb-t thead th{white-space:nowrap}
 #pageSupply .sb-hrs .n{font:500 12px/1 "IBM Plex Mono",monospace;color:var(--ink-2)}
 #pageSupply .sb-hrs .n b{color:var(--ink);font-weight:500}
 #pageSupply .sb-t .sp-mach{gap:4px;flex-wrap:nowrap}
@@ -14974,11 +15014,13 @@ html:has(dialog:modal){overflow:hidden}
 #pageSupply .sb-flowbox{margin-top:8px;border-radius:10px;background:var(--surface);border:1px solid var(--rule-soft);padding:14px 20px 12px}
 #pageSupply .sb-flowbox svg{width:100%;display:block}
 /* The picture scrolls inside its own strip, so the legend under it stays put. */
-#pageSupply .sb-flowscroll.sb-flow-scroll{overflow-x:auto}
-#pageSupply .sb-flowscroll.sb-flow-scroll svg{max-width:none}
-#pageSupply .sb-flowscroll.sb-flow-more-r{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent)}
-#pageSupply .sb-flowscroll.sb-flow-more-l{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to left,#000 calc(100% - 56px),transparent)}
-#pageSupply .sb-flowscroll.sb-flow-more-l.sb-flow-more-r{-webkit-mask-image:linear-gradient(to right,transparent,#000 56px,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to right,transparent,#000 56px,#000 calc(100% - 56px),transparent)}
+/* The picture's stage: the camera moves inside it (flowFit()). */
+.sb-flowscroll{position:relative;overflow:hidden;border-radius:8px;cursor:grab;touch-action:none;user-select:none}
+.sb-flowscroll.sbf-drag{cursor:grabbing}
+.sb-flowscroll:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sb-flowscroll .sbf-zoom{right:8px;bottom:8px}
+.sb-flowscroll .sbf-zoom .ibtn:disabled{opacity:.4;cursor:default}
+.sb-fc-on .sbf-zoom{display:none}
 #pageSupply .sb-flowleg{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;font:500 11px/1 "IBM Plex Mono",monospace;color:var(--ink-3)}
 #pageSupply .sb-flowleg span{display:inline-flex;align-items:center;gap:7px}
 #pageSupply .sb-flowleg i{width:9px;height:9px;border-radius:50%;display:inline-block}
@@ -15289,10 +15331,9 @@ g[data-series].off{opacity:0}
    order columns stay on screen at 1180px; the full list is on hover. The cash
    column only exists once one ingredient has a price. */
 .ingtable .usedby{display:block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2);font-family:Archivo,sans-serif}
-.ingtable.nocash .cash{display:none}
-/* Beside the sidebar a 1280 px window leaves it about 950 px: the heads and the
-   names wrap (a longer language most of all) rather than push past the page. */
-.ingtable thead th{white-space:normal;vertical-align:bottom}
+.ingtable.nocash .cash,.ingtable.nochange .chg{display:none}
+/* Beside the sidebar a 1280 px window leaves it about 950 px: the names wrap,
+   the heads never do, and a longer language scrolls the table in its box. */
 .ingtable td:first-child{white-space:normal}
 .planstat{padding:14px 16px;border-radius:10px;background:var(--surface);border:1px solid var(--rule-soft)}
 .planstat .lab{font:500 10.5px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
@@ -15626,9 +15667,6 @@ section:hover .sp-promo u{animation:sp-pull 1.3s ease-in infinite}
 .sp-typed b{color:var(--ink);font-weight:500}
 .sp-typed a{color:var(--ink-3);text-decoration:none;border-bottom:1px solid var(--rule)}
 .sp-typed a:hover{color:var(--ink)}
-.sp-ring{width:30px;height:30px;border-radius:50%;flex:none;background:conic-gradient(var(--accent) calc(var(--p)*1%),var(--rule) 0);display:grid;place-items:center;transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
-.sp-ring::after{content:"";width:22px;height:22px;border-radius:50%;background:var(--ground)}
-.sp-ring.sp-bump{transform:scale(1.25)}
 /* a shop with no hours yet: read before touching the game's own schedule */
 .sp-note{margin:0 0 18px;padding:10px 14px;border-radius:9px;border:1px solid var(--rule);background:var(--surface);display:flex;flex-wrap:wrap;align-items:center;gap:8px 22px;font-size:12.5px;line-height:1.55;color:var(--ink-2)}
 .sp-note p{margin:0}
@@ -16087,6 +16125,10 @@ body.ss-open{overflow:hidden}
 .ss-asked .go{margin-left:auto;display:flex;gap:14px;align-items:center}
 .ss-asked .go button{border:0;padding:0;background:none;font:inherit;font-size:12.5px;color:var(--ink-2);border-bottom:1px solid var(--rule);cursor:pointer}
 .ss-asked .go button:hover{color:var(--ink)}
+.ss-asked .go .ss-askx{display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:50%;color:var(--ink-3)}
+.ss-asked .go .ss-askx:hover{color:var(--ink);background:var(--raised)}
+.ss-asked .go .ss-askx:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ss-asked .go .ss-askx svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
 section.ss-host{content-visibility:visible}
 .ss-lit{outline:1px solid var(--accent);outline-offset:12px;border-radius:6px}
 #sitePanel [data-block].ss-lit{outline-color:var(--accent)}
@@ -16398,16 +16440,12 @@ body:has(#changelogDialog[open]){overflow:hidden}
 :root{--neg-soft:#ff625722;--warn-soft:#f0913a22;--info-soft:#6ea8ff1f;--ink-3:#808a84}
 @media (prefers-color-scheme:light){:root:not([data-theme="dark"]){--neg-soft:#cc2a201a;--warn-soft:#b34d001a;--info-soft:#2a5ea81a;--ink-3:#636c71;--warn:#b34d00}}
 :root[data-theme="light"]{--neg-soft:#cc2a201a;--warn-soft:#b34d001a;--info-soft:#2a5ea81a;--ink-3:#636c71;--warn:#b34d00}
-.nx-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .nx-i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
 
 .wordmark{font-size:24px}
 
 .brand{align-items:center}
 .brand .dot{align-self:flex-end;margin-bottom:5px}
-.nx-co{display:inline-grid;place-items:center;width:26px;height:26px;margin-left:4px;border-radius:6px;border:0;background:none;color:var(--ink-3);cursor:pointer;padding:0}
-.nx-co:hover,.nx-co[aria-expanded="true"]{color:var(--ink);background:var(--surface)}
-.nx-co:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 .nx-n{font:600 10.5px/1 "IBM Plex Mono",monospace;padding:3px 6px;border-radius:9px;background:var(--neg);color:#fff}
 
@@ -16559,8 +16597,7 @@ body.px-on{overflow:hidden}
    phone, the hosted board's source strip and news included: each row reads
    headline, then action, then the evidence (the DOM keeps headline, evidence,
    action, so a screen reader hears why before what to do); the head is one
-   tight block; what the board checked follows the list. */
-.ov-metafoot{display:none}
+   tight block. */
 @media (max-width:560px){
   #alertSection .find.ov-f .ov-t{display:contents}
   #alertSection .find.ov-f .ov-l1{grid-column:2/-1;grid-row:1}
@@ -16573,9 +16610,6 @@ body.px-on{overflow:hidden}
   #pageToday #alertSection .find.ov-f{padding:10px 0;row-gap:6px}
   .ov-head{gap:8px}
   .ov-head .sev{min-height:32px;padding:0 10px}
-  #alertHead .ov-meta{display:none}
-  .ov-metafoot{display:block}
-  .ov-metafoot .ov-meta{margin:14px 0 4px}
   #pageToday #alertSection{margin-top:8px}
   #pageToday #alerts .ov-band{margin-top:4px;padding-top:8px}
 
@@ -16624,15 +16658,8 @@ body.no-save .nx-tabs{display:none}
 .nx-btn.sm{min-height:30px;padding:0 10px;font-size:12px;border-radius:7px}
 .nx-btn.pill{border-radius:17px}
 #alertKindsToggle.nx-btn{width:auto;height:auto}
-.ov-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px 18px;margin:10px 0 12px;font-size:13px;color:var(--ink-2)}
-.ov-meta svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.ov-meta b{color:var(--ink);font-weight:600}
-.ov-meta > span,.ov-meta > a{display:inline-flex;align-items:center;gap:6px}
 #alerts:not(.ov-all) .ov-later{display:none}
 .ov-task > span:first-child{grid-column:1;grid-row:1}
-.ov-meta a{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2);text-decoration:none}
-.ov-meta a:hover{color:var(--ink)}
-.ov-meta a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 .ov-news{display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 12px;border-radius:10px;border:1px solid color-mix(in srgb,var(--info) 40%,transparent);background:var(--info-soft);font-size:13px}
 .ov-news[hidden]{display:none}
 .ov-news button{margin-left:auto}
@@ -17146,7 +17173,12 @@ dialog.hs-sheet::backdrop{background:#000;opacity:.45}
 .hr-prog i{position:absolute;top:0;bottom:0;width:40%;border-radius:2px;background:var(--info);animation:gw-slide 1.2s ease-in-out infinite}
 .hr-struck{text-decoration:line-through;text-decoration-color:var(--warn)}
 .gw-call .gw-mini-b[disabled]{opacity:.5;cursor:progress}
-@media (max-width:1100px){
+/* Beside its 332 px panel the roles table needs about 710 px: a page narrower
+   than that (1280 px beside the full sidebar, or less) puts the panel under
+   it. Measured on the section, not the window, since the sidebar takes its
+   share (Peter's testing, A11). */
+#secStaff{container:hs-staff/inline-size}
+@container hs-staff (max-width:1080px){
   .hs-split{grid-template-columns:minmax(0,1fr)}
   .hs-right{position:static;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start}
 }
@@ -17192,6 +17224,20 @@ dialog.hs-sheet::backdrop{background:#000;opacity:.45}
 }
 @media (prefers-reduced-motion:reduce){#secStaff *,.gw-dlg.hr-wide *,.hs-sheet *{animation:none!important;transition:none!important}}
 
+/* ----- one look for the board's selects (Peter's testing, A1) --------------
+   Every select that still wore the browser's own arrow gets the board's: no
+   native chrome, a quiet chevron at the right, the board's font and colours.
+   The ones inside a styled label (.hs-sel, .fsel, the site picker in its
+   dark tab) already draw their own and are left alone. The list a select
+   opens is the browser's; color-scheme (set with the theme) keeps it dark on
+   a dark board. */
+.sbv-sel select,.field select,select.linepick,#savePlatform,.ss-pick select.sitepick{appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237d868b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;background-size:12px 12px;cursor:pointer}
+.sbv-sel select{padding-right:22px;background-position:right 2px center}
+.field select,select.linepick,#savePlatform{padding-right:28px;background-color:var(--surface);color:var(--ink);border:1px solid var(--rule);border-radius:7px}
+.field select:hover,select.linepick:hover,#savePlatform:hover{border-color:var(--ink-3)}
+.field select:focus-visible,#savePlatform:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+select option,select optgroup{color:var(--ink);background:var(--surface)}
 /* ----- the sidebar (the navigation canvas's variant B) -----------------------
    The places run down the left: the company and its sphere, Search, the five
    areas with the open one's views under it, the City map and the Game guide,
@@ -17349,7 +17395,7 @@ body.sd-rail .nx-ctl{margin-left:auto;flex-basis:auto;justify-content:flex-end}
 /* Collapsed to its rail before the first paint: the reader's choice on this
    device, else a window 1100 px wide or less. sdLayout() keeps it from here. */
 (function(){ var w = window.innerWidth, rail = w <= 1100;
-  try{ var v = localStorage.getItem("ba_dash_sidebar"); if(v === "rail" || v === "full") rail = v === "rail"; }catch(e){}
+  try{ var v = localStorage.getItem("ba_dash_sidebar"); if(v === "rail" || (v === "full" && w > 1100)) rail = v === "rail"; }catch(e){}
   if(rail && w > 560) document.body.classList.add("sd-rail"); })();
 </script>
 <nav class="sd" id="mast" aria-label="Main" data-tt-aria-label="nav.label">
@@ -17403,9 +17449,6 @@ body.sd-rail .nx-ctl{margin-left:auto;flex-basis:auto;justify-content:flex-end}
       <p class="ov-news" id="ovNews" role="status" hidden></p>
       <div class="finds" id="alerts"></div>
       <div class="ov-more" id="ovMore" hidden></div>
-      <!-- A phone reads what the board checked, and the reader's marks, under
-           the list rather than between the heading and the first finding. -->
-      <div class="ov-metafoot" id="ovMetaFoot"></div>
       <p class="silenced" id="silenced"><b></b> · <a class="link" href="#" data-tt="today.silenced.undo">undo</a></p>
       <div class="td-minor" id="alertMinor"></div>
     </section>
@@ -17481,12 +17524,12 @@ body.sd-rail .nx-ctl{margin-left:auto;flex-basis:auto;justify-content:flex-end}
     <section class="sec rv" id="secIngredients" data-sub="plan">
       <div class="sechead"><h2 data-tt="gr.ing.title">Ingredients</h2>
         <span class="why" data-tt-tip="gr.ing.why" data-tip="What the machines above eat, added up across every line that shares an ingredient. Per day and per week are this range's own figures. Company target is the order for the whole company once the plan runs: never less than a week of this range, and beyond that what the range adds over what your factories already eat, on top of every contract already active, rounded up to the hundred the logistics manager takes. You type that target across your importer contracts in the game yourself; the board never guesses a split per warehouse. Hover an ingredient for what is on order today, and Used by for every line that eats it. A cash column appears once the company already buys one of these ingredients, at the price it last paid." tabindex="0"><i>?</i></span></div>
-      <table class="ingtable" id="ingTable">
+      <div class="scrollx"><table class="ingtable" id="ingTable">
         <thead><tr><th data-tt="gr.ing.col.name">Ingredient</th><th class="l" data-tt="gr.ing.col.usedBy">Used by</th><th data-tt="gr.ing.col.day">Per day</th><th data-tt="gr.ing.col.week">Per week</th><th data-tt="gr.ing.col.target" data-tt-tip="gr.ing.col.target.tip" data-tip="Company-wide: you type each one across your importer contracts in the game; the board adds them up and never guesses a split per warehouse.">Company target</th>
-          <th data-tt="gr.ing.col.onOrder" data-tt-tip="gr.ing.col.onOrder.tip" data-tip="Active contracts only. For Smart Delivery, a week at most: the most its stock levels supply in a week.">On order now</th><th data-tt="gr.ing.col.change">Change</th><th class="cash" data-tt="gr.ing.col.cash">Cash / week</th></tr></thead>
+          <th data-tt="gr.ing.col.onOrder" data-tt-tip="gr.ing.col.onOrder.tip" data-tip="Active contracts only. For Smart Delivery, a week at most: the most its stock levels supply in a week.">On order now</th><th class="chg" data-tt="gr.ing.col.change">Change</th><th class="cash" data-tt="gr.ing.col.cash">Cash / week</th></tr></thead>
         <tbody id="ingBody"></tbody>
         <tfoot id="ingFoot"></tfoot>
-      </table>
+      </table></div>
       <p class="quiet" id="ingNote" style="margin:12px 0 0"></p>
     </section>
   </div>
@@ -17542,7 +17585,7 @@ body.sd-rail .nx-ctl{margin-left:auto;flex-basis:auto;justify-content:flex-end}
     </div>
   </div>
 <!--__FOOTER__-->
-  <nav class="nx-tabs" id="phoneNav" aria-label="Main" data-tt-aria-label="nav.label"></nav>
+  <nav class="nx-tabs" id="phoneNav" aria-label="Places" data-tt-aria-label="nav.label.phone"></nav>
 </div>
 </div>
 <dialog class="changelog-dialog" id="changelogDialog" aria-labelledby="changelogTitle">
@@ -18787,7 +18830,7 @@ function drawFlow(){
   box.classList.toggle("sb-fc-focus", !empty && narrow && !!flowPickId);
   box.classList.toggle("sb-fc-wide", box.getBoundingClientRect().width >= 600);
   svg.style.display = flowChainDrawn ? "none" : "";
-  if(flowChainDrawn){ flowWide = false; flowDims = null; const sc = $("sbFlowScroll"); if(sc) sc.classList.remove("sb-flow-scroll", "sb-flow-more-l", "sb-flow-more-r"); }
+  if(flowChainDrawn){ flowDims = null; flowCam = null; }
   if(chain) chain.hidden = !flowChainDrawn;
   if(flowChainDrawn){
     svg.innerHTML = "";
@@ -18798,6 +18841,7 @@ function drawFlow(){
   }
   if(chain) chain.innerHTML = "";
   const {at, width, height, colX, heads: labels} = flowLayout();
+  flowAt = at;
   const heaviest = Math.max(...g.links.map(l => l.perDay), 1);
   const named = id => (g.nodes.find(n => n.id === id) || {}).name || id;
   const heads = labels.map((label, i) =>
@@ -18849,63 +18893,167 @@ function drawFlow(){
     if(flag) dots.push(`<circle class="${flag[0]}" cx="${x + NODE_W - 10}" cy="${y + 10}" r="4"><title>${flag[1]}</title></circle>`);
   });
 
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   svg.innerHTML = heads.concat(pipes, boxes, dots, cargo).join("");
+  /* A redraw of the same chain keeps the camera where the reader left it;
+     another chain starts whole. */
+  if(!flowDims || flowDims.width !== width || flowDims.height !== height) flowCam = null;
   flowDims = {width, height};
   flowFit();
 }
-/* How the picture meets its box. It shrinks to fit down to FLOW_MIN_SCALE,
-   where the names still read (their 11.5 px at 9.2), its height shrinking with it
-   so no blank band is left above or below; a chain wider than that (a second
-   depot and factory tier on a laptop's width) is drawn at full size and
-   scrolls sideways inside the box, the followed site brought into view and
-   an edge faded where the picture goes on. A box waiting at home (width 0)
-   is drawn to fit. */
-const FLOW_MIN_SCALE = 0.8;
-let flowWide = false, flowDims = null;
-/* Where the reader left the picture scrolled, and the site it was last
-   scrolled to: a redraw (a live refresh, a view shown again) puts the picture
-   back where it was, and only a newly followed site moves it. */
-let flowScrollX = 0, flowScrolledFor = null;
-function flowRoom(){
-  const sc = $("sbFlowScroll");
-  return sc ? sc.clientWidth : 0;
+/* --- the picture's camera: drag to move, the wheel or + and − to zoom -------
+   As on the City map (web/map.js), the svg keeps its layout's own units and
+   the camera is its viewBox, with the stage's aspect so nothing letterboxes
+   (Peter's testing, A3). The stage is as wide as the box and as tall as the
+   chain fitted to that width, at least 380 px and never over its own height;
+   the camera starts on the whole chain, no larger than 1:1. A redraw keeps
+   the camera where the reader left it (flowCam), the ⌂ button brings the
+   whole chain back, and a newly followed site is centred, at a size its
+   names read at. The stage takes the keyboard too: arrows move, + and −
+   zoom, 0 fits. */
+const FLOW_ZOOM_MIN = 0.3, FLOW_ZOOM_MAX = 2.5, FLOW_READ = 0.9;
+let flowDims = null, flowCam = null, flowCamFor = null, flowDragged = false, flowAt = {};
+/* The stage's size in screen px, and the scale of the camera on it. */
+const flowStage = () => { const sc = $("sbFlowScroll"); return sc ? {w: sc.clientWidth, h: sc.clientHeight} : {w: 0, h: 0}; };
+const flowScale = () => { const st = flowStage(); return flowCam && flowCam[2] ? st.w / flowCam[2] : 1; };
+function flowFitCam(){
+  const {width, height} = flowDims, st = flowStage();
+  const s = Math.min(1, st.w / width, st.h / height);
+  const w = st.w / s, h = st.h / s;
+  return [(width - w) / 2, (height - h) / 2, w, h];
+}
+/* A camera of scale `s` with its middle on (cx, cy). */
+function flowCamAt(cx, cy, s){
+  const st = flowStage(), w = st.w / s, h = st.h / s;
+  return [cx - w / 2, cy - h / 2, w, h];
+}
+function flowPaintCam(){
+  const svg = $("flow");
+  if(!svg || !flowCam) return;
+  /* The picture is never pushed wholly out of the stage. */
+  const {width, height} = flowDims, [x, y, w, h] = flowCam;
+  flowCam[0] = Math.min(Math.max(x, -w * .6), width - w * .4);
+  flowCam[1] = Math.min(Math.max(y, -h * .6), height - h * .4);
+  svg.setAttribute("viewBox", flowCam.map(v => v.toFixed(1)).join(" "));
+  const z = $("sbFlowZoom");
+  if(z){
+    const s = flowScale();
+    z.querySelector('[data-fz="in"]').disabled = s >= FLOW_ZOOM_MAX - 1e-6;
+    z.querySelector('[data-fz="out"]').disabled = s <= FLOW_ZOOM_MIN + 1e-6;
+  }
 }
 function flowFit(){
   const svg = $("flow"), sc = $("sbFlowScroll");
   if(!svg || !sc || !flowDims || flowChainDrawn) return;
-  const {width, height} = flowDims, room = flowRoom();
-  const scale = room > 0 ? Math.min(1, room / width) : 1;
-  flowWide = scale < FLOW_MIN_SCALE;
-  sc.classList.toggle("sb-flow-scroll", flowWide);
-  svg.style.width = flowWide ? `${width}px` : "100%";
-  svg.style.height = `${Math.round(height * (flowWide ? 1 : scale))}px`;
-  if(flowWide){
-    if(flowPickId && flowPickId !== flowScrolledFor) flowScrollToPick();
-    else sc.scrollLeft = flowScrollX;
-    flowScrolledFor = flowPickId;
-  } else if(room > 0){ sc.scrollLeft = 0; flowScrollX = 0; }
-  flowEdges();
+  flowZoomer();
+  const {width, height} = flowDims, room = sc.clientWidth;
+  if(!room) return;  // a box waiting at home is fitted when it is shown
+  const fit = Math.min(1, room / width);
+  const was = flowCam ? {cx: flowCam[0] + flowCam[2] / 2, cy: flowCam[1] + flowCam[3] / 2, s: flowScale()} : null;
+  sc.style.height = `${Math.round(Math.min(height, Math.max(380, height * fit)))}px`;
+  svg.style.width = "100%"; svg.style.height = "100%";
+  if(flowPickId && flowPickId !== flowCamFor){
+    /* A newly followed site: in the middle, readable. */
+    const node = flowAt[flowPickId];
+    flowCam = node ? flowCamAt(node.x + NODE_W / 2, node.y + NODE_H / 2, Math.max(FLOW_READ, was ? was.s : 0, Math.min(1, flowStage().w / width)))
+      : flowFitCam();
+  } else flowCam = was ? flowCamAt(was.cx, was.cy, was.s) : flowFitCam();
+  flowCamFor = flowPickId;
+  flowPaintCam();
 }
-/* The followed site in view, where the picture scrolls. */
-function flowScrollToPick(){
-  const sc = $("sbFlowScroll"), svg = $("flow");
-  if(!flowWide || !sc || !svg || !flowPickId) return;
-  const node = q(`.node[data-id="${CSS.escape(flowPickId)}"] rect`, svg);
-  if(!node) return;
-  const x = Number(node.getAttribute("x")) + NODE_W / 2 + svg.getBoundingClientRect().left - sc.getBoundingClientRect().left + sc.scrollLeft;
-  sc.scrollLeft = Math.max(0, x - sc.clientWidth / 2);
-  flowScrollX = sc.scrollLeft;
-  flowEdges();
+/* Zoom by `f` (under 1 is in) about a point of the picture, the middle by default. */
+function flowZoom(f, p){
+  if(!flowCam) return;
+  const s = Math.min(FLOW_ZOOM_MAX, Math.max(FLOW_ZOOM_MIN, flowScale() / f));
+  const [x, y, w, h] = flowCam, k = (flowStage().w / s) / w;
+  const at = p || {x: x + w / 2, y: y + h / 2};
+  flowCam = [at.x - (at.x - x) * k, at.y - (at.y - y) * k, w * k, h * k];
+  flowPaintCam();
 }
-/* Which edges the picture goes on past: faded there (flowWatch() keeps it
-   as the strip scrolls). */
-function flowEdges(){
+/* A screen point in the picture's units. */
+function flowPoint(e){
+  const r = $("flow").getBoundingClientRect(), s = flowScale();
+  return {x: flowCam[0] + (e.clientX - r.left) / s, y: flowCam[1] + (e.clientY - r.top) / s};
+}
+/* The + − ⌂ buttons, made once, their words in the UI language (the map's). */
+function flowZoomer(){
   const sc = $("sbFlowScroll");
-  if(!sc) return;
-  const more = flowWide && sc.scrollWidth - sc.clientWidth > 1;
-  sc.classList.toggle("sb-flow-more-r", more && sc.scrollLeft < sc.scrollWidth - sc.clientWidth - 1);
-  sc.classList.toggle("sb-flow-more-l", more && sc.scrollLeft > 1);
+  if(!sc || $("sbFlowZoom")) return;
+  const z = document.createElement("div");
+  z.className = "zoomer sbf-zoom"; z.id = "sbFlowZoom"; z.setAttribute("role", "group");
+  sc.appendChild(z);
+  flowZoomWords();
+  z.addEventListener("click", e => {
+    const b = e.target.closest("[data-fz]");
+    if(!b) return;
+    if(b.dataset.fz === "fit"){ flowCam = flowFitCam(); flowPaintCam(); }
+    else flowZoom(b.dataset.fz === "in" ? .7 : 1 / .7);
+  });
+  flowWirePan(sc);
+}
+function flowZoomWords(){
+  const z = $("sbFlowZoom");
+  if(!z) return;
+  z.setAttribute("aria-label", tt("sb.flow.zoom", "Zoom the goods flow"));
+  z.innerHTML = `<button type="button" class="ibtn" data-fz="in" aria-label="${attr(tt("map.zoom.in", "Zoom in"))}">+</button>`
+    + `<button type="button" class="ibtn" data-fz="out" aria-label="${attr(tt("map.zoom.out", "Zoom out"))}">−</button>`
+    + `<button type="button" class="ibtn" data-fz="fit" aria-label="${attr(tt("sb.flow.fit", "The whole chain"))}" data-tip="${attr(tt("sb.flow.fit", "The whole chain"))}">${
+      ICON.home || "⌂"}</button>`;
+  const sc = $("sbFlowScroll");
+  if(sc) sc.setAttribute("aria-label", tt("sb.flow.stage", "Goods flow: drag to move, the wheel or + and − to zoom"));
+  flowPaintCam();
+}
+if(typeof ttOnChange === "function") ttOnChange(flowZoomWords);
+/* Drag to move and pinch to zoom, as on the map; a drag is no click, so it
+   never opens a site's rows. */
+function flowWirePan(sc){
+  const svg = $("flow"), pointers = new Map();
+  let prev = null, origin = null;
+  const mid = () => { const p = [...pointers.values()];
+    return {clientX: p.reduce((s, a) => s + a.x, 0) / p.length, clientY: p.reduce((s, a) => s + a.y, 0) / p.length,
+      d: p.length === 2 ? Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y) : 0}; };
+  /* No text selection or native drag of the drawing, as on the map. */
+  svg.addEventListener("dragstart", e => e.preventDefault());
+  sc.addEventListener("selectstart", e => e.preventDefault());
+  svg.addEventListener("pointerdown", e => {
+    if(e.button !== 0 || !flowCam) return;
+    e.preventDefault();
+    pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+    prev = mid(); origin = prev; flowDragged = false;
+  });
+  /* The moves are followed on the window while a button is down, so a drag
+     that leaves the picture's edge keeps going; nothing is captured, so a
+     still click keeps its target, the site it lands on. */
+  window.addEventListener("pointermove", e => {
+    if(!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+    const next = mid();
+    if(!flowDragged && Math.hypot(next.clientX - origin.clientX, next.clientY - origin.clientY) <= 4 && pointers.size < 2) return;
+    if(!flowDragged){ flowDragged = true; sc.classList.add("sbf-drag"); }
+    const s = flowScale();
+    flowCam[0] -= (next.clientX - prev.clientX) / s; flowCam[1] -= (next.clientY - prev.clientY) / s;
+    if(prev.d && next.d) flowZoom(prev.d / next.d, flowPoint(next)); else flowPaintCam();
+    prev = next;
+  });
+  const end = e => {
+    if(!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    if(pointers.size) prev = mid(); else { sc.classList.remove("sbf-drag"); setTimeout(() => { flowDragged = false; }, 0); }
+  };
+  ["pointerup", "pointercancel"].forEach(t => window.addEventListener(t, end));
+  svg.addEventListener("wheel", e => { if(!flowCam) return; e.preventDefault();
+    flowZoom(Math.exp(Math.max(-1, Math.min(1, e.deltaY * .002))), flowPoint(e)); }, {passive: false});
+  sc.tabIndex = 0;
+  sc.addEventListener("keydown", e => {
+    if(!flowCam || e.target !== sc) return;
+    const step = 60 / flowScale(), k = e.key;
+    if(k === "ArrowLeft") flowCam[0] -= step; else if(k === "ArrowRight") flowCam[0] += step;
+    else if(k === "ArrowUp") flowCam[1] -= step; else if(k === "ArrowDown") flowCam[1] += step;
+    else if(k === "+" || k === "="){ e.preventDefault(); flowZoom(.7); return; }
+    else if(k === "-"){ e.preventDefault(); flowZoom(1 / .7); return; }
+    else if(k === "0"){ e.preventDefault(); flowCam = flowFitCam(); flowPaintCam(); return; }
+    else return;
+    e.preventDefault(); flowPaintCam();
+  });
 }
 
 /* --- the chain on a narrow screen (#148) ----------------------------------
@@ -18953,16 +19101,13 @@ function flowWatch(){
     last = w;
     const narrow = flowNarrow() || !flowHasPipes(D.supply.graph);
     if(turned && narrow !== flowChainDrawn){ drawFlow(); if(!narrow) applyFlow(); return; }
-    /* The picture meets the new width: shrunk to fit, or scrolled. */
+    /* The picture meets the new width: the camera keeps its middle and scale. */
     if(turned && !narrow){ flowFit(); return; }
     /* Any other tick (a card grew a line at the same width, say) re-lays
        the pipes, so their ends stay on the cards. */
     if(narrow){ box.classList.toggle("sb-fc-wide", w >= 600); flowChainPipes(); }
   });
   flowObs.observe(box);
-  const sc = $("sbFlowScroll");
-  /* The reader's own scroll is kept; a strip waiting at home measures 0. */
-  if(sc) sc.addEventListener("scroll", () => { if(flowWide && sc.clientWidth) flowScrollX = sc.scrollLeft; flowEdges(); }, {passive: true});
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if(flowChainDrawn) flowChainPipes(); });
 }
 const flowHasPipes = g => !!((g && g.links) || []).length;
@@ -19882,7 +20027,6 @@ function drawMast(){
   const bits = [];
   /* The sites and the staff are counted by Businesses and Staffing (declutter S7). */
   if(year) bits.push(tt("nav.mast.year", "YEAR {y}", {y: year}));
-  void k;
   /* The flags go on a line of their own so the first line stays short enough
      for the sphere to rest between the nav and the clock. */
   const flags = [];
@@ -20715,9 +20859,7 @@ function ovArrive(snap){
   const land = () => {
     const row = snap.focus && snap.focus !== "tools" && snap.focus !== "changes" ? ovRows().find(f => f.dataset.id === snap.focus) : null;
     const tools = snap.focus === "tools" ? $("tools") : null;
-    // The "Your changes" line in the head of Needs attention.
-    const mine = snap.focus === "changes" ? [...document.querySelectorAll(".ov-meta a[data-ov-route]")].find(x => x.getClientRects().length) || $("alerts") : null;
-    const at = row && row.getClientRects().length ? row : tools || mine;
+    const at = row && row.getClientRects().length ? row : tools;
     if(at && typeof snap.top === "number") window.scrollBy(0, at.getBoundingClientRect().top - snap.top);
     else if(at) at.scrollIntoView({block: "center"});
     else window.scrollTo(0, snap.y || 0);
@@ -20728,9 +20870,7 @@ function ovArrive(snap){
       setTimeout(() => row.classList.remove("ov-lit"), 2400);
       const act = row.querySelector(".ov-act") || row.querySelector(".what");
       if(act) act.focus({preventScroll: true});
-    } else if(mine){
-      if(mine.focus) mine.focus({preventScroll: true});
-    } else if(snap.focus && snap.focus !== "tools" && snap.focus !== "changes"){
+    } else if(snap.focus && snap.focus !== "tools"){
       const news = $("ovNews");
       if(news){
         news.hidden = false; news.tabIndex = -1;
@@ -21018,21 +21158,6 @@ function bandLabel(k){
   return k === "crit" ? tt("today.band.crit2", "Critical")
     : k === "watch" ? tt("today.band.watch2", "Warnings") : tt("today.band.opp2", "Opportunities");
 }
-/* The line under the heading: what the board checked, and the reader's own
-   marks on the change checklist, which open Supply › Changes. */
-function ovMetaHtml(){
-  /* Only once a change is marked or applied: the Supply area counts the open
-     ones, and the masthead clock holds the day. */
-  let html = "";
-  if(D.supply && typeof sbData === "function"){
-    try{
-      const d = sbData(), total = d.rows.length, mine = d.rows.filter(r => pgDone(d, r)).length;
-      if(total && mine) html += `<a href="#supply/changes" data-ov-route="supply/changes">${spIcon("list")}${
-        tt("today.meta.changes.done", {one: "Your changes: {mine} of {n} recorded or applied", other: "Your changes: {mine} of {n} recorded or applied"}, {n: total, mine})}</a>`;
-    }catch(e){}
-  }
-  return html ? `<div class="ov-meta">${html}</div>` : "";
-}
 function drawAlerts(){
   const {list, below, switchedOff, smaller} = partitionFindings(
     alertLines(), alertMinor().rows || [], alertGroupPrefs);
@@ -21051,7 +21176,7 @@ function drawAlerts(){
     why(tt("today.alerts.why", "A site that is not trading always makes the list. Everything else needs to be worth {gate:$}/day; smaller findings are counted below, and so are the kinds switched off.",
       {gate}))}${["crit", "watch", "opp"].map(k =>
       `<button type="button" class="sev ${k}" data-kind="${k}" aria-pressed="${!sevOff.has(k)}" data-tip="${attr(sevTip(k, counts[k]))}"><i></i>${counts[k]}<span>${sevWord(k, counts[k])}</span></button>`
-    ).join("")}<div class="aside"><span id="alertTuneSlot"></span></div></div>${ovMetaHtml()}`;
+    ).join("")}<div class="aside"><span id="alertTuneSlot"></span></div></div>`;
   $("alertTuneSlot").replaceWith(tune);
 
   /* "Set for all" rides on the first row that can set uniforms and is not
@@ -21077,7 +21202,6 @@ function drawAlerts(){
       tt("today.alerts.none.sub2", "Nothing above the threshold in the kinds switched on.")}</p></div>`;
   $("alerts").classList.toggle("ov-all", ovShowAll);
   bindFindingRows($("alerts"), rows);
-  if($("ovMetaFoot")) $("ovMetaFoot").innerHTML = ovMetaHtml();
   const more = folded.watch + folded.opp;
   const moreBox = $("ovMore");
   moreBox.hidden = !more;
@@ -21133,7 +21257,7 @@ function drawAlerts(){
    have no recipes or station capacities to read. */
 function ovWaiting(){
   if(!hasData() || !D.meta || D.meta.locale !== false) return "";
-  return `<p class="quiet td-count">${tt("today.minor.waiting", "Factory and capacity checks wait for the game's text (the masthead says NAMES ONLY).")}</p>`;
+  return `<p class="quiet td-count">${tt("today.minor.waiting", "Factory and capacity checks wait for the game's text (the clock in the sidebar says NAMES ONLY).")}</p>`;
 }
 /* The long queue's slim bar: once the heading has scrolled away and before All
    tools is in sight, it keeps the jump there and the way back to the top. */
@@ -22640,9 +22764,9 @@ function spRosterDay(c, wd, on){
          measured no Sunday. */
       : !slots.length ? tt("sp.need.shut", "The doors do not open on {d:day}", {d: wd})
       : readDay === "measured"
-        ? tt("sp.need.nobody", "Measured, and these hours ask for nobody on the serving stations")
+        ? tt("sp.need.nobody", "Measured, and these hours need nobody on the serving stations")
         : readDay === "scaled"
-          ? tt("sp.need.scaled", "Read off the best measured weekday through the game's day curve, and it asks for nobody here")
+          ? tt("sp.need.scaled", "Read off the best measured weekday through the game's day curve, and it needs nobody here")
           : tt("sp.need.thin", "Not enough hour reports to read this weekday yet, so nothing is asked for"))}">${
     spI("person")}</span>${cells.join("")}${unmeasured.join("")}</div>`;
   /* The hours the doors are shut, marked once and reused down the lanes: a
@@ -22833,8 +22957,8 @@ function spShortNew(c){
   const p = {n: names.length, names: names.map(spEsc).join(", ")};
   return `<span class="sp-new" tabindex="0" data-read="${attr(c.measured
     ? tt("sp.new.read.measured", {
-      one: "<b>{n} of the staff here has no week in this plan</b>: it covers cleaning and security only, and this one holds no role it could plan. The hours this shop has served ask for nobody on the stations they could work, so their week arrives with its first customers. Nothing to do about it here · {names}",
-      other: "<b>{n} of the staff here have no week in this plan</b>: it covers cleaning and security only, and these hold no role it could plan. The hours this shop has served ask for nobody on the stations they could work, so their week arrives with its first customers. Nothing to do about it here · {names}"}, p)
+      one: "<b>{n} of the staff here has no week in this plan</b>: it covers cleaning and security only, and this one holds no role it could plan. The hours this shop has served need nobody on the stations they could work, so their week arrives with its first customers. Nothing to do about it here · {names}",
+      other: "<b>{n} of the staff here have no week in this plan</b>: it covers cleaning and security only, and these hold no role it could plan. The hours this shop has served need nobody on the stations they could work, so their week arrives with its first customers. Nothing to do about it here · {names}"}, p)
     : tt("sp.new.read", {
       one: "<b>{n} of the staff here has no week in this plan</b>: it covers cleaning and security only, and this one holds no role it could plan, so their week waits on the shop's first measured one. Nothing to do about it here · {names}",
       other: "<b>{n} of the staff here have no week in this plan</b>: it covers cleaning and security only, and these hold no role it could plan, so their week waits on the shop's first measured one. Nothing to do about it here · {names}"}, p))}">${spI("clock")}<span>${
@@ -22945,7 +23069,7 @@ function spRosterNew(c, counts){
   const progress = Number.isFinite(so_far)
     ? tt("sp.new.progress", "Demand data: {n} of {of} days", {n: Math.min(so_far, days), of: days}) : "";
   const why = c.measured
-    ? [["clock", tt("sp.new.why.measured", "<b>The hours this shop has served ask for nobody on its serving stations</b>, so there are no serving hours to suggest. Its own week arrives with its first customers.")]]
+    ? [["clock", tt("sp.new.why.measured", "<b>The hours this shop has served need nobody on its serving stations</b>, so there are no serving hours to suggest. Its own week arrives with its first customers.")]]
     : [["clock", progress
         ? tt("sp.new.why.arrives.progress", "<b>Its own week arrives {days} days after its first customer, closed days included ({progress}).</b> Until then a weekday's hours are only read once the save holds {need} reports of that same weekday.", {days, progress, need})
         : tt("sp.new.why.arrives", "<b>Its own week arrives {days} days after its first customer, closed days included.</b> Until then a weekday's hours are only read once the save holds {need} reports of that same weekday.", {days, need})],
@@ -23055,11 +23179,13 @@ function spPlanPick(base, full){
   const openHours = (base.open || []).reduce((n, day) => n + new Set((day || []).flatMap(
     ([a, b]) => [...Array(Math.max(0, Math.min(24, b) - Math.max(0, a))).keys()].map(k => a + k))).size, 0);
   const ownFull = openHours * (base.roles || []).reduce((n, r) => n + (r.stations || []).length, 0);
-  const done = base.demandDataComplete
+  /* With the demand plan on screen there is nothing to switch to: the
+     hand-over says so only beside the full cover it hands over from. */
+  const done = !full ? ""
+    : base.demandDataComplete
     ? `<span class="sp-handover" data-tip="${attr(tt("sp.pick.done.tip", "Read from the days since the shop's first customer, as they were staffed. An hour with no customers files no report and counts as none."))}">${spI("tick")}<span>${
-      tt("sp.pick.done", "<b>Demand data complete:</b> {switch}", {switch: full
-      ? `<a href="#" data-plan="demand">${tt("sp.pick.switch", "switch to the demand plan")}</a>` : tt("sp.pick.switch", "switch to the demand plan")})}</span></span>`
-    : !full ? ""
+      tt("sp.pick.done", "<b>Demand data complete:</b> {switch}", {switch:
+        `<a href="#" data-plan="demand">${tt("sp.pick.switch", "switch to the demand plan")}</a>`})}</span></span>`
     /* Complete data and no hand-over: either the demand plan wants every
        station every open hour too, or the game does not staff every station
        every open hour, so the count was taken with stations empty. */
@@ -23330,16 +23456,9 @@ function spRosterBlock(b){
       ${/* No live count in the read-out: retally() moves the ring and the
             figure beside it and does not redraw the block, so a number in here
             would be the one thing on the widget that never changed. */""}
-      <div class="sp-typed"${counts.staffed > c.tickable.length ? ` tabindex="0" data-read="${attr(
-        `${tt("sp.ba.ring", {one: "The ring counts the {n} entry the board can mark", other: "The ring counts the {n} entries the board can mark"}, {n: c.tickable.length})} · ${
-          tt("sp.ba.ring.more", {one: "{n} more is an entry to set that it cannot: the save gives their station or their person no id to tick against",
-            other: "{n} more are entries to set that it cannot: the save gives their station or their person no id to tick against"},
-            {n: counts.staffed - c.tickable.length})}`)}"` : ""}><span class="sp-ring" style="--p:${
-        c.tickable.length ? (typed / c.tickable.length * 100).toFixed(0) : 0}"></span><span>${
-        tt("sp.ba.copied", "{typed} of {n} copied", {typed: `<b class="sp-count">${typed}</b>`, n: c.tickable.length})}</span>${
-        /* Nothing to clear until something is ticked, and the line has no room
-           to carry a dead link across every site that has never been typed. */
-        ""}<a href="#" class="sp-clear"${typed ? "" : " hidden"}>${tt("sp.ba.clear", "clear ticks")}</a></div>
+      ${/* The ticks are their own count: no "n of m copied" beside them (Peter's
+            testing, A9). Nothing to clear until something is ticked. */""}
+      <div class="sp-typed"><a href="#" class="sp-clear"${typed ? "" : " hidden"}>${tt("sp.ba.clear", "clear ticks")}</a></div>
     </div>
     ${/* The switch sits on the week it switches: up in the heading it changed
           a grid that had often scrolled off the bottom of the screen. */""}
@@ -24041,16 +24160,16 @@ function drawSite(){
      whatever language the words on screen are in (enOf(), web/i18n.js). */
   const limitEn = n => typeof enOf === "function" ? enOf(n, "limit") : n.limit;
   const capSentence = n => limitEn(n) === "the building"
-    ? tt("sp.cap.door", "At the building's capacity {hours} hours a week ({when}); {w}/day of trade goes through those hours.",
+    ? tt("sp.cap.door", "At the building's capacity {hours} hours a week ({when}); {w}/day of sales in those hours.",
       {hours: n.hours, when: n.when, w: fmt(n.throughput)})
     : tt("sp.cap.ceiling", {
-      one: "At the ceiling {hours} hours a week ({when}); {limit} is the limit, so the answer is {fix}. {w}/day of trade goes through those hours; the save records nothing about what is turned away above them.",
-      other: "At the ceiling {hours} hours a week ({when}); {limit} are the limit, so the answer is {fix}. {w}/day of trade goes through those hours; the save records nothing about what is turned away above them."},
+      one: "Full {hours} hours a week ({when}); {limit} is the limit; the fix is {fix}. {w}/day of sales in those hours; the save does not record customers turned away.",
+      other: "Full {hours} hours a week ({when}); {limit} are the limit; the fix is {fix}. {w}/day of sales in those hours; the save does not record customers turned away."},
       {n: n.limits > 1 ? 2 : 1, hours: n.hours, when: n.when, limit: n.limit, fix: n.fix, w: fmt(n.throughput)});
   /* The idle chip reads the whole week, as the site's Today line does: the
      same staff-hours, the same hours and the same wages. */
   const idleWeek = idleNote ? spIdleWeek(idleNote) : null;
-  const idleSentence = idleWeek ? tt("sp.idle.sentence", "{n} staff-hours a week that buy nothing: {runs} for {seen} customers an hour; about {w}/day of wages.",
+  const idleSentence = idleWeek ? tt("sp.idle.sentence", "{n} staffed hours a week more than the customers need: {runs}, at {seen} customers an hour; about {w}/day of wages.",
     {n: idleWeek.spare, runs: idleWeek.runs, seen: idleWeek.seen, w: fmt(idleWeek.worth)}) : "";
   const idleRead = idleWeek ? tt("sp.idle.read", "<b>{n} staff-hours a week</b> · {runs} · {w}/day of wages",
     {n: idleWeek.spare, runs: spEsc(idleWeek.runs), w: fmt(idleWeek.worth)}) : "";
@@ -24274,7 +24393,7 @@ function drawSite(){
       attr(capSentence(n).replace(/\s+/g, " "))}"><i class="sp-sw"></i>${
       spLimitIcons(limitEn(n), office).map(spI).join("")}${limitEn(n) === "the building"
         ? tt("sp.chip.door", "<b>{n} h/wk</b> at building capacity · {when} · {w}/day through it", {n: n.hours, when: n.when, w: fmt(n.throughput)})
-        : tt("sp.chip.ceiling", "<b>{n} h/wk</b> at the ceiling · {when} · {w}/day through it", {n: n.hours, when: n.when, w: fmt(n.throughput)})}${
+        : tt("sp.chip.ceiling", "<b>{n} h/wk</b> full · {when} · {w}/day of sales", {n: n.hours, when: n.when, w: fmt(n.throughput)})}${
       n.fix ? `<span class="fix">${spI("right")}${n.fix}</span>` : ""}</span>`).join("") +
     (idleWeek && !finds.some(a => a.group === "idlestaff") ? `<span class="sp-hchip idle" data-show="idle" data-tip="${attr(idleSentence.replace(/\s+/g, " "))}"><i class="sp-sw"></i>${
       spI(idleNote.office ? "monitor" : "counter")}${idleRead}</span>` : "")}</div>`;
@@ -25486,14 +25605,17 @@ function sbKeep(){
 }
 /* The rows, the ticks and the views' own tables, built once per board, sizing
    and change the player made in this browser (a recipe named, a Set to
-   figure typed, a write recorded: sbStamp). */
-let sbCache = null, sbStamp = 0;
+   figure typed, a write recorded: sbStamp). One per basis, so a view that
+   reads itself the other way (sbBasisDiffers()) builds nothing twice. */
+const sbCaches = {cap: null, dem: null};
+let sbStamp = 0;
 /* The keys the checklist has under the basis not on screen: a mark made
    there is not dropped by a look at this one (reconcileOrderMarks()). */
 let sbOtherKeys = null;
 function sbData(){
   const names = JSON.stringify(localNames());
-  if(sbCache && sbCache.D === D && sbCache.sizing === sizing && sbCache.stamp === sbStamp && sbCache.names === names) return sbCache;
+  const hit = sbCaches[sizing];
+  if(hit && hit.D === D && hit.stamp === sbStamp && hit.names === names) return hit;
   pgEvaluate();
   const c = supplyChecklistRows();
   const character = (D.supply.factories || {}).character;
@@ -25514,8 +25636,12 @@ function sbData(){
     try{ rows = szWith(other, () => supplyChecklistRows().rows); }catch(e){ rows = []; }
     sbOtherKeys = {D, stamp: sbStamp, names, mode: other, rows};
   }
-  const marks = reconcileOrderMarks(orderMarkCache.get(storageKey), c.rows.concat(sbOtherKeys.rows), complete);
-  orderMarkCache.set(storageKey, marks);
+  /* One set of marks for the company, shared by both bases' caches: a tick
+     made on one basis is on the other's rows too, and survives the switch. */
+  const held = orderMarkCache.get(storageKey);
+  const kept = reconcileOrderMarks(held, c.rows.concat(sbOtherKeys.rows), complete);
+  held.clear(); kept.forEach(k => held.add(k));
+  const marks = held;
   if(complete && storageKey) try{ localStorage.setItem(storageKey, JSON.stringify([...marks])); }catch(e){}
   const byView = {imports: [], deliveries: [], production: []};
   const at = new Map();
@@ -25527,8 +25653,8 @@ function sbData(){
     if(!at.has(k)) at.set(k, []);
     at.get(k).push(r);
   });
-  sbCache = {...c, marks, storageKey, complete, byView, at, D, sizing, stamp: sbStamp, names};
-  return sbCache;
+  sbCaches[sizing] = {...c, marks, storageKey, complete, byView, at, D, sizing, stamp: sbStamp, names};
+  return sbCaches[sizing];
 }
 const sbSaveMarks = d => { if(d.storageKey) try{ localStorage.setItem(d.storageKey, JSON.stringify([...d.marks])); }catch(e){} };
 /* The checklist rows about one row of a table: its site and item (by key), of the
@@ -26034,15 +26160,31 @@ function sbScopeSelect(view, kinds){
       sites.filter(x => sbTabOf(x.s) === k).map(x => opt(`site:${x.b.key}`, shortName(x.b))).join("")}</optgroup>`).join("")}</select></span></label>`;
 }
 /* The one row over a view: its scope, Needs a change / Everything, and the
-   planning basis where a figure on the view follows it (szMatters()). What
-   each basis plans for is its own tip (szSwitch()). */
+   planning basis where switching it changes what the view shows
+   (sbBasisDiffers()). What each basis plans for is its own tip (szSwitch()). */
 function sbToolbar(view, o = {}){
   const scope = o.kinds ? sbScopeSelect(view, o.kinds) : "";
   const mode = sbMode[view] ? `<span class="seg sbv-mode" role="group" aria-label="${attr(tt("sb.mode.label", "Which rows to list"))}">${
     [["changes", tt("sb.mode.changes", "Needs a change")], ["all", tt("sb.mode.all", "Everything")]].map(([k, l]) =>
       `<a href="#" data-sb-mode="${k}" class="${sbMode[view] === k ? "on" : ""}" aria-pressed="${sbMode[view] === k}">${l}</a>`).join("")}</span>` : "";
-  const basis = o.basis && szMatters() ? `<span class="seg sbv-basisseg" id="sbBasis-${view}"></span>` : "";
+  const basis = o.basis ? `<span class="seg sbv-basisseg" id="sbBasis-${view}"></span>` : "";
   return `<div class="sbv-bar" data-view-ctl="supply/${view}">${scope}${o.extra || ""}${mode}${basis}</div>`;
+}
+/* Whether the planning basis changes what a view shows, as it is filtered now
+   (its mode, its scope): its body built the other way and compared as text,
+   words and figures, markup and tips aside. Only a company with a factory
+   line plans anything two ways (szMatters()); on a real save whose shops use
+   what its factories make the two agree on most views, and a switch that
+   changes nothing is not shown. What the other build leaves behind is put back. */
+const sbText = html => String(html).replace(/<[^>]*>/g, " ").replace(/&[a-z0-9#]+;/gi, " ").replace(/\s+/g, " ").trim();
+function sbBasisDiffers(here, build){
+  if(!szMatters()) return false;
+  const keep = [sbSel, sbSelOff, sbDrawing, sbWhich];
+  let there;
+  try{ there = szWith(sizing === "dem" ? "cap" : "dem", build); }
+  catch(e){ return true; }
+  finally{ [sbSel, sbSelOff, sbDrawing, sbWhich] = keep; }
+  return sbText(here) !== sbText(there);
 }
 /* The one svg#flow sits in Goods flow while that view is on screen, and waits
    outside the views otherwise. */
@@ -26315,19 +26457,12 @@ function sbShopsPart(d, claimed, view){
   };
   const n = szTally(shelves, r => r.fact);
   const clear = (n.covered || 0) + (n.tight || 0) + (n.made || 0);
-  const problems = [
-    n.noplan ? tt("sb.shops.noplan", {one: "{n} shelf has no top-up plan", other: "{n} shelves have no top-up plan"}, {n: n.noplan}) : "",
-    n.short ? tt("sb.shops.short", {one: "{n} shelf runs short", other: "{n} shelves run short"}, {n: n.short}) : "",
-    n.stalled ? tt("sb.shops.stalled", {one: "{n} top-up brings little or nothing", other: "{n} top-ups bring little or nothing"}, {n: n.stalled}) : "",
-    n.paused ? tt("sb.shops.paused", {one: "{n} paused", other: "{n} paused"}, {n: n.paused}) : "",
-  ].filter(Boolean);
   const notes = [n.tight ? tt("sb.shops.tight", {one: "{n} shelf covers the busiest day but not the margin",
       other: "{n} shelves cover the busiest day but not the margin"}, {n: n.tight}) : "",
     n.idle ? tt("sb.shops.idle", {one: "{n} holds far more than it sells", other: "{n} hold far more than they sell"}, {n: n.idle}) : "",
     n.new ? tt("sb.shops.new", {one: "{n} too new to judge", other: "{n} too new to judge"}, {n: n.new}) : ""].filter(Boolean);
   /* The changes are counted on the row of views and marked on their rows:
      the line counts only what is said nowhere else (declutter U6). */
-  void problems;
   let verdict = tt("sb.shops.none", "No shelf is on a top-up plan yet.");
   if(shelves.length){
     verdict = tt("sb.shops.clear", {one: "{clear} of {n} shelf clears tomorrow's round", other: "{clear} of {n} shelves clear tomorrow's round"},
@@ -26822,21 +26957,16 @@ function sbFactoryPart(d, claimed, ctx, view, o){
   const lineN = szTally(everyLine.filter(r => r.fact), r => r.fact);
   const hoursShort = everyLine.filter(r => r.fact && r.fact.st === "short" && r.fact.why === "hours").length;
   const inN = szTally(everyInput, r => r.fact);
-  const inShort = (inN.short || 0) + (inN.noplan || 0) + (inN.paused || 0);
   const unnamed = f.unnamed || 0;
   const young = (lineN.new || 0) + (inN.new || 0);
   /* Short hours, short and tight inputs are counted on the row of views and
      marked on their rows (declutter U6); these are said nowhere else. */
-  void inShort;
   const problems = [inN.stalled ? tt("sb.fac.stalled", {one: "{n} input is stalled", other: "{n} inputs are stalled"}, {n: inN.stalled}) : "",
     unnamed ? tt("sb.fac.unnamed", {one: "{n} machine without usable recipe details", other: "{n} machines without usable recipe details"}, {n: unnamed}) : ""].filter(Boolean);
   /* Fewer hours or fewer workers would do: said plainly, never a problem. */
   const fewer = everyLine.filter(r => r.fact && Number.isFinite(r.fact.lower)).length;
   const staffRows = ((D.factoryStaffing || {})[sizing] || []).filter(r => !r.failed);
-  const couldGo = staffRows.reduce((t, r) => t + ((r.headcount || {}).spare || 0), 0);
   const hires = staffRows.filter(r => (r.headcount || {}).hire > 0);
-  // Hires and workers who could go are the staffing block's own figures.
-  void couldGo;
   let slack = "";
   if(fewer){
     slack = tt("sb.fac.fewer", {one: "{n} line could run fewer hours", other: "{n} lines could run fewer hours"}, {n: fewer});
@@ -26927,8 +27057,7 @@ function sbcRow(d, r){
     <span class="sbc-tk">${sbTick(d, [r], label)}</span>
     <span class="sbc-what"><button type="button" class="sbc-open" data-sb-go="${attr(go)}">${spEsc(r.item)}</button>${code}<span class="sbc-site">${b ? spEsc(shortName(b)) : tt("sb.others.chooseDepot", "choose a depot")}</span></span>
     <span class="sbc-chg">${sbcChange(r)}</span>
-    <span class="sbc-where">${sbcWhere(r)}${r.kind === "Factory run hours" || r.kind === "Before the next delivery"
-      ? `<small>${tt("sb.cw.manual", "by hand; no game-link write")}</small>` : ""}</span>
+    <span class="sbc-where">${sbcWhere(r)}</span>
     <span class="sbc-st">${pgPill(st, pgOf(r.key))}</span></div>`;
 }
 /* The head of Changes: how far along the list is, the truck on its road,
@@ -26946,9 +27075,6 @@ function sbPaintChangesTop(d){
   const p = total ? done / total : 1;
   top.style.setProperty("--p", p.toFixed(3));
   top.classList.toggle("done", !!total && done === total);
-  const n = q(".sbc-n", top);
-  if(n) n.innerHTML = total ? `<b>${num(done)}</b><span>${tt("sb.cw.of", "of {n}", {n: num(total)})}</span><small>${tt("sb.cw.recorded", "recorded or applied")}</small>`
-    : `<small>${tt("sb.strip.none", "Nothing to type in")}</small>`;
   const road = q(".sb-road", top);
   if(road) road.setAttribute("aria-label", tt("sb.cw.road", "{done} of {n} changes recorded or applied", {done, n: total}));
   const clear = $("secChanges") && q("[data-sbc-clear]", $("secChanges"));
@@ -26972,7 +27098,6 @@ function drawChangesView(){
   const d = sbData();
   const rows = d.rows.filter(r => sbInScope("changes", r.site));
   const left = rows.filter(r => !pgDone(d, r));
-  const unnamed = d.f.sites.reduce((n, s) => n + (s.unnamed || []).length, 0);
   /* Apply follows the scope as Copy does: one site's own lines on its own;
      a kind of site with none of the lines, no button; a kind holding only
      some of them, the company's lines under a label that says so (the plan
@@ -26990,22 +27115,16 @@ function drawChangesView(){
       {name: tt("sb.cw.apply.whole.name", {one: "Apply {n} import amount in the game, for the whole company", other: "Apply {n} import amounts in the game, for the whole company"}, {n: toGame})})
     : gwButton("imports", tt("sb.cw.apply", {one: "Apply {n} import amount", other: "Apply {n} import amounts"}, {n: toGame}), `data-gw-depot="${attr(siteKey)}"`, "",
       {name: tt("sb.cw.apply.name", {one: "Apply {n} import amount in the game", other: "Apply {n} import amounts in the game"}, {n: toGame})});
-  /* The Overview counts findings above its line; this counts every change
-     to set, margins and lowered targets included. */
-  const supplyKinds = ["unplanned", "outruns", "topup", "wholesale", "target", "dead", "notrouted", "shortfall", "order", "paused", "feed", "unnamed", "unset"];
-  const onOverview = alertLines().filter(a => supplyKinds.includes(a.group) && !kindOff(a)).length;
   const settled = pgSettled("imports");
   /* The row of views counts each group and opens it: the group names it. */
-  const groups = SBC_GROUPS.map(([view, icn, label]) => {
+  const groupsOf = (d, rows) => SBC_GROUPS.map(([view, icn, label]) => {
     const mine = rows.filter(r => r.view === view);
     if(!mine.length) return "";
     return `<div class="sbc-group"><div class="sbc-gh"><span class="ic">${spIcon(icn)}</span><h3>${label()}</h3></div>
       ${mine.map(r => sbcRow(d, r)).join("")}</div>`;
   }).join("");
-  /* Why the two counts differ, on the counter itself. */
-  const whyTip = `${tt("sb.cw.why", "Why {n} here and {m} on the Overview?", {n: d.rows.length, m: onOverview})} ${
-    tt("sb.cw.why.text", "Needs attention lists findings worth acting on, above its line. Changes lists every setting to type: margins restored, targets lowered, catch-up purchases and the factory hours an import is planned on. Marks are your own notes, kept on this device; Applied comes from a game-link write, Confirmed from a later read of the game.")}${
-    unnamed ? ` ${tt("sb.strip.recipes", {one: "{n} recipe to name", other: "{n} recipes to name"}, {n: unnamed})}.` : ""}`;
+  const groups = groupsOf(d, rows);
+  const basis = sbBasisDiffers(groups, () => { const o = sbData(); return groupsOf(o, o.rows.filter(r => sbInScope("changes", r.site))); });
   const settledHtml = settled.length ? `<div class="sbc-group sbc-settled"><div class="sbc-gh"><span class="ic">${spIcon("tick")}</span><h3>${
     tt("sb.cw.settled", "Checked on a later read")}</h3><small>${settled.length}</small><button type="button" class="link" data-sbc-settled>${tt("sb.cw.settled.clear", "Clear these")}</button></div>${
     settled.map(rec => `<div class="sbc-row ${rec.state === "confirmed" ? "confirmed" : "changed"}"><span class="sbc-tk"><span class="sb-tick sb-pg ${rec.state === "confirmed" ? "confirmed" : "changed"}" aria-hidden="true">${
@@ -27015,9 +27134,8 @@ function drawChangesView(){
       ? tt("sb.cw.settled.now", "the game now holds {n}", {n: num(rec.now)}) : tt("sb.cw.settled.gone", "the game no longer holds this setting")}</span><span class="sbc-st">${
       pgPill(rec.state, rec)}</span></div>`).join("")}</div>` : "";
   const remaining = orderChecklistText(left, tt("sb.ck.copy.title", "Big Copilot · {save} · day {day}", {save: D.meta.save, day: D.meta.day}), sizing);
-  sbFill(sec, `${sbToolbar("changes", {kinds: ["shops", "warehouses", "factories"], basis: true})}
+  sbFill(sec, `${sbToolbar("changes", {kinds: ["shops", "warehouses", "factories"], basis})}
     <div class="sbc-wrap"><div class="sbc-top" id="sbcTop">
-      <div class="sbc-n" role="status" data-tip="${attr(whyTip)}"></div>
       <span class="sb-road" role="img"><i></i><span class="trk">${spIcon("truck")}</span><span class="home">${spIcon("pin") || icon("pin")}</span></span>
       <span class="sbc-acts"><button type="button" class="nx-btn pri sm" data-sb-copy="remaining">${icon("copy")}<span>${tt("sb.strip.copy", "Copy remaining")}</span></button>${apply}</span>
     </div>
@@ -27153,7 +27271,6 @@ function sbImportCard(d){
     : f.st === "noplan" ? tt("sb.card.t.noplan", "Set up the weekly import")
     : r.lower !== null ? tt("sb.card.t.lower", "The order could be lower")
     : tt("sb.card.t.holds", "The weekly import");
-  const sub = r.smart ? tt("sb.card.sub.smart", "the stock level Smart Delivery keeps") : tt("sb.card.sub.weekly", "the weekly order");
   /* The lead: the game's figure, the box the plan and every surface read. */
   const box = r.value === null ? `<b class="sbi-fig">—</b>` : `<span class="sbi-box"><input type="number" min="0" step="1" inputmode="numeric" class="imp-in" value="${r.value}" data-imp="${
     attr(r.impId)}" data-imp-suggested="${r.suggested ?? ""}" data-imp-ingame="${r.inGame ?? ""}" aria-label="${attr(r.smart
@@ -27194,7 +27311,6 @@ function sbImportCard(d){
   /* The row's own tick marks the change, on every view (declutter U20). */
   const close_ = gwLink() ? `<span class="sbi-when">${gwOrdersClose().replace("<br>", " ")}</span>` : "";
   /* The step's title is the verdict; "Fixed weekly amount" above says what is set (declutter U10). */
-  void sub;
   const recurring = `<div class="sbi-sec"><h3 tabindex="-1"><span class="sbi-num">1</span>${title}</h3>
     <div class="sbi-lead">${now}<span class="sbi-to">${spIcon("right")}</span>${box}</div>${basisLine}
     ${sbiScale(r, draw, terms ? terms.cap : null)}${depHtml}
@@ -27210,7 +27326,7 @@ function sbImportCard(d){
       <div class="sbi-lead sm"><b class="sbi-fig">${once.proposed === null ? tt("sb.card.gap.some", "some") : `~${num(once.proposed)}`}</b><small>${tt("sb.card.gap.units", "units, bought now")}</small></div>
       <p class="sbi-note">${ir && ir.runsOut ? tt("sb.card.gap.runs", "Runs out {day}.", {day: sbDay(ir.runsOut)}) + " " : ""}${
         tt("sb.card.gap.cost", "An urgent order costs more and counts against the next Monday's import cap.")}</p>
-      <div class="sbi-acts"><span class="sbi-st">${pgPill(stO)}</span><span class="sbi-when">${spIcon("person")}${tt("sb.cw.manual", "by hand; no game-link write")}</span></div></div>`;
+      <div class="sbi-acts"><span class="sbi-st">${pgPill(stO)}</span></div></div>`;
   }
   /* Why the figure, and how to set it by hand: from the same row, on the
      basis the figure was planned for (`r.why` where that is not the one on
@@ -27240,20 +27356,19 @@ function sbImportCard(d){
   else if(weekly) steps.push(spEsc(weekly.lead || weekly.reason));
   if(once) steps.push(once.proposed === null ? tt("sb.card.do.gap.some", "Buy some <b>{item}</b> for <b>{depot}</b> as an urgent order.", {item: spEsc(r.item), depot: spEsc(shortName(b))})
     : tt("sb.card.do.gap", "Buy about <b>{n}</b> <b>{item}</b> for <b>{depot}</b> as an urgent order.", {n: num(once.proposed), item: spEsc(r.item), depot: spEsc(shortName(b))}));
-  deps.forEach(x => steps.push(tt("sb.card.do.hours.each", {one: "BizMan › <b>{site}</b> › Schedule: staff <b>{item}</b> {need} h a day on its {m} machine (now {now}). Not written by the game link.",
-    other: "BizMan › <b>{site}</b> › Schedule: staff <b>{item}</b> {need} h a day on each of its {m} machines (now {now}). Not written by the game link."},
+  deps.forEach(x => steps.push(tt("sb.card.do.hours.each2", {one: "BizMan › <b>{site}</b> › Schedule: staff <b>{item}</b> {need} h a day on its {m} machine (now {now}).",
+    other: "BizMan › <b>{site}</b> › Schedule: staff <b>{item}</b> {need} h a day on each of its {m} machines (now {now})."},
     {site: spEsc(D.businesses[x.s] ? shortName(D.businesses[x.s]) : "?"), item: spEsc(x.item), need: x.need, m: x.machines, n: x.machines, now: sbHoursWords(x.each)})));
   const manual = `<div class="sbi-panel" data-panel="manual"${sbiOpen === "manual" ? "" : " hidden"}><h4>${tt("sb.card.manual", "Manual instructions")}</h4><ol class="sbi-steps">${
     steps.map(x => `<li>${x}</li>`).join("")}</ol></div>`;
-  const copyKeys = [weekly, once, ...hours].filter(Boolean).map(x => x.i).join(" ");
+  /* No copy of its own: Manual instructions says the same, and Changes'
+     Copy remaining carries every change (Peter's testing, A2). */
   const foot = `<div class="sbi-foot"><button type="button" class="link" data-sbi-panel="why" aria-expanded="${sbiOpen === "why"}">${spIcon("chev")}${tt("sb.card.why", "Why this amount?")}</button>
-    <button type="button" class="link" data-sbi-panel="manual" aria-expanded="${sbiOpen === "manual"}">${spIcon("list")}${tt("sb.card.manual", "Manual instructions")}</button>${
-    copyKeys ? `<button type="button" class="link" data-sb-copy="${copyKeys}">${icon("copy")}${once || hours.length ? tt("sb.card.copyAll", "Copy the changes") : tt("sb.card.copy", "Copy the change")}</button>` : ""}
+    <button type="button" class="link" data-sbi-panel="manual" aria-expanded="${sbiOpen === "manual"}">${spIcon("list")}${tt("sb.card.manual", "Manual instructions")}</button>
     <a class="link" href="#supply/flow" data-sb-toflow data-sb-follow="${attr(b.key)}">${spIcon("route")}${tt("sb.card.flow", "Follow its supply route")}</a></div>`;
   return `<div class="sbi-card" id="sbCard"${sbArrive && sbArrive.view === "imports" && sbArrive.s === r.s && sbArrive.slug === r.slug ? " data-sb-at" : ""}>
     <div class="sbi-head">${hoodHtml(b)}<h3 class="sbi-title" tabindex="-1">${spEsc(r.item)} · ${spEsc(shortName(b))}</h3><span class="sbi-where">${spIcon(r.smart ? "crate" : "truck")}${where}</span>${close}</div>
-    <div class="sbi-body${gap ? " two" : ""}">${recurring}${gap}</div>${foot}${why}${manual}
-    <p class="sb-copystatus" role="status"></p><textarea class="sb-fallback" aria-label="${attr(tt("sb.strip.fallback", "Checklist to copy by hand"))}" readonly hidden></textarea></div>`;
+    <div class="sbi-body${gap ? " two" : ""}">${recurring}${gap}</div>${foot}${why}${manual}</div>`;
 }
 function drawImportsView(){
   const sec = $("secImports");
@@ -27261,17 +27376,22 @@ function drawImportsView(){
   if(!D.supply) return sbNoSupply(sec);
   sbDrawing = "imports";
   sbWhich = sbMode.imports;
-  const d = sbData(), claimed = new Set(), ctx = sbImportCtx(d);
-  const card = sbImportCard(d);
-  const wh = sbDepotPart(d, claimed, ctx, "imports", "imports");
-  const fac = sbFactoryPart(d, claimed, ctx, "imports", {imports: true});
+  const build = () => {
+    const d = sbData(), claimed = new Set(), ctx = sbImportCtx(d);
+    const card = sbImportCard(d);
+    const wh = sbDepotPart(d, claimed, ctx, "imports", "imports");
+    const fac = sbFactoryPart(d, claimed, ctx, "imports", {imports: true});
+    return {d, claimed, ctx, card, wh, fac, body: card + wh.blocks + fac.blocks + sbOthers(d, "imports", claimed)};
+  };
+  const {ctx, card, wh, fac, body} = build();
+  const basis = sbBasisDiffers(body, () => build().body);
   const every = wh.every.concat(fac.every), kept = wh.kept.concat(fac.keptAll);
   /* One line to apply, and the card on screen offers it: the card's button is
      the one way to it (declutter U11). */
   const cardApplies = ctx.toGame.length === 1 && card.includes('data-gw="imports"');
-  const head = sbToolbar("imports", {kinds: ["warehouses", "factories"], basis: true})
+  const head = sbToolbar("imports", {kinds: ["warehouses", "factories"], basis})
     + sbVerdict("imports", sbLinesVerdict(every), sbCalm(every)) + (cardApplies ? "" : ctx.applyHere(ctx.toGame.length, null));
-  sbFill(sec, head + card + wh.blocks + fac.blocks + sbOthers(d, "imports", claimed));
+  sbFill(sec, head + body);
   if(sbAfterDraw("imports", every, kept)) return;
   sbWire(sec, [["warehouses", SB_WH_COLS]], "imports");
 }
@@ -27338,10 +27458,13 @@ function drawProductionView(){
   const fac = sbFactoryPart(d, claimed, ctx, "production", {lines: true, inputs: true});
   const sites = d.f.sites.filter(s => sbInScope("production", s.s));
   const every = fac.every.filter(r => r.slug);
-  sbFill(sec, sbToolbar("production", {kinds: ["factories"], basis: true})
-    + sbProdTiles(sites) + sbVerdict("production", fac.verdict, fac.calm) + fac.ramp
-    + fac.blocks + sbOthers(d, "production", claimed)
-    + drawFactoryStaffing(r => sbInScope("production", r.s)));
+  const tail = fac.blocks + sbOthers(d, "production", claimed) + drawFactoryStaffing(r => sbInScope("production", r.s));
+  const basis = sbBasisDiffers(sbProdTiles(sites) + fac.ramp + tail, () => {
+    const o = sbData(), got = new Set(), f = sbFactoryPart(o, got, sbImportCtx(o), "production", {lines: true, inputs: true});
+    return sbProdTiles(sites) + f.ramp + f.blocks + sbOthers(o, "production", got) + drawFactoryStaffing(r => sbInScope("production", r.s));
+  });
+  sbFill(sec, sbToolbar("production", {kinds: ["factories"], basis})
+    + sbProdTiles(sites) + sbVerdict("production", fac.verdict, fac.calm) + fac.ramp + tail);
   if(sbAfterDraw("production", every, fac.keptAll)) return;
   sbWire(sec, [["factory-lines", SB_LINE_COLS], ["factory-inputs", SB_INPUT_COLS]], "production");
 }
@@ -27438,8 +27561,8 @@ function drawFactoryStaffing(keep = () => true){
       : tt("sb.staff.tot.workers.dn", {one: "−{n} factory worker", other: "−{n} factory workers"}, {n: -workers})}</b>` : ""}${
     perDay ? `<b class="${perDay > 0 ? "up" : "dn"}">${perDay > 0 ? tt("sb.staff.tot.perDay.up", "+{w:$} a day", {w: perDay})
       : tt("sb.staff.tot.perDay.dn", "−{w:$} a day", {w: -perDay})}</b>` : ""}</div>` : "";
-  return `<div class="sb-staff" id="sbStaff">${sechead(tt("sb.staff.title.plan", "Factory staffing for this plan"), {icon: "crew", why: SB_STAFF_WHY()})}${facs.join("")}${tot}${
-    `<p class="sbv-foot">${tt("sb.staff.write2", "The game link does not write factory hours or hires here: set the week in BizMan › Schedule.")}</p>`}</div>`;
+  /* No button writes these, and none says it does not (Peter's testing, A4). */
+  return `<div class="sb-staff" id="sbStaff">${sechead(tt("sb.staff.title.plan", "Factory staffing for this plan"), {icon: "crew", why: SB_STAFF_WHY()})}${facs.join("")}${tot}</div>`;
 }
 /* A typed figure is kept on commit (Enter, or leaving the box) and redraws the
    table and the checklist; the box the focus moved to keeps it. An empty box,
@@ -27649,8 +27772,7 @@ function drawMovers(){
     out.push(waveHtml(x.up ? "up" : "dn", place, what, delta, tip, x.hood));
   });
   $("movers").innerHTML = out.length ? out.join("")
-    : `<span class="quiet">${m.trendDays ? tt("gr.movers.none", "No demand events running right now.")
-      : tt("gr.movers.noneFresh", "No demand events running right now; trend history starts building from today.")}</span>`;
+    : `<span class="quiet">${tt("gr.movers.none", "No demand events running right now.")}</span>`;
   $$("#movers a[data-hood]").forEach(a => a.onclick = e => {
     e.preventDefault();
     marketSortHood = a.dataset.hood; marketSortDir = -1;
@@ -27669,10 +27791,10 @@ const grDeltaFact = (delta, n) => delta ? tt("gr.fact.delta", {one: "{delta} ove
    products, which is the number the grid ranks by, so a one-product type shows
    that product's own demand. */
 function typeRow(r, i, hoods){
-  const guide = xlGuideLink(r.slug, tt("gr.guide", "Setup guide")), plan = growthPlanLink(growthPlanType(r.slug, true));
+  const guide = xlGuideLink(r.slug, tt("gr.guide2", "Wiki page"));
   let h = `<div class="r" data-r="${i}" data-slug="${attr(r.slug)}"><span class="mk-name">${spEsc(r.type)}</span><small>${
     tt("gr.type.products", {one: "{n} product", other: "{n} products"}, {n: r.products})}${r.mine ? ` · ${tt("gr.row.runOne", "you run one")}` : ""}${
-    guide ? ` · ${guide}` : ""}${plan ? ` · ${plan}` : ""}</small></div>`;
+    guide ? ` · ${guide}` : ""}</small></div>`;
   r.cells.forEach((c, j) => {
     if(!c){ h += `<div class="cell none" data-r="${i}" data-c="${j}" data-tip="${attr(grNoReading(r.type, hoods[j]))}">—</div>`; return; }
     const d = c.demand, n = r.products;
@@ -27696,7 +27818,7 @@ function typeRow(r, i, hoods){
    included. Neighbourhoods without an office building have no reading, and
    say so. */
 function officeRow(r, i, hoods, trendDays, noOffices){
-  const guide = xlGuideLink(r.slug, tt("gr.guide", "Setup guide"));
+  const guide = xlGuideLink(r.slug, tt("gr.guide2", "Wiki page"));
   let h = `<div class="r" data-r="${i}" data-slug="${attr(r.slug)}"><span class="mk-name">${spEsc(r.type)}</span><small>${grList(r.fees)}${
     r.mine ? ` · ${tt("gr.row.runOne", "you run one")}` : ""}${guide ? ` · ${guide}` : ""}</small></div>`;
   r.cells.forEach((c, j) => {
@@ -27718,8 +27840,7 @@ function productRow(r, i, hoods, trendDays){
   const tag = r.make && !r.sell ? tt("gr.row.makeOnly", "you make this, not sold") : r.make ? tt("gr.row.makeSell", "you make and sell it")
     : r.sell ? tt("gr.row.sell", "you sell it") : "";
   const office = r.office ? " data-office" : "";  // an office fee: nothing to plan
-  const plan = r.office ? "" : growthPlanLink(growthPlanType(r.slug, false));
-  let h = `<div class="r" data-r="${i}"><span class="mk-name">${spEsc(r.item)}</span><small>${[tag, plan].filter(Boolean).join(" · ")}</small></div>`;
+  let h = `<div class="r" data-r="${i}"><span class="mk-name">${spEsc(r.item)}</span><small>${tag}</small></div>`;
   r.cells.forEach((c, j) => {
     if(!c){ h += `<div class="cell none" data-r="${i}" data-c="${j}"${office} data-tip="${attr(grNoReading(r.item, hoods[j]))}">—</div>`; return; }
     const tip = grCellTip(r.item, c.hood, [tt("gr.fact.demand", "demand {d}", {d: c.demand}),
@@ -27786,7 +27907,6 @@ function drawMarket(){
      keeps the way back to the usual order and the states (declutter E1). */
   const notes = [];
   if(marketSortHood) notes.push(`<a class="link" href="#" id="marketUsual">${tt("gr.note.usual", "usual order")}</a>`);
-  else if(!types && marketView !== "new" && !m.trendDays) notes.push(tt("gr.note.fresh", "Trend history starts building from today"));
   const all = rows.length;
   if(!types && all > limit) notes.push(showAllMarket
     ? `${tt("gr.note.all", "all {n}", {n: all})} · <a class="link" href="#" id="marketMore">${tt("gr.note.top", "top {n}", {n: limit})}</a>`
@@ -27922,7 +28042,6 @@ function drawPlan(){
       ? "ba:businesstype_supermarket" : types[0];
   const cat = D.plan.catalogue, own = (D.plan.own || {})[planType];
   planSeed = factoryCounts(planType);
-  const kind = cat[planType].type, low = gnLower(kind);
   const shops = own ? (own.shops ?? own.sites) || 0 : 0;
   const perShop = defaultRate(planType) || 0;
   const pick = k => { planType = k; planCounts = {}; drawPlan(); };
@@ -27935,7 +28054,7 @@ function drawPlan(){
     ? `<span class="field" style="margin:0"><select id="planPick" aria-label="${attr(tt("gr.plan.pickAria", "Another business type"))}">
         <option value="" ${others.includes(planType) ? "" : "selected"} disabled>${tt("gr.plan.pickOther", "Another type…")}</option>${
         others.map(k => `<option value="${attr(k)}" ${k === planType ? "selected" : ""}>${cat[k].type} · ${cat[k].products.length}</option>`).join("")}
-      </select></span>` : "") + xlGuideLink(planType, tt("gr.guide", "Setup guide"));
+      </select></span>` : "") + xlGuideLink(planType, tt("gr.guide2", "Wiki page"));
   if(owned.length) seg($("planTypes"), owned.map(k => [k, cat[k].type]), () => planType, k => { planType = k; planCounts = {}; }, drawPlan);
   const sel = $("planPick");
   if(sel) sel.onchange = e => pick(e.target.value);
@@ -28063,14 +28182,10 @@ function drawPlan(){
         tt("gr.col.supplies", "Supplies")}</th><th class="l">${tt("gr.col.raw", "Raw material / week")}</th></tr></thead>
       <tbody>${lines.join("")}</tbody>
     </table>
-    <p class="quiet" id="vKit" style="margin:12px 0 0"></p>
-    <p class="planline">${own && perShop
-      ? tt("gr.plan.surplus", "Above what your shops sell today, {surplus} units a week are surplus for export.", {surplus: `<b id="vSurplus"></b>`})
-      : own ? tt("gr.plan.unmeasured", {one: "Your {shops} {type} trades, but how much physical supply it uses is not measured, so shop coverage and export surplus cannot be estimated here.",
-          other: "Your {shops} {type}s trade, but how much physical supply they use is not measured, so shop coverage and export surplus cannot be estimated here."},
-          {n: shops, shops: `<b>${shops}</b>`, type: low})
-      : tt("gr.plan.notRun", "You do not run a {type} yet, so nothing here is measured: everything made, {surplus} units a week, is surplus for export until the shops exist.",
-          {type: low, surplus: `<b id="vSurplus"></b>`})}<span id="vShort"></span></p>`;
+    <p class="quiet" id="vKit" style="margin:12px 0 0"></p>`;
+  /* No sentence under the table (Peter's testing, A14): each row's Supplies
+     cell says what the shops take and what is over, and the Made tile's tip
+     sums it, or says why it cannot be measured. */
   planDraw();
   wireTips();
 }
@@ -28733,15 +28848,15 @@ function hrOpenHtml(m){
   const soon = m.cands.filter(c => Number(c.hoursLeft) < 24).length;
   // No candidates is the role rows' to say (declutter T5).
   const facts = m.cands.length ? `<p class="hs-facts2"><b>${hrNum(m.cands.length)}</b> candidates${soon ? ` · <b class="warn">${hrNum(soon)}</b> expire within 24 h${gwLink() ? "" : " (as of the save)"}` : ""}</p>` : "";
-  const head = `<div class="hs-shead"><h3>Open places</h3></div>${hrNoHoursHtml()}`;
+  /* No "Open places" heading: the filters under "Whom to hire" say what the
+     table is (Peter's testing, A10). */
+  const head = hrNoHoursHtml();
   if(!m.roles.length){
     /* Nothing to hire, but maybe people to give hours: then not "has its people". */
     const idle = hrIdleHtml(m);
     return `${head}${idle ? "" : `<p class="hs-note">Every planned site has its people.</p>`}${stray ? `<div class="hs-scroll">${stray}</div>` : ""}${idle}${facts}`;
   }
-  const shopPt = f.ex.includes(HR_PT) && m.roles.some(r => r.shop);
   const own = m.roles.reduce((n, r) => n + r.moved, 0);
-  void shopPt;
   return `${head}${hrFbar("", f, match ? `<b>${hrNum(match)}</b> match` : "")}
     <div class="hs-scroll"><table class="hs-t hs-roles"><thead><tr><th class="l">Role</th><th class="opt">Open</th><th class="opt">Own staff</th><th>New hires</th><th>Stays open</th><th class="opt">Wages/day</th><th><span class="gw-sr">Change picks</span></th></tr></thead>
     <tbody>${m.roles.map(r => hrRoleRow(m, r, lines(r.skill))).join("")}${stray ? `<tr class="hs-subrow"><td class="l" colspan="7">${stray}</td></tr>` : ""}</tbody></table></div>
@@ -28879,7 +28994,7 @@ function hrRepaint(focus, parts){
 }
 const hrKey = el => {
   for(const a of ["data-hr-open", "data-hr-pick", "data-hr-move", "data-hr-scope", "data-hs-dem-open", "data-hr-min", "data-hr-max",
-                  "data-hq-role", "data-hq-site", "data-hq-min", "data-hq-less", "data-hq-more", "data-hq-n", "data-hq-go"])
+                  "data-hq-role", "data-hq-site", "data-hq-less", "data-hq-more", "data-hq-n", "data-hq-go"])
     if(el.hasAttribute(a)){
       const v = el.getAttribute(a);
       const box = el.closest("[data-hr-filters]");
@@ -29297,7 +29412,6 @@ function hrQuickHtml(m){
   const Q = hrQuickModel(m), q = Q.q;
   const l = gwLink(), off = !l || !(l.writes || []).includes("hire");
   const kind = S => { const k = HR_KIND_WORDS[S.site.kind]; return S.b && S.b.type ? S.b.type : k ? k[0] : S.site.kind; };
-  const skills = [...new Set([...HR_SKILLS, q.min])].sort((a, b) => a - b);
   const k = Q.picks.length, n = Q.matches.length;
   const match = !Q.ready ? ""
     : !n ? `<p class="hs-match none">Nobody matches.</p>`
@@ -29306,7 +29420,6 @@ function hrQuickHtml(m){
       <ul>${Q.picks.map(({c, misfit}) => `<li><span>${spEsc(c.name || "?")}${hrQuickMisfit(misfit)}</span><span class="m">${Math.round(hrLevel(c, q.skill))}%</span><span class="m">${hrWage(c.wage)}/h</span></li>`).join("")}</ul></details>`;
   const busy = !!hrUi.quickPending;
   const dis = !Q.ready || !k || off || busy;
-  void skills;
   return `<div class="qh"><span class="hs-i">${hrSvg("hire")}</span><h3>Quick hire</h3></div>
     <div class="qf">
       <label class="fld wide"><span>Role</span><span class="hs-sel"><select data-hq-role aria-label="Role" class="${q.skill ? "" : "empty"}"><option value="">Choose a role</option>${
@@ -29358,7 +29471,7 @@ function hrQuickReview(){
   const hours = () => {
     const {Q, req} = hrQuickLast, k = n();
     if(!Q.plan || !req.now) return gwCall("", "clock", "No hours yet: set them in the game.");
-    if(!req.given) return gwCall("", "clock", req.clashed ? "Their plan hours meet shifts already there: they join with no hours."
+    if(!req.given) return gwCall("", "clock", req.clashed ? "Their plan hours meet hours already set there: they join with no hours."
       : `No open hours in ${at()}'s plan: they join with no hours.`);
     const hs = [...req.hours.values()].filter(h => h > 0), lo = Math.min(...hs), hi = Math.max(...hs);
     const each = `${lo === hi ? hrNum(lo) : `${hrNum(lo)}–${hrNum(hi)}`} h a week${req.given > 1 ? " each" : ""}`;
@@ -29574,7 +29687,6 @@ function bindStaff(){
   const quick = (el, set) => { set(hrUi.quick); hrRepaint(hrKey(el), ["hsOpen", "hsOrder", "hsQuick"]); };
   on("change", `${page} [data-hq-role]`, el => quick(el, q => { q.skill = el.value; }));
   on("change", `${page} [data-hq-site]`, el => quick(el, q => { q.site = el.value; q.ex = null; }));
-  on("change", `${page} [data-hq-min]`, el => quick(el, q => { q.min = Number(el.value) || 0; }));
   on("click", `${page} [data-hq-less]`, el => quick(el, q => { q.n = Math.max(1, q.n - 1); }));
   on("click", `${page} [data-hq-more]`, el => quick(el, q => { q.n = Math.min(99, q.n + 1); }));
   on("click", `${page} [data-hq-list] summary`, el => { setTimeout(() => { hrUi.quick.open = !!el.parentElement.open; }); });
@@ -29875,9 +29987,9 @@ function drawPayroll(){
       : tile(tt("co.pay.tile.booked", "Booked yesterday"), fmt(booked), "")}${
     diff === null ? "" : tile(tt("co.pay.tile.diff", "Difference"), `${diff > 0 ? "+" : diff < 0 ? "−" : ""}${fmt(Math.abs(diff))}`, "", Math.abs(diff) >= 100 ? "warn" : "")}</div>`;
   const off = payrollOff();
-  const sites = off.length ? `<div class="pay-off"><h3>${tt("co.pay.off.title", "Where the books part from the rates")}</h3><ul>${off.slice(0, 8).map(([b, d]) =>
+  const sites = off.length ? `<div class="pay-off"><h3>${tt("co.pay.off.title2", "Sites whose wages yesterday differ from today's rates")}</h3><ul>${off.slice(0, 8).map(([b, d]) =>
     `<li>${hoodHtml(b)}<a class="link" href="${attr(siteHref(b.key))}" data-pay-site="${attr(b.key)}">${spEsc(shortName(b))}</a><span class="${d > 0 ? "up" : "dn"}">${
-      d > 0 ? "+" : "−"}${fmt(Math.abs(d))}</span><small>${tt("co.pay.off.row", "booked {b} · rates {r}", {b: fmt(b.wages || 0), r: fmt(b.staffCost || 0)})}</small></li>`).join("")}</ul></div>` : "";
+      d > 0 ? "+" : "−"}${fmt(Math.abs(d))}</span><small>${tt("co.pay.off.row2", "paid {b} yesterday · {r} at today's rates", {b: fmt(b.wages || 0), r: fmt(b.staffCost || 0)})}</small></li>`).join("")}</ul></div>` : "";
   ctlRelease($("secPayroll"));
   $("secPayroll").innerHTML = sechead(tt("co.pay.title", "Payroll"), {sr: true, ctl: "staffing/payroll",
     why: payrollWhy(),
@@ -30180,10 +30292,10 @@ function drawOptimizeStaffing(){
         : registersMeasured
         ? (people
           ? tt("today.moves.staff.cover.saves.hire.none",
-              "{site}: {now} cleaning and security entries become {week}, and {people} to hire, and its measured hours ask for nobody at the registers.",
+              "{site}: {now} cleaning and security entries become {week}, and {people} to hire, and its measured hours need nobody at the registers.",
               {site, now: counts.nowCover, week, people})
           : tt("today.moves.staff.cover.saves.none",
-              "{site}: {now} cleaning and security entries become {week}, and its measured hours ask for nobody at the registers.",
+              "{site}: {now} cleaning and security entries become {week}, and its measured hours need nobody at the registers.",
               {site, now: counts.nowCover, week}))
         : (people
           ? tt("today.moves.staff.cover.saves.hire.wait",
@@ -30418,13 +30530,13 @@ function bzPriceTable(b){
       <td>${sold !== null ? money2(sold) : "—"}</td><td>${num(l.soldPerDay || 0)}</td><td class="l">${cmp}</td></tr>`;
   };
   const guide = typeof wikiTypeHref === "function" && b.typeSlug && wikiTypeHref(b.typeSlug, "prices")
-    ? `<a class="link" href="${attr(wikiTypeHref(b.typeSlug, "prices"))}" data-price-guide="${attr(b.typeSlug)}">${tt("co.prices.guide.link", "{type} guide › Prices in your save", {type: spEsc(b.type || "")})}</a>` : "";
+    ? `<a class="link" href="${attr(wikiTypeHref(b.typeSlug, "prices"))}" data-price-guide="${attr(b.typeSlug)}">${tt("co.prices.guide.link2", "Wiki › {type} › Prices in your save", {type: spEsc(b.type || "")})}</a>` : "";
   /* The lit chip names the business; the heading is for screen readers. What
      each column holds is its header's tip. */
   const th = (label, tip) => `<th data-tip="${attr(tip)}">${label}</th>`;
   return `<div class="bz-phead"><h2 class="nx-sr">${tt("co.prices.at.name", "Prices at {name}", {name: spEsc(shortName(b))})}</h2><span class="bz-tag save">${tt("co.prices.tag.save", "your save")}</span><span class="bz-tag">${
     tt("co.prices.tag.market", "market reconstruction")}</span><span class="bz-sp"></span>${guide}<button type="button" class="nx-btn sm" data-price-site="${attr(b.key)}">${
-    office ? tt("co.prices.fees.page", "Its fees, on its page") : tt("co.prices.page", "Its shelves, on its page")}${icon("go")}</button></div>`
+    office ? tt("co.prices.fees.page", "Open its fees") : tt("co.prices.page", "Open its shelves")}${icon("go")}</button></div>`
     + (lines.length ? `<div class="scrollx"><table class="bz-t bz-prices"><thead><tr><th class="l">${office ? tt("sp.fees.col.fee", "Fee") : tt("co.prod.col.product", "Product")}</th>${
       th(tt("co.prices.col.yours", "Your price"), office ? tt("co.prices.tip.yours.fee", "The fee set in the game.") : tt("co.prices.tip.yours", "The price set in the game."))}${
       th(hood ? tt("co.prices.col.low.hood", "Lowest market price · {hood}", {hood: spEsc(hood)}) : tt("co.prices.col.low", "Lowest market price"),
@@ -30544,7 +30656,7 @@ function drawSchedules(){
   if(b){
     const block = b.status === "office" ? spOfficeRoster(b) : spRosterBlock(b);
     const body = block ? block
-      : `<div class="sch-empty">${spIcon("crew")}<p>${tt("co.sched.office.none", "The office default plans nothing here: its staff and computers are on its page.")}</p></div>`;
+      : `<div class="sch-empty">${spIcon("crew")}<p>${tt("co.sched.office.none", "The office default plans nothing here. Its staff and computers are on the business page.")}</p></div>`;
     /* The evidence a staffing finding stands on is the business's own
        customer hours: named here, one link away. */
     const finds = [...alertLines(), ...(alertMinor().rows || [])].filter(a => (a.group === "idlestaff" || (a.group === "staff" && !ovAtFactory(a))) && alertSite(a) === b);
@@ -30556,7 +30668,7 @@ function drawSchedules(){
     detail = `<div class="sch-head">${hoodHtml(b)}<h3 tabindex="-1">${spEsc(baseName(b))}</h3><span class="sub">${spEsc(b.type || "")}${b.neighbourhood ? ` · ${spEsc(hoodName(b.neighbourhood))}` : ""}</span>
       <a class="link" href="${attr(siteHref(b.key))}" data-sched-site="${attr(b.key)}">${tt("co.sched.page", "Business page")}</a></div>${pgLine}${finds.length
       ? `<div class="sch-finds">${finds.map(a => `<p>${spIcon(a.group === "idlestaff" ? "clock" : "alert")}<span>${spEsc(splitFinding(a).what)}</span></p>`).join("")}<a class="link" href="${
-        attr(siteHref(b.key))}" data-sched-hours="${attr(b.key)}">${tt("co.sched.hours", "Customers by hour, on its page")}</a></div>` : ""}${body}`;
+        attr(siteHref(b.key))}" data-sched-hours="${attr(b.key)}">${tt("co.sched.hours", "See customers by hour")}</a></div>` : ""}${body}`;
   }
   host.innerHTML = `${sechead(tt("co.sched.title.all", "Shop and office schedules"), {sr: true})}
     <div class="sch-grid"><nav class="sch-list" aria-label="${attr(tt("co.sched.list", "Businesses to schedule"))}">${group(tt("nav.sub.shops", "Shops"), shops)}${
@@ -30869,7 +30981,7 @@ const PAGES = [
   {id:"map", get label(){ return tt("nav.ref.map", "City map"); }, host:"pageMap", newFeature:"map"},
   /* A build without the wiki files carries no Game guide: an empty page is
      worse than no page at all. */
-  ...(typeof showWikiRoute === "function" ? [{id:"wiki", get label(){ return tt("nav.ref.wiki", "Game guide"); }, host:"pageWiki", newFeature:"wiki"}] : []),
+  ...(typeof showWikiRoute === "function" ? [{id:"wiki", get label(){ return tt("nav.ref.wiki2", "Wiki"); }, host:"pageWiki", newFeature:"wiki"}] : []),
 ];
 /* A view of a page, [id, label, anchor], its label (index 1) read in the UI
    language every time. navSubLabel() is a view's label by its id. */
@@ -30960,7 +31072,7 @@ const AREAS = [
 ];
 const REFS = [
   {id:"map", icon:"map", newFeature:"map", get label(){ return tt("nav.ref.map", "City map"); }},
-  ...(typeof showWikiRoute === "function" ? [{id:"wiki", icon:"wiki", newFeature:"wiki", get label(){ return tt("nav.ref.wiki", "Game guide"); }}] : []),
+  ...(typeof showWikiRoute === "function" ? [{id:"wiki", icon:"wiki", newFeature:"wiki", get label(){ return tt("nav.ref.wiki2", "Wiki"); }}] : []),
 ];
 const ROUTES = {
   "overview": {host: ["today"]},
@@ -31076,7 +31188,7 @@ function routeViewLabel(id){
     case "expansion/finder": return tt("nav.view.finder", "Find a location");
     case "expansion/factory": return tt("nav.view.factory", "Plan a factory");
     case "map": return tt("nav.ref.map", "City map");
-    case "wiki": return tt("nav.ref.wiki", "Game guide");
+    case "wiki": return tt("nav.ref.wiki2", "Wiki");
     default: return id;
   }
 }
@@ -31483,7 +31595,10 @@ let sdWas = null;
 function sdLayout(){
   if(!sdBody()) return;
   const phone = sdPhone(), pref = sdPref();
-  const rail = !phone && (pref ? pref === "rail" : (window.innerWidth || 1440) <= 1100);
+  /* A narrow window (a game beside the board, snapped to half the screen)
+     takes the rail whatever was chosen wide; only a chosen rail holds there. */
+  const narrow = (window.innerWidth || 1440) <= 1100;
+  const rail = !phone && (pref === "rail" || narrow && !sdNarrowFull);
   const now = `${rail}/${phone}`;
   if(now === sdWas) return;
   sdWas = now;
@@ -31496,7 +31611,10 @@ function sdLayout(){
   /* The sphere's shelf moves with the head (wireSphere()). */
   if($("mast") && $("mast").dispatchEvent) $("mast").dispatchEvent(new Event("nxfit"));
 }
+/* Unfolded by hand in a narrow window: full for this visit only. */
+let sdNarrowFull = false;
 function sdSet(rail){
+  sdNarrowFull = !rail && (window.innerWidth || 1440) <= 1100;
   sdChoice = rail ? "rail" : "full";
   try{ localStorage.setItem(SD_KEY, sdChoice); }catch(e){}
   sdLayout();
@@ -31519,7 +31637,14 @@ function sdDrawer(open){
   if(on && !was){ const f = q("#nav a.on") || q("#nav a"); if(f && f.focus) f.focus({preventScroll: true}); }
   else if(!on && was && b && b.focus && $("mast") && $("mast").contains(document.activeElement)) b.focus({preventScroll: true});
 }
-document.addEventListener("keydown", e => { if(e.key === "Escape" && sdBody() && sdBody().contains("sd-open")) sdDrawer(false); });
+/* Escape closes one thing at a time: a menu open in the drawer first (seen
+   before its own handler closes it), the drawer on the next press. */
+document.addEventListener("keydown", e => {
+  if(e.key !== "Escape" || !sdBody() || !sdBody().contains("sd-open")) return;
+  const menu = $("nxMenu"), src = document.querySelector("#srcMenu.open");
+  if((menu && !menu.hidden) || src || document.querySelector("dialog[open]")) return;
+  sdDrawer(false);
+}, true);
 if($("sdToggle") && $("sdToggle").addEventListener) $("sdToggle").addEventListener("click", () => sdSet(!sdRail()));
 let sdSoon = false;
 window.addEventListener("resize", () => { if(sdSoon) return; sdSoon = true; requestAnimationFrame(() => { sdSoon = false; sdLayout(); }); });
@@ -32062,7 +32187,7 @@ const ALERT_GROUPS = [
   {id:"wholesale", get label(){ return tt("nav.kind.wholesale.label", "Wholesale delivery too low"); }, get note(){ return tt("nav.kind.wholesale.note", "A shop or depot a wholesale store delivers to each week, whose delivery brings less than a week's use or runs out before the next one"); }, on:true},
   {id:"order", get label(){ return tt("nav.kind.order.label", "Weekly order too small"); }, get note(){ return tt("nav.kind.order.note", "An import that cannot cover its own week"); }, on:true},
   {id:"atcap", get label(){ return tt("nav.kind.atcap.label", "At capacity"); }, get note(){ return tt("nav.kind.atcap.note", "Hours a week the staff, registers or workstations turn people away"); }, on:true},
-  {id:"idlestaff", get label(){ return tt("nav.kind.idlestaff.label", "Overstaffed hours"); }, get note(){ return tt("nav.kind.idlestaff.note", "Counters or workstations staffed through hours that buy nothing"); }, on:false},
+  {id:"idlestaff", get label(){ return tt("nav.kind.idlestaff.label", "Overstaffed hours"); }, get note(){ return tt("nav.kind.idlestaff.note", "More counters or workstations staffed than the customers need"); }, on:false},
   {id:"dead", get label(){ return tt("nav.kind.dead.label", "Idle stock"); }, get note(){ return tt("nav.kind.dead.note", "Goods sitting in a depot no line draws from"); }, on:true},
   {id:"notrouted", get label(){ return tt("nav.kind.notrouted.label", "Not routed"); }, get note(){ return tt("nav.kind.notrouted.note", "Stock a depot or factory holds that no plan sends on, while your own sites sell or need it"); }, on:true},
   {id:"target", get label(){ return tt("nav.kind.target.label", "Top-up target too high"); }, get note(){ return tt("nav.kind.target.note", "A top-up target far above what the shops sell"); }, on:true},
@@ -32371,10 +32496,10 @@ buildAlertSettingsPanel();
                           rings a type's row (.mk-arrive).
      tr.line[data-m][data-rate][data-ing="Name:factor,…"][data-kit][data-slug][data-max]
                           with .step a[data-d=-1|1], .step b, .machines, .made,
-                          .covers, .ing; totals in #vMachines #vMade #vTake #vRaw
-                          #vSurplus #vShort #vKit; ingredient rows go into
-                          #ingBody, the total into #ingFoot, the cash sentence
-                          into #ingNote. The nearest ancestor with data-pershop
+                          .covers, .ing; totals in #vMachines #vMade #vRaw
+                          #vKit; ingredient rows go into #ingBody, the total
+                          into #ingFoot, and "nothing to import" into
+                          #ingNote. The nearest ancestor with data-pershop
                           (units a day per shop), data-shops (shops owned),
                           data-peak and data-products sizes the surplus;
                           data-slug keeps planCounts in step with the stepper.
@@ -32703,7 +32828,7 @@ const SS_GROUPS = [navView("views", () => tt("nav.search.group.views", "Pages & 
   navView("products", () => tt("nav.search.group.products", "Products")),
   navView("kinds", () => tt("nav.search.group.kinds", "Finding kinds")),
   navView("finder", () => tt("nav.search.group.finder", "Find a location")),
-  navView("wiki", () => tt("nav.search.group.wiki", "Game guide"))];
+  navView("wiki", () => tt("nav.search.group.wiki2", "Wiki"))];
 /* "4 more sites ›" under a group cut short, and where that row goes. */
 function ssGroupMore(g, n){
   switch(g){
@@ -32870,7 +32995,7 @@ const SS_QUESTIONS = [
    holds: () => page === "staffing" && sub.staffing === "needs" && !siteOpen},
   {id: "prices", get q(){ return tt("nav.ask.prices.q", "Are my prices right?"); }, page: "wiki",
    lands: () => { const t = ssPricesType();
-     return t ? tt("nav.ask.prices.lands.type", "Game guide › {type} › Prices in your save", {type: t.type}) : tt("nav.ask.prices.lands.none", "Game guide"); },
+     return t ? tt("nav.ask.prices.lands.type2", "Wiki › {type} › Prices in your save", {type: t.type}) : tt("nav.ask.prices.lands.none2", "Wiki"); },
    go: () => ssPrices(), lit: "#wk-prices", wait: true, holds: a => location.hash === a.hash,
    /* A company with several kinds of shop picks which one's prices to read. */
    choices(){ const own = ssOwnTypes(), t = ssPricesType();
@@ -32965,11 +33090,14 @@ function ssLand(qn, from, ticket, tries = 0, origin = null){
       `<a href="#" data-ss="pick" data-pick="${attr(c.id)}"${c.on ? ` class="on" aria-current="true"` : ""}>${ssEsc(c.label)}</a>`).join("")}</span>` : "")
     + `<span class="go"><button type="button" data-ss="back">${
       ssEsc(tt("nav.ask.back", "‹ Back to {page}", {page: backLabel}))}</button>`
-    + `<button type="button" data-ss="another">${tt("nav.ask.another", "Ask another")}</button></span>`;
+    + `<button type="button" data-ss="another">${tt("nav.ask.another", "Ask another")}</button>`
+    /* × puts the strip away and leaves the reader on the answer's page. */
+    + `<button type="button" class="ss-askx" data-ss="close" aria-label="${attr(tt("nav.ask.close", "Dismiss"))}" title="${attr(tt("nav.ask.close", "Dismiss"))}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button></span>`;
   strip.addEventListener("click", e => {
     const b = e.target.closest("[data-ss]");
     if(!b) return;
     if(b.dataset.ss === "another"){ ssOpen(); return; }
+    if(b.dataset.ss === "close"){ ssClearAsked(); return; }
     /* Another of the question's answers: asked again, with the same way back. */
     if(b.dataset.ss === "pick"){
       e.preventDefault(); qn.choose(b.dataset.pick);
@@ -33225,11 +33353,11 @@ const SS_VIEWS = [
    get p(){ return tt("nav.search.crew.line", "Staffing › Staff needs · demands and hiring"); }, ic: "crew", syn: ["hire", "demands", "quit", "people", "crew", "whom to hire"],
    go: () => openRoute("staffing/needs")},
   {id: "prices", get t(){ return tt("nav.search.prices.title", "Prices in your save"); },
-   get p(){ return tt("nav.search.prices.line", "Game guide"); }, ic: "tag", syn: ["prices", "pricing", "market price", "too expensive", "are my prices right"],
+   get p(){ return tt("nav.search.prices.line2", "Wiki"); }, ic: "tag", syn: ["prices", "pricing", "market price", "too expensive", "are my prices right"],
    /* One entry for each kind of shop the company runs, each opening its own guide. */
-   each: () => ssOwnTypes().map(t => ({id: `view:prices:${t.slug}`, p: tt("nav.search.prices.guide", "Game guide › {type}", {type: t.type}),
+   each: () => ssOwnTypes().map(t => ({id: `view:prices:${t.slug}`, p: tt("nav.search.prices.guide2", "Wiki › {type}", {type: t.type}),
      kw: [t.type, ...ssEnglish([t.slug])], go: () => ssPrices(t.slug)})), go: () => ssPrices()},
-  {id: "wiki", get t(){ return tt("nav.search.wiki.title", "Game guide"); },
+  {id: "wiki", get t(){ return tt("nav.search.wiki.title2", "Wiki"); },
    get p(){ return tt("nav.search.wiki.line", "the game's own help"); }, ic: "wiki", syn: ["help", "guide", "manual", "wiki"], need: false, go: () => openRoute("wiki")},
   {id: "changelog", get t(){ return tt("nav.search.changelog.title", "Changelog"); },
    get p(){ return tt("nav.search.changelog.line", "More · what's new"); }, ic: "list", syn: ["new", "updates", "release notes"], need: false,
@@ -33410,8 +33538,8 @@ function ssBuild(){
   if(typeof wikiData !== "undefined" && wikiData && wikiData.search) wikiData.search.forEach(w => {
     const shown = typeof wikiName === "function" ? wikiName(w.key, w.title) : w.title;
     out.push(ssEntry({id: `wiki:${w.id}`, g: "wiki", t: shown, en: w.title,
-      p: w.category ? tt("nav.search.wiki.cat", "Game guide › {cat}", {cat: w.category}) : tt("nav.search.wiki.help", "Game guide › the game's help"), ic: "wiki",
-      syn: SS_WIKI_SYN[w.title] || [], land: tt("nav.search.wiki.land", "Game guide › {page}", {page: shown}),
+      p: w.category ? tt("nav.search.wiki.cat2", "Wiki › {cat}", {cat: w.category}) : tt("nav.search.wiki.help2", "Wiki › the game's help"), ic: "wiki",
+      syn: SS_WIKI_SYN[w.title] || [], land: tt("nav.search.wiki.land2", "Wiki › {page}", {page: shown}),
       go: () => ssHash(wikiHref({kind: "page", id: w.id}))}));
   });
   return out;
@@ -33525,7 +33653,6 @@ const ssMastControl = () => [ssField, ssFieldBtn].find(el => el.isConnected && e
    what is left is the layout (sdLayout()) and the sphere's shelf, which
    follows whatever moved the head (a language, the fonts, a host page's
    Update). */
-function ssFitMast(){}
 function nxFitMast(){
   const mast = $("mast");
   if(!mast) return;
@@ -33701,7 +33828,7 @@ function ssRecentEntries(){
       || (r.id === "view:prices" ? ssIndex.find(e => e.id.startsWith("view:prices:")) : null);
     if(live) return live;
     if(r.id.startsWith("wiki:") && typeof wikiHref === "function") return ssEntry({id: r.id, g: "wiki", t: String(r.t || ""),
-      p: String(r.p || tt("nav.search.recent.wiki", "Game guide")), ic: "wiki", go: () => ssHash(wikiHref({kind: "page", id: r.id.slice(5)}))});
+      p: String(r.p || tt("nav.search.recent.wiki2", "Wiki")), ic: "wiki", go: () => ssHash(wikiHref({kind: "page", id: r.id.slice(5)}))});
     return null;
   }).filter(Boolean);
 }
@@ -33755,7 +33882,6 @@ function ssRender(keep = false){
     const recent = ssRecentEntries().map(e => ssRow({e, where: "", syn: ""}, qq)).join("");
     const askHead = tt("nav.ask.label", "Ask the board"), wasHead = tt("nav.search.recent.head", "Where you were");
     /* The placeholder says what to type, examples and all (declutter X1). */
-    void data;
     html = (ask ? `<div class="ss-grp" role="group" aria-label="${ssEsc(askHead)}"><div class="ss-gh">${ssEsc(askHead)}</div>${ask}</div>` : "")
       + (recent ? `<div class="ss-grp" role="group" aria-label="${ssEsc(wasHead)}"><div class="ss-gh">${ssEsc(wasHead)}</div>${recent}</div>` : "");
   } else {
@@ -34029,14 +34155,12 @@ const wireCards = once(() => {
     if(id === "expansion/finder") o.preset = {cat: "retail", type: "", hoods: null};
     /* Build shop schedules opens on the shop it names. */
     if(a.id === "optimizeStaffingCard" && a.dataset.site) o.pick = a.dataset.site;
-    /* A finding's own link, or the "Your changes" line by the list: the way
-       back is Needs attention, not All tools. */
+    /* A finding's own link: the way back is Needs attention, not All tools. */
     const back = {pos: "", back: "overview", backLabel: tt("nav.from.overview", "Needs attention"), depth: 1};
     if(a.closest("#alerts")){
       const row = a.closest(".find");
       openRoute(id, {...o, arrival: row ? {...back, what: label, ov: ovRemember(row.dataset.id)} : null});
-    } else if(a.closest(".ov-meta")) openRoute(id, {...o, arrival: page === "today" ? {...back, what: "", ov: ovRemember("changes")} : null});
-    else ovTool(id, label, o);
+    } else ovTool(id, label, o);
   }, true);
   window.addEventListener("scroll", () => { if(page === "today") requestAnimationFrame(ovStickyCheck); }, {passive: true});
   window.addEventListener("resize", () => { if(page === "today") ovStickyCheck(); });
@@ -34563,7 +34687,7 @@ const bindFlow = once(() => {
   onEnter(".flow .pipe", p => { const c = cargoOf(p); if(c) c.classList.add("go"); });
   onLeave(".flow .pipe", p => { const c = cargoOf(p); if(c) c.classList.remove("go"); });
   /* A site on the diagram opens its rows in the list, lit (R13). */
-  on("click", ".flow .node[data-id]", n => sbNodeOpen(n.dataset.id));
+  on("click", ".flow .node[data-id]", n => { if(!flowDragged) sbNodeOpen(n.dataset.id); });
   /* The chain on a narrow screen: a card follows its site, a group opens its
      shops, the crumb goes back to the whole chain (#148). */
   on("click", "#flowChain [data-fc-id]", (el, e) => { e.preventDefault(); flowFocus(el.dataset.fcId); });
@@ -34664,20 +34788,6 @@ function demArrive(cell){
 }
 /* A cell that opens the finder is a button to the keyboard as well. */
 const cellGo = (slug, hood) => finderPreset(slug, hood) ? ` role="button" tabindex="0"` : "";
-/* The type a Growth row plans: a type row its own, a product row the type that
-   sells it (the one already open in Plan a chain first, then one the player
-   runs). Office fees are served, not made, so an office row plans nothing, and
-   a type with no physical product has no line to plan either. */
-function growthPlanType(slug, isType){
-  if(!D.plan || !D.plan.catalogue) return "";
-  const types = planTypes();
-  if(isType) return types.includes(slug) ? slug : "";
-  const holds = types.filter(k => (D.plan.catalogue[k].products || []).includes(slug));
-  return holds.find(k => k === planType) || holds.find(k => (D.plan.own || {})[k]) || holds[0] || "";
-}
-/* A Demand row no longer links Plan a factory, the next tab, which has its
-   own type picker (declutter E2); the rows call this and get nothing. */
-const growthPlanLink = () => "";
 /* The finder's Demand figure comes back here: the By type view, the type's row
    scrolled to and ringed once, its cells with it. A type the grid has no row
    for lands on the grid itself. */
@@ -34713,7 +34823,7 @@ function planDraw(){
   const peakDay = host ? (+host.dataset.pershop || 0) * (+host.dataset.peak || 1) : 0;
   const wantWeek = perShopWeek * shopsOwned;  // one product, every shop, a week
   const fmtN = n => num(Math.round(n));
-  let machines = 0, made = 0, raw = 0, exportWeek = 0, shortLines = 0;
+  let machines = 0, made = 0, raw = 0, exportWeek = 0;
   const ing = {}, kitCount = {};
   lines.forEach(tr => {
     const m = +tr.dataset.m, rate = +tr.dataset.rate, wk = m * rate * HOURS * 7;
@@ -34722,7 +34832,6 @@ function planDraw(){
        line under what they take is short. */
     const surplus = wk - wantWeek;
     if(surplus > 0) exportWeek += surplus;
-    if(surplus < 0) shortLines++;
     const set = (sel, v) => { const n = q(sel, tr); if(n) n.textContent = v; };
     set(".step b", m); set(".made", fmtN(wk));
     const covers = peakDay ? wk / 7 / peakDay : null;
@@ -34762,9 +34871,9 @@ function planDraw(){
      the shops take a week of each whether or not a line makes it. */
   const products = host ? (+host.dataset.products || lines.length) : lines.length;
   put("vMachines", machines); put("vMade", fmtN(made)); put("vRaw", fmtN(raw));
-  put("vTake", fmtN(wantWeek * products)); put("vSurplus", fmtN(exportWeek));
-  /* What the shops take of that sits behind the Made tile and in the sentence
-     under the table, not in a tile of its own. */
+  /* What the shops take of that sits behind the Made tile, not in a tile or a
+     sentence of its own; a line short of the shelves is red in its Supplies
+     cell (declutter E8). */
   const madeTile = $("vMadeTile");
   if(madeTile) madeTile.dataset.tip = wantWeek
     ? tt("gr.made.tip", "The shops take {take:,} units a week across the range; {surplus:,} is surplus for export",
@@ -34772,8 +34881,6 @@ function planDraw(){
     : shopsOwned ? tt("gr.made.unknown", {one: "Demand is unknown: the {n} shop sells services or goods this planner cannot measure, so shop coverage and export surplus cannot be estimated",
       other: "Demand is unknown: the {n} shops sell services or goods this planner cannot measure, so shop coverage and export surplus cannot be estimated"}, {n: shopsOwned})
     : tt("gr.made.none", "Nothing measured yet: all {n:,} units a week are surplus for export until the shops exist", {n: Math.round(made)});
-  // A line short of the shelves is red in its Supplies cell (declutter E8).
-  void shortLines;
   /* What the factory has to buy: each workstation's kit, times the machines
      on every line that uses it. */
   const kitList = Object.entries(kitCount).sort((a, b) => b[1] - a[1]);
@@ -34791,7 +34898,7 @@ function planDraw(){
     let meta = {}; try{ meta = host && host.dataset.ingmeta ? JSON.parse(host.dataset.ingmeta) : {}; }catch(e){}
     const prev = {};
     Array.from(body.children).forEach(tr => { const w = q(".wk", tr); if(w) prev[tr.dataset.name] = w.textContent; });
-    let cash = 0, priced = 0, total = 0, targetSum = 0;
+    let cash = 0, priced = 0, total = 0, targetSum = 0, changes = 0;
     body.innerHTML = Object.entries(ing).sort((a, b) => b[1].week - a[1].week).map(([name, r]) => {
       const i = meta[name] || {}, ordered = i.ordered ?? null, unit = i.unit ?? null;
       /* changed for growth: Company target and Change come from planOrder() —
@@ -34805,6 +34912,7 @@ function planDraw(){
       const o = planOrder(r.week, i.baseline || 0, ordered);
       targetSum += o.target;
       const gap = ordered === null ? (o.target > 0 ? o.target : null) : o.gap;
+      if(gap !== null && Math.abs(gap) >= 1) changes++;
       const value = unit === null ? null : r.week * unit;
       total++; if(unit !== null){ priced++; cash += value; }
       return `<tr data-name="${attr(name)}" class="${prev[name] && prev[name] !== fmtN(r.week) ? "bump" : ""}">` +
@@ -34818,7 +34926,7 @@ function planDraw(){
           tt("gr.ing.smart.short", "Smart")}</span>` : ""
         }${i.paused ? ` ${chipHtml("warn", tt("gr.ing.pausedN", "paused {n:,}", {n: Math.round(i.paused)}),
           tt("gr.ing.pausedNTip", "Also sits on paused contracts; never counted as ordered"))}` : ""}</td>` +
-      `<td>${gap === null ? "—"
+      `<td class="chg">${gap === null ? "—"
         : ordered === null ? chipHtml("warn", `+${fmtN(gap)}`, tt("gr.ing.newTip", "No contract yet, so this is the whole order to place"))
         : Math.abs(gap) < 1 ? "" 
         : gap > 0 ? chipHtml("warn", `+${num(Math.ceil(gap))}`)
@@ -34828,15 +34936,16 @@ function planDraw(){
     /* No price known anywhere: the column goes, and the ? says why. */
     const table = $("ingTable");
     if(table) table.classList.toggle("nocash", !priced);
+    /* A column with nothing to change in it is not shown. */
+    if(table) table.classList.toggle("nochange", !changes);
     const foot = $("ingFoot");
-    if(foot) foot.innerHTML = total ? `<tr><td class="l">${tt("gr.ing.total", "Total")}</td><td></td><td>${fmtN(raw / 7)}</td><td>${fmtN(raw)}</td><td>${fmtN(targetSum)}</td><td></td><td></td><td class="cash">${cash ? fmt(cash) : ""}</td></tr>` : "";
+    if(foot) foot.innerHTML = total ? `<tr><td class="l">${tt("gr.ing.total", "Total")}</td><td></td><td>${fmtN(raw / 7)}</td><td>${fmtN(raw)}</td><td>${fmtN(targetSum)}</td><td></td><td class="chg"></td><td class="cash">${cash ? fmt(cash) : ""}</td></tr>` : "";
+    /* The Total row is the week's cost; where the prices come from is the
+       Cash / week head's tip, not a sentence under the table (A14). */
+    const cashHead = table && q("th.cash", table);
+    if(cashHead) cashHead.dataset.tip = tt("gr.ing.cash.tip", "What you paid {span}; an ingredient this company does not buy yet shows no price", {span: priceSpan()});
     const note = $("ingNote");
-    if(note) note.textContent = !total ? tt("gr.ing.none", "Nothing to import; this range is bought as finished goods.")
-      : [priced ? tt("gr.ing.cost", {one: "A week costs {w:$} for the {n} ingredient this company already buys.",
-          other: "A week costs {w:$} across the {priced} of {n} ingredients this company already buys."}, {w: cash, priced, n: total}) : "",
-        priced && priced < total ? tt("gr.ing.prices", {one: "Unit prices are what you paid {span}; the other {n} shows quantities only.",
-          other: "Unit prices are what you paid {span}; the other {n} show quantities only."},
-          {span: priceSpan(), n: total - priced}) : ""].filter(Boolean).join(" ");
+    if(note) note.textContent = !total ? tt("gr.ing.none", "Nothing to import; this range is bought as finished goods.") : "";
   }
 }
 const bindPlan = once(() => on("click", "tr.line .step a[data-d]", (a, e) => {
@@ -34951,18 +35060,10 @@ const wireSiteChips = once(() => {
 const wireRoster = once(() => {
   const sec = el => el.closest("section");
   const site = el => (sec(el) || {dataset: {}}).dataset.site || "";
-  /* The ring and the count, after anything that changes what is ticked. */
+  /* Clear ticks, after anything that changes what is ticked. */
   const retally = s => {
-    const ring = q(".sp-ring", s), count = q(".sp-count", s);
-    if(!ring || !count) return;
-    const done = $$(".sp-shift.sp-done", s).length;
-    const all = +(s.dataset.tickable || 0);
-    count.textContent = done;
     const clear = q(".sp-clear", s);
-    if(clear) clear.hidden = !done;
-    ring.style.setProperty("--p", all ? (done / all * 100).toFixed(0) : 0);
-    ring.classList.add("sp-bump");
-    setTimeout(() => ring.classList.remove("sp-bump"), 260);
+    if(clear) clear.hidden = !$$(".sp-shift.sp-done", s).length;
   };
   /* Each plan keeps its own ticks: see spTickKey(). */
   const ticksOf = s => s.dataset.ticks ?? s.dataset.site ?? "";

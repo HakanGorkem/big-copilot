@@ -310,6 +310,9 @@ button.btn{border:0;cursor:pointer}
 .save-location label{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 8px;font-size:12px;color:var(--ink-3)}
 .save-location select{max-width:100%;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:4px 6px}
 .save-location p{margin:8px 0 0;font-size:12px;line-height:1.6;color:var(--ink-3)}
+/* The rest of the save help, folded under the box (review item: nothing else opens it on the landing). */
+.save-location .lg-morehelp{display:inline-block;margin-top:6px;font-size:12px}
+.menu-panel .save-location .lg-morehelp{display:none}
 .menu-panel .save-location{width:100%;max-width:100%}
 @media (max-width:1100px){.landing .orb{display:none}}
 @media (max-width:640px){.drop,.landing .strip,.landing details.help{width:calc(100vw - 48px)}}
@@ -400,8 +403,8 @@ details.help[open] summary::after{content:"\2013"}
 <!-- One-time news strip. For the next announcement replace data-news-id and the
      copy, and give the copy a new data-tt key: a new id shows again to everyone
      who dismissed this one (web/update.js). -->
-<aside class="news-strip" id="newsStrip" data-news-id="link-0.2.0" aria-label="News" data-tt-aria-label="upd.news" hidden>
-  <p class="news-copy"><b class="news-tag" data-tt="upd.news.tag">New</b><span data-tt="upd.news.link-0-2-0">Big Copilot Link 0.2.0 lets the board make changes in your game: set uniforms, apply import amounts and write staffing plans, with a preview and one-step undo.</span><a id="newsLink" href="https://steamcommunity.com/sharedfiles/filedetails/?id=3806322395" target="_blank" rel="noopener" data-tt="upd.news.get-mod">Get the mod on the Steam Workshop</a></p>
+<aside class="news-strip" id="newsStrip" data-news-id="lang-ko" aria-label="News" data-tt-aria-label="upd.news" hidden>
+  <p class="news-copy"><b class="news-tag" data-tt="upd.news.tag">New</b><span data-tt="upd.news.lang-ko">Big Copilot now comes in Korean, thanks to Chanwoo Kim (kcw2034), who translated it. Thank you! Speak another language? Your translation is welcome too.</span><a id="newsLink" href="https://github.com/PeterHartwieg/big-copilot/blob/main/docs/translating.md" target="_blank" rel="noopener" data-tt="upd.news.help-translate">Help translate Big Copilot</a></p>
   <button type="button" class="news-dismiss" id="newsDismiss" aria-label="Dismiss this news" title="Dismiss this news" data-tt-aria-label="upd.news.dismiss" data-tt-title="upd.news.dismiss"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
 </aside>
 <section class="landing" id="landing">
@@ -418,6 +421,7 @@ details.help[open] summary::after{content:"\2013"}
   </div>
   <div class="save-location rv" id="saveLocation">
     <label for="savePlatform"><span data-tt="land.where.label">Save folder</span> <select id="savePlatform" aria-label="Operating system for save folder help" data-tt-aria-label="land.where.select"><option value="windows">Windows</option><option value="mac">macOS</option><option value="other" selected data-tt="land.where.other">Other / unknown</option></select></label>
+    <a href="#help" class="link lg-morehelp" id="saveMoreHelp" aria-controls="help" aria-expanded="false" data-tt="land.where.more">More help</a>
     <div class="path-row" id="savePathRow" hidden><code id="savePath"></code><button type="button" class="copy" id="savePathCopy" data-copy="savePath">Copy</button></div>
     <p id="saveLocationHint">Choose Windows or macOS to see its save folder, or select a .hsg file.</p>
   </div>
@@ -433,7 +437,6 @@ details.help[open] summary::after{content:"\2013"}
     </div>
     <p class="quiet lg-note" id="srcNote" hidden></p>
   </div>
-  <!--__FOOTER__-->
   <details class="help" id="help">
     <summary data-tt="land.help.summary">Where is my save?</summary>
     <div class="help-content">
@@ -454,6 +457,7 @@ details.help[open] summary::after{content:"\2013"}
       <p class="lg-quiet"><button type="button" class="lg-text" id="forgetHistory" title="Two weeks of demand and sixty days of cash history are kept in this browser for the trends. Forgetting them starts a fresh record." data-tt-title="land.forget.title" data-tt="land.forget">Forget history</button> <span data-tt="land.forget.after">&middot; the page only reads your saves, from a folder or from the running game.</span></p>
     </div>
   </details>
+  <!--__FOOTER__-->
   <div class="orb" id="lgOrb" aria-hidden="true"><i></i><u></u></div>
   <input type="file" id="folderPick" webkitdirectory directory multiple hidden>
   <input type="file" id="localePick" accept=".json" hidden>

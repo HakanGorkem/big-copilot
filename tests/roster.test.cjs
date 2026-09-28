@@ -458,7 +458,8 @@ test('the tile, the ring and the card all size the same week', async () => {
       `<b>${hours[1]} h</b> in 26 entries, against <b>${hours[0]} h</b> in 42 entries today`));
     assert.match(await tile.getAttribute('data-read'), new RegExp(
       `${posts} people to hire for the 16 entries drawn without a name, at 30 hours a week or more each`));
-    assert.match(await page.locator('#sp-roster .sp-typed').innerText(), /0 of 26 copied/);
+    // No "n of m copied" beside the ticks (Peter's testing, A9): nothing is ticked yet.
+    assert.equal(await page.locator('#sp-roster .sp-shift.sp-done').count(), 0);
     const badge = await page.evaluate(() => {
       drawOptimizeStaffing();
       return $('optimizeStaffingCard').querySelector('.soon').textContent;
@@ -483,16 +484,13 @@ test('the progress counts one set of lines, on the first draw and after a tick',
   const page = await shop('full');
   try {
     assert.equal(await page.locator('#sp-roster').getAttribute('data-tickable'), '26');
-    assert.match(await page.locator('#sp-roster .sp-typed').innerText(), /0 of 26 copied/);
+    // No "n of m copied" beside the ticks (Peter's testing, A9): nothing is ticked yet.
+    assert.equal(await page.locator('#sp-roster .sp-shift.sp-done').count(), 0);
     const ticked = await page.evaluate(() => {
       $$('#sp-roster button.sp-shift').forEach(b => b.click());
-      const ring = q('#sp-roster .sp-ring');
-      return [q('#sp-roster .sp-count').textContent,
-        q('#sp-roster .sp-typed').textContent, ring.style.getPropertyValue('--p')];
+      return [String($$('#sp-roster .sp-shift.sp-done').length), q('#sp-roster .sp-clear').hidden];
     });
-    assert.equal(ticked[0], '26');
-    assert.match(ticked[1], /26 of 26 copied/);
-    assert.equal(ticked[2], '100');
+    assert.deepEqual(ticked, ['26', false], 'every line ticked, and clear ticks on offer');
   } finally { await page.close(); }
 });
 
@@ -506,7 +504,7 @@ test('a tick kept from a plan that has changed does not count', async () => {
       localStorage.setItem('ba_dash_roster:' + key, JSON.stringify([spTickId(r, real)]));
       real.p = null;
       drawShop();
-      return [q('#sp-roster .sp-count').textContent,
+      return [String($$('#sp-roster .sp-shift.sp-done').length),
         q('#sp-roster').dataset.tickable, $$('#sp-roster .sp-shift.sp-done').length];
     }, KEY);
     assert.deepEqual(shown, ['0', '25', 0], 'nothing is marked done, and nothing claims to be');
@@ -686,7 +684,7 @@ async function reticked(edit){
       new Function('row', 'line', body)(r, line);
       drawShop();
       return [before, $$('#sp-roster .sp-shift.sp-done').length,
-        q('#sp-roster .sp-count').textContent];
+        String($$('#sp-roster .sp-shift.sp-done').length)];
     }, [KEY, edit]);
   } finally { await page.close(); }
 }
@@ -776,22 +774,18 @@ test('a line whose station or person the save does not name cannot be ticked', a
         const drawn = $$('.sp-shift', sec).length;
         const ticky = $$('button.sp-shift', sec).length;
         return [drawn, ticky, +sec.dataset.tickable,
-          q('.sp-typed', sec).textContent.replace(/\s+/g, ' ').trim(),
           q('.sp-ba > div', sec).innerText.replace(/\s+/g, ''),
           JSON.stringify(spRosterCounts(D.staffing[0]))];
       });
-      const [drawn, ticky, tickable, typed, tile, counts] = state;
+      const [drawn, ticky, tickable, tile, counts] = state;
       const staffed = JSON.parse(counts).staffed;
       assert.ok(drawn > ticky, `${what}: every bar is still drawn`);
       assert.equal(ticky, tickable, `${what}: the ring counts the buttons`);
-      assert.match(typed, new RegExp(`0 of ${tickable} copied`), what);
       /* The week is the lines with somebody on them; the ring is the narrower
          set the board can mark, and the line beside it says so. */
       assert.ok(staffed > tickable, `${what}: a line to type that cannot be ticked`);
       assert.ok(tile.includes('42' + staffed + 'entries'), `${what}: ${tile}`);
       assert.equal(JSON.parse(counts).hire, 16, `${what}: the hires are unchanged`);
-      assert.match(await page.locator('#sp-roster .sp-typed').getAttribute('data-read'),
-        new RegExp(`The ring counts the ${tickable} entries the board can mark`), what);
       // And the card sizes the same week the block does.
       const badge = await page.evaluate(() => {
         drawOptimizeStaffing();
@@ -814,7 +808,7 @@ test('a tick is kept per site and survives the next draw', async () => {
     const bar = page.locator(first).first();
     await page.evaluate(s => q(s).click(), first);
     assert.match(await bar.getAttribute('class'), /sp-done/);
-    assert.equal(await page.locator('#sp-roster .sp-count').innerText(), '1');
+    assert.equal(String(await page.locator('#sp-roster .sp-shift.sp-done').count()), '1');
     const stored = await page.evaluate(k => localStorage.getItem('ba_dash_roster:' + k), KEY);
     assert.match(stored, /\[1,/, 'the weekday, then the station and person by id');
     await page.evaluate(() => drawShop());
@@ -835,7 +829,7 @@ test('the block draws and ticks without storage of any kind', async () => {
   try {
     assert.equal(await page.locator('#sp-roster button.sp-shift').count(), 26);
     await page.evaluate(s => q(s).click(), mon + 'button.sp-shift');
-    assert.equal(await page.locator('#sp-roster .sp-count').innerText(), '1');
+    assert.equal(String(await page.locator('#sp-roster .sp-shift.sp-done').count()), '1');
   } finally { await page.close(); }
 });
 
@@ -1048,7 +1042,7 @@ test('a schedule of nothing but cover can be cleared, and the note says so', asy
   } finally { await page.close(); }
 });
 
-test('a measured shop whose hours ask for nobody is still a cover-only plan', async () => {
+test('a measured shop whose hours need nobody is still a cover-only plan', async () => {
   const page = await shop('quiet');
   try {
     // Two weeks of reports, every hour of them zero customers: the basis is
@@ -1064,7 +1058,7 @@ test('a measured shop whose hours ask for nobody is still a cover-only plan', as
     const note = page.locator('#sp-roster .sp-note');
     assert.equal(await note.count(), 1);
     assert.match(await note.innerText(), /Cover only/);
-    assert.match(await note.innerText(), /ask for nobody on its serving stations/);
+    assert.match(await note.innerText(), /need nobody on its serving stations/);
     assert.doesNotMatch(await note.innerText(), /days after its first customer/);
     assert.match(await note.innerText(), /Do not clear the whole schedule/);
     const steps = await page.locator('#sp-roster .sp-step').evaluateAll(
@@ -1099,7 +1093,7 @@ test('the Today card sizes that shop on its cover shifts, and names the reason',
     assert.doesNotMatch(shown.what, new RegExp(`${now} entries become`));
     // And this shop has been measured: it is not waiting for a fortnight it
     // has already had.
-    assert.match(shown.what, /its measured hours ask for nobody at the registers/);
+    assert.match(shown.what, /its measured hours need nobody at the registers/);
     assert.doesNotMatch(shown.what, /wait on the shop\u2019s first measured week/);
   } finally { await page.close(); }
 });
@@ -1115,7 +1109,7 @@ test('the waiting chip on that shop does not tell them to wait either', async ()
     assert.doesNotMatch(await hc.innerText(), /first measured week/);
     const reads = await hc.locator('.sp-new').evaluateAll(els => els.map(e => e.dataset.read));
     const group = reads.find(r => /no role it could plan/.test(r)) || "";
-    assert.match(group, /ask for nobody on the stations they could work/);
+    assert.match(group, /need nobody on the stations they could work/);
     assert.doesNotMatch(group, /waits on the shop\u2019s first measured one/);
   } finally { await page.close(); }
 });
@@ -1394,10 +1388,8 @@ test('lines the board cannot mark are still lines to enter, everywhere it counts
     const tile = page.locator('#sp-roster .sp-ba > div').first();
     assert.match(await tile.innerText(), new RegExp(`${counts.nowCover} ${counts.staffed} entries`));
     assert.equal(await tile.locator('.v small s').innerText(), String(counts.nowCover));
-    // And the ring says why it counts fewer.
-    assert.match(await page.locator('#sp-roster .sp-typed').innerText(), /0 of 0 copied/);
-    assert.match(await page.locator('#sp-roster .sp-typed').getAttribute('data-read'),
-      /entries to set that it cannot/);
+    // None of its lines is one the board can tick.
+    assert.equal(await page.locator('#sp-roster').getAttribute('data-tickable'), '0');
   } finally { await page.close(); }
 });
 
@@ -1444,7 +1436,7 @@ test('a weekday of its own that could not be read says so, on a shop that was', 
     const reads = await page.evaluate(() => [0, 1, 2, 3, 4, 5, 6].map(
       wd => q(`#sp-roster .sp-day[data-d="${wd}"] .sp-needrow .lab`).dataset.read));
     assert.match(reads[3], /Not enough hour reports to read this weekday yet/);
-    for(const wd of [1, 2, 4, 5, 6, 0]) assert.match(reads[wd], /Measured, and these hours ask for nobody/);
+    for(const wd of [1, 2, 4, 5, 6, 0]) assert.match(reads[wd], /Measured, and these hours need nobody/);
   } finally { await page.close(); }
 });
 
@@ -1473,7 +1465,7 @@ test('the need strip on a shop measured at nothing says so, lane by lane', async
       .evaluateAll(els => els.map(e => e.dataset.read));
     assert.equal(reads.length, 7);
     for(const r of reads){
-      assert.match(r, /Measured, and these hours ask for nobody/);
+      assert.match(r, /Measured, and these hours need nobody/);
       assert.doesNotMatch(r, /Not enough hour reports/);
     }
   } finally { await page.close(); }
@@ -1929,10 +1921,10 @@ test('each plan keeps its own ticks', async () => {
   try {
     await page.evaluate(() => q('#sp-roster [data-plan="full"]').click());
     await page.evaluate(s => q(s).click(), mon + 'button.sp-shift');
-    assert.equal(await page.locator('#sp-roster .sp-count').innerText(), '1');
+    assert.equal(String(await page.locator('#sp-roster .sp-shift.sp-done').count()), '1');
     assert.ok(await page.evaluate(k => localStorage.getItem('ba_dash_roster:full:roster-fixture:' + k), KEY));
     await page.evaluate(() => q('#sp-roster [data-plan="demand"]').click());
-    assert.equal(await page.locator('#sp-roster .sp-count').innerText(), '0');
+    assert.equal(String(await page.locator('#sp-roster .sp-shift.sp-done').count()), '0');
   } finally { await page.close(); }
 });
 
@@ -2007,12 +1999,16 @@ test('complete demand data on full cover says so on the block and on the Today c
   try {
     assert.equal(ROWS.handover.demandDataComplete, true);
     const line = page.locator('#sp-roster .sp-handover');
-    assert.equal(await line.innerText(), 'Demand data complete: switch to the demand plan');
-    // On the test's own view the line is the way back.
+    // With the demand plan on screen there is nothing to switch to (A8).
+    assert.deepEqual(await pickText(page), [['Demand plan', true], ['Full cover 24/7', false]]);
+    assert.equal(await line.count(), 0);
+    // On the test's own view the line is the way to it.
     await page.evaluate(() => q('#sp-roster .sp-plans [data-plan="full"]').click());
+    assert.equal(await line.innerText(), 'Demand data complete: switch to the demand plan');
     assert.equal(await page.locator('#sp-roster .sp-pickwhy').count(), 0, 'one line, not two');
     await page.evaluate(() => q('#sp-roster .sp-handover [data-plan="demand"]').click());
     assert.deepEqual(await pickText(page), [['Demand plan', true], ['Full cover 24/7', false]]);
+    assert.equal(await line.count(), 0);
     const card = await page.evaluate(() => {
       drawOptimizeStaffing();
       const c = $('optimizeStaffingCard');

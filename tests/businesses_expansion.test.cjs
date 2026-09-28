@@ -367,7 +367,7 @@ test('Find a location keeps a picked building through a detour, and its strip le
   await cell(page, 'ba:businesstype_liquorstore', 'ba:neighborhood_midtown').click();
   await page.waitForFunction(() => typeof cityMapPage !== 'undefined' && cityMapPage && cityMapPage.finderOn());
   await page.evaluate(() => cityMapPage.ready);
-  // No cards under the map repeat the tabs and the Game guide (declutter E4).
+  // No cards under the map repeat the tabs and the Wiki (declutter E4).
   assert.equal(await page.locator('#finderCtx .fx-card').count(), 0);
   // Takeover shows the save's one rival: pick it, leave, come back.
   await page.evaluate(() => { cityMapPage.fs.show = 'takeover'; cityMapPage.fs.hoods = null; cityMapPage.saveFinder(); cityMapPage.update(); });
@@ -480,4 +480,27 @@ test('Help & feedback is a sheet with the way to ask; the changelog and the proj
   await page.keyboard.press('Escape');
   await page.locator('.sitefoot [data-changelog]').first().click();
   assert.equal(await page.evaluate(() => document.getElementById('changelogDialog').open), true);
+});
+
+// --- user testing, 28 September 2026 ---------------------------------------------------
+
+test('Plan a factory says nothing its table already says; Demand has no trend-history note; Payroll says plainly where wages part from the rates', async t => {
+  const page = await board(t, {hash: '#expansion/factory'});
+  await page.locator('#planBody table').first().waitFor();
+  assert.equal(await page.locator('#secPlan .planline').count(), 0, 'no sentence under the products');
+  if (await page.locator('#ingBody tr').count()) {
+    assert.equal((await page.locator('#ingNote').textContent()).trim(), '', 'the Total row is the cost');
+    assert.match(await page.locator('#ingTable th.cash').getAttribute('data-tip'), /What you paid/);
+    const changes = await page.$$eval('#ingBody td.chg', tds => tds.filter(td => !['', '—'].includes(td.textContent.trim())).length);
+    assert.equal(await page.locator('#ingTable').evaluate(tb => tb.classList.contains('nochange')), changes === 0, 'the Change column only where a row has one');
+  }
+  await page.evaluate(() => openRoute('expansion/demand'));
+  assert.doesNotMatch(await page.locator('#pageGrowth').innerText(), /trend history/i);
+  await page.evaluate(() => openRoute('staffing/payroll'));
+  const text = await page.locator('#secPayroll').innerText();
+  assert.doesNotMatch(text, /books part/i);
+  if (await page.locator('#secPayroll .pay-off').count()) {
+    assert.equal(await page.locator('#secPayroll .pay-off h3').innerText(), "Sites whose wages yesterday differ from today's rates");
+    assert.match(await page.locator('#secPayroll .pay-off li small').first().innerText(), /^paid \$[\d,.k]+ yesterday · \$[\d,.k]+ at today's rates$/);
+  }
 });

@@ -162,7 +162,11 @@ test('the recurring order and the one-time catch-up are two changes, each with i
   const card = page.locator('#sbCard');
   assert.equal(await card.locator('.sbi-sec').count(), 2, 'the order and the gap, side by side');
   assert.match(await card.locator('.sbi-gap').textContent(), /~600\s*units, bought now/);
-  assert.match(await card.locator('.sbi-gap').textContent(), /by hand; no game-link write/);
+  // No write offers itself for the purchase, and no line says so (A4).
+  assert.equal(await card.locator('.sbi-gap [data-gw]').count(), 0);
+  assert.doesNotMatch(await card.locator('.sbi-gap').textContent(), /game-link/);
+  // No copy of its own: Manual instructions says the same (Peter's testing, A2).
+  assert.equal(await card.locator('[data-sb-copy]').count(), 0);
   // The card has no mark buttons of its own (declutter U20): each change has
   // its tick on its own row of Changes.
   assert.equal(await card.locator('[data-sb-mark]').count(), 0);
@@ -226,10 +230,11 @@ test('the factory hours an import is planned on: named on the card, a step of th
   assert.match(await cap.locator('#sbCard .sbi-dep').textContent(), /Needs a factory-hours change\..*Cake.*staffed 12 h a day → 24 h a day each/s);
   assert.match(await cap.locator('#sbCard .sbi-dep').textContent(), /less than planned/);
   await cap.click('#sbCard [data-sbi-panel=manual]');
-  assert.match(await cap.locator('#sbCard .sbi-steps').textContent(), /Schedule: staff Cake 24 h a day on each of its 2 machines \(now 12 h\)\. Not written by the game link\./);
+  assert.match(await cap.locator('#sbCard .sbi-steps').textContent(), /Schedule: staff Cake 24 h a day on each of its 2 machines \(now 12 h\)\./);
+  assert.doesNotMatch(await cap.locator('#sbCard .sbi-steps').textContent(), /game link/);
   const hours = () => cap.evaluate(() => sbData().rows.filter(r => r.kind === 'Factory run hours').map(r => [r.current, r.proposed, (r.forImports || []).map(x => x.item).join()]));
   assert.deepEqual(await hours(), [[12, 24, 'Flour']]);
-  assert.match(await cap.locator('#secChanges .sbc-row[data-key*="Factory run hours"]').textContent(), /factory staffing, for Flour.*no game-link write/s);
+  assert.match(await cap.locator('#secChanges .sbc-row[data-key*="Factory run hours"]').textContent(), /factory staffing, for Flour/);
   // The link offers no write for it.
   assert.equal(await cap.evaluate(() => gwImportPlan(null).some(l => l.r.item === 'Cake')), false);
   // Shop demand: Flour needs no change, so nothing depends on the hours; a
@@ -538,7 +543,7 @@ test('Changes counts what the Overview counts, lists only import records, and co
     sbStamp++; drawSupplyStrip(); drawChangesView(); wireAll();
   });
   const n = await page.evaluate(() => { const d = sbData(); return {total: d.rows.length, done: d.rows.filter(r => pgDone(d, r)).length}; });
-  assert.equal((await page.locator('#sbcTop .sbc-n').textContent()).replace(/\s+/g, ' '), `${n.done}of ${n.total}recorded or applied`);
+  assert.equal(await page.locator('#sbcTop .sb-road').getAttribute('aria-label'), `${n.done} of ${n.total} changes recorded or applied`);
   const settled = await page.locator('#secChanges .sbc-settled .sbc-row').allTextContents();
   assert.equal(settled.length, 1);
   assert.match(settled[0], /Milk/);

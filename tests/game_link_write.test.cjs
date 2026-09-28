@@ -2380,7 +2380,8 @@ test('uniforms from a business page: the progress stands beside the write, there
   await page.waitForFunction((k) => (pgUniformState(k) || {}).state === 'confirmed', GIFTS);
   await page.locator('#sp-standards .sp-unipg').getByText(/Confirmed · day \d+/).waitFor();
   await page.evaluate(() => openRoute('businesses/standards'));
-  assert.match(await page.locator(`#secStandards tr[data-std-row="${GIFTS}"] .nx-st`).innerText(), /Confirmed/);
+  // Standards was only just shown: wait for its row to be laid out and read.
+  await page.locator(`#secStandards tr[data-std-row="${GIFTS}"] .nx-st`).getByText(/Confirmed/).waitFor();
   // Undo, from the strip: the record goes.
   await page.locator('#gwToast').getByRole('button', {name: 'Undo'}).click();
   await dialog(page).getByText('Undone: 1 role back to no uniform.').waitFor();

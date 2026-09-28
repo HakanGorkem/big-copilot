@@ -18,14 +18,27 @@ knows are in `NEIGHBOURHOODS` in `ba_dashboard.py`.
 
 ## What's on the board
 
-The masthead holds five areas and two references, and the board shows one at a time.
-**Overview** is the daily check. **Businesses** (Results, Products & prices, Standards,
-Milestones), **Supply** (Changes, Imports, Deliveries, Production, Goods flow),
+A sidebar on the left holds five areas and two references, and the board shows one at a
+time. From the top it holds the company name with the sphere, Search, the areas, the
+references, and at its foot the game clock, Update (on the hosted page only) and one ···
+menu: the save source on the hosted page, then What's new, Preferences and Help &
+feedback. **Overview** is the daily check. **Businesses** (Results, Products & prices,
+Standards, Milestones), **Supply** (Changes, Imports, Deliveries, Production, Goods flow),
 **Staffing** (Schedules, Payroll, Staff needs) and **Expansion** (Demand, Find a location,
-Plan a factory) each open on a row of views under the masthead. The **City map** and the
-**Game guide** sit beside them. Which view you were on is remembered on the device and
-mirrored in the URL hash (`#supply/imports`), so a live refresh and a reopened tab both
-land where you left off, and the browser's Back returns to the view before.
+Plan a factory) each list their views under them in the sidebar while they are open, each
+view with its count. The **City map** and the **Wiki** sit under the areas. The top of a
+page holds only the view's own controls, and a view with none starts with its content.
+Theme and language are in the footer.
+
+A fold button at the sidebar's foot collapses it to a 64 px rail of icons, and the choice
+is remembered on the device; with no choice made, a window 1100 px wide or less starts on
+the rail. On the rail the views sit at the top of the page, beside the view's controls. On
+a phone the sidebar is a drawer, opened by the bottom bar's Map & more, and the views sit
+at the top of the page as on the rail.
+
+Which view you were on is remembered on the device and mirrored in the URL hash
+(`#supply/imports`), so a live refresh and a reopened tab both land where you left off,
+and the browser's Back returns to the view before.
 
 The **City map** shows the city with your business footprints in green, buildings you own dashed
 blue, homes you rent in white, and a floating list of places over the right edge. Five
@@ -47,8 +60,8 @@ not a rental quote or an eligibility recommendation. A rented home is billed as 
 shows the rent.
 
 The green ball in Central Park is the board's brand sphere: it scales with the map, and
-clicking it swallows any spheres on the masthead shelf (click the wordmark to roll more
-out); with none there it pays out coins.
+clicking it swallows any spheres resting on the sidebar head's rule (click the company name
+to roll more out); with none there it pays out coins.
 
 The small map button beside a building reference opens a location overlay with the camera
 already on its footprint and the card open, titled with the place's name and address.
@@ -67,8 +80,9 @@ the map.
   worth takes the fourth tile whenever the game reports it again. The Profit tile opens
   Businesses › Results at the daily result. Bank debt appears in the cash tile's note when
   there is some, and on its sub line after the period ("this week · $1.89M owed on loans")
-  once it is more than the last seven days' profit. Site and staff counts sit in the masthead. Sparklines cover
-  the last 61 days. On a phone the tiles pair up two by two and the Next moves cards stack.
+  once it is more than the last seven days' profit. Sites are counted on Businesses and staff
+  on Staffing. Sparklines cover the last 61 days. On a phone the tiles fold into one line of
+  figures, and All tools lists its tasks below the list.
 - **Needs attention**: only what you can act on, each line with a number and a deadline
   where one exists. Below the list, two lines, each with its own *show*: how many findings
   fall below the materiality line ("1 below the $6,239/day line"), and how many sit in kinds
@@ -88,12 +102,12 @@ the map.
   to it.
   *Uniforms / locker* checks retail sites for an installed Uniform Locker. Gym
   Lockers and boxed Uniform Lockers do not count. With a locker installed, the
-  warning names the roles working a station shift here that have no uniform set,
-  worked out from the roster rather than read from the save's cached answer: the
+  warning names the roles scheduled at a station here that have no uniform set,
+  worked out from the schedule rather than read from the save's cached answer: the
   game only settles that at a moment — at midnight, or when you move an item or a
   worker — so it reads "fine" for a shop whose floor was empty then, and goes back
   to unset the next time an uncovered role is on. Cover every role named and the
-  demand is met whenever the game looks. Cleaning shifts are exempt, as they are
+  demand is met whenever the game looks. Cleaning duty is exempt, as it is
   in game. If both locker and uniforms are missing, one warning points to
   installing the locker first; new sites not yet trading retain their combined
   setup warning. A hairdresser gets neither warning: its customers never ask
@@ -123,7 +137,7 @@ the map.
   - *Business detail*: nothing until a site is opened from the portfolio or a finding;
     then that site alone, with its profit history, cost breakdown, crew and shelves, and
     an hour-by-hour grid comparing historical customers with capacity from the
-    current roster. A picker in its header moves between sites, support sites in
+    current schedule. A picker in its header moves between sites, support sites in
     their own group, and *close* puts it away.
 - **Supply**: the logistics round, five views by task: **Changes**, **Imports**,
   **Deliveries**, **Production** and **Goods flow**. Shops, warehouses and factories are each
@@ -162,9 +176,10 @@ the map.
     does not sort.
   - *Goods flow*: the chain drawn as a flow diagram, a column a stage in the order the goods
     travel (a depot an importer fills stands before the factory it feeds, one a factory fills
-    after it), shops last, line width for daily volume. A chain wider than the box shrinks to
-    fit down to 0.8 of its size; one wider still is drawn at full size and scrolls sideways inside
-    the box, the followed site in view and a faded edge where it goes on. Click a site to follow it: a panel says what it holds and
+    after it), shops last, line width for daily volume. It opens fitted to its box
+    (never above readable size) and moves like the map: drag to pan, the wheel or + and − to
+    zoom, *Fit* to see the whole chain again, arrow keys and + − 0 from the keyboard; following
+    a site centres it. Click a site to follow it: a panel says what it holds and
     lists the changes on its route; *Table* goes back to the view you came from. A finding
     on the Overview lands on its view, on its row, lit, with a way back.
     On a phone or a portrait tablet (a diagram box under about 950 px) the diagram is the
@@ -219,14 +234,14 @@ the map.
   "Booked yesterday" is what the statements recorded (the Portfolio's Wages total). There is no debt page; loans cap at $2M, which is
   beside the point at this stage.
 
-- **Game guide**: browse the game's help without loading a save, starting with a shelf
+- **Wiki**: browse the game's help without loading a save, starting with a shelf
   of categories and searchable pages. The Gift Shop guide presents setup
   checklists, products and their fixtures/suppliers, recipe flows and map links.
   Checklist ticks are planning notes, not proof that equipment is installed.
   Game help and Big Copilot's calculations are labelled separately; live company
   information belongs in the guide's Yours section.
 
-The Game guide's catalogue is refreshed from the installed game when the site is built.
+The Wiki's catalogue is refreshed from the installed game when the site is built.
 It is a versioned snapshot of the game's help, which can lag runtime behaviour.
 A visitor's game update does not automatically change the hosted catalogue.
 See [Wiki data pipeline](wiki-data-pipeline.md) for extraction and provenance.
@@ -358,14 +373,14 @@ financial summaries. The number of weeks behind each figure is shown next to it.
 A daily total cannot tell you that a shop is turning people away at eight in the morning
 and paying three people to stand about at two. The save can: every business keeps an
 `hourReports` list, being twenty-four readings of customers per day for the last sixteen
-days, and a `scheduleDays` roster saying who was posted where and when. Put them in one
+days, and a `scheduleDays` schedule saying who was placed where and when. Put them in one
 grid and three lines meet.
 
 - **Customers** are measured, averaged over however many weeks that weekday has. A
   weekday resting on fewer than two weeks is starred and left out of the findings.
-- **Capacity** is what was actually staffed to serve. Each work shift names the
-  exact station the employee was posted to, so the figure is the sum of the stations
-  manned in that hour, not the number of staff times a guess. Two people rostered on one
+- **Capacity** is what was actually staffed to serve. Each schedule entry names the
+  exact station the employee was placed at, so the figure is the sum of the stations
+  manned in that hour, not the number of staff times a guess. Two people scheduled on one
   station count that station once.
 - **The building capacity** is the building's own `customerCapacity`: 30 for the small
   supermarkets, 75 for the big ones and the electronics stores, 100 for the cinema. It is
@@ -385,16 +400,16 @@ figure too and are deliberately not summed. They hold products, they do not serv
 The cleaning station and the security guard locker are employee stations with no queue, so
 they carry no capacity and take no part in this grid.
 
-A station decides which of the site's people count as serving it: the person the shift
-names has to hold the skill that station asks for, so a lawyer posted at a register serves
-nobody and a cleaner posted at a computer serves nobody. That is also why a gym was
+A station decides which of the site's people count as serving it: the person the entry
+names has to hold the skill that station asks for, so a lawyer placed at a register serves
+nobody and a cleaner placed at a computer serves nobody. That is also why a gym was
 invisible here until the station table saw its boards — a site with no Customer Service
 station at all had no capacity to read.
 
 **Roles.** A shop asks for one skill and its capacity is the registers manned. A theatre
 asks for four, and a customer has to pass through all of them, so the site is only as fast
 as its slowest role: the grid shows the minimum across roles, the sum only within one, and
-each role's own roster is judged separately in the findings. Two projection booths with one
+each role's own staffing is judged separately in the findings. Two projection booths with one
 projectionist hold the whole theatre back to 25 an hour however many stage crew are on.
 
 A skill whose stations do different work is split into one role per kind of work, read from
@@ -407,35 +422,35 @@ people: a staffing limit names the skill, and the plan's headcount counts them o
 **Offices** get the same grid, because they keep the same hour reports. Their customers
 are digital, and each one is an hour billed by one professional, so an office's registers
 are its computers: every computer listed on the game's *Computer Options* page (Computer,
-ZanaMan Computer, Laptop, Basic Gaming PC Setup) with someone other than a cleaner posted
+ZanaMan Computer, Laptop, Basic Gaming PC Setup) with someone other than a cleaner placed
 at it counts one customer an hour. No help page states that rate. It was measured on a law
-firm at build 3680, whose hour reports matched the lawyers on shift one for one at every
-level the roster reached (1, 2, 33 and 50), with the fee's demand reading 66 at the time,
+firm at build 3680, whose hour reports matched the lawyers on duty one for one at every
+level the schedule reached (1, 2, 33 and 50), with the fee's demand reading 66 at the time,
 so it should be checked again after a game update. The building capacity is the office building's.
 
-### What the roster actually says
+### What the schedule in the save actually says
 
 Two fields needed working out, and both were settled against data rather than assumed.
 
-**`workShifts.type`** is not work-versus-break. Across every shift in a large save, type 0
+**`workShifts.type`** is not work-versus-break. Across every entry in a large save, type 0
 appears with exactly one kind of furniture, the cleaning station, and exactly one skill,
 Cleaning. Type 1 covers everything else: checkout counters, cash registers, projection
 booths, security lockers, assembly machines, office laptops. So type 0 is a roaming
-cleaning duty and type 1 is a post at a named station, and only type 1 shifts on a serving
+cleaning duty and type 1 is a place at a named station, and only type 1 entries on a serving
 station count towards the site's capacity. As a check on the parse, summing each employee's
-shift hours reproduces their `assignedWeeklyHours` exactly, for all 253 of them.
+entry hours reproduces their `assignedWeeklyHours` exactly, for all 253 of them.
 
 **`scheduleDays.day`** runs 1 to 7 and maps straight onto the game day: `day % 7`, with 7
 standing in for Sunday's 0. So 1 is Monday and 7 is Sunday. Two things confirm it. Rival
 businesses keep weekday/weekend opening hours, one common pattern being 9-16 on days 1 to
 5 and 9-21 on days 6 and 7, which only makes sense if 6 and 7 are the weekend. And
-correlating rostered customer-service hours per schedule day against measured customers
+correlating scheduled customer-service hours per schedule day against measured customers
 per weekday gives +0.96 for this alignment, against +0.60 for the next best rotation.
 
 ### The two findings
 
 **At the ceiling.** Hours at 95% of effective capacity, with the binding limit named. Each
-hour is judged on its own roster, and each role on the roster that was on for it. Where the
+hour is judged on its own staffing, and each role on the schedule that was on for it. Where the
 building capacity is at or below the site's staffed capacity the building is the limit. That is
 not raised as a finding: plenty of well-run sites sit at their building's capacity, and
 there is nothing to fix, so it shows on the site page only, as a neutral hour chip ("at
@@ -496,7 +511,7 @@ back: a gym whose trainers can serve forty an hour but whose single register let
 through is short of registers, not of boards.
 `scaled` is a thin weekday read off the best measured one through the game's own day
 curve. `none` is a site too new to say anything about — and a site whose every weekday is
-thin gets no serving shifts at all, rather than a guess.
+thin gets no serving hours at all, rather than a guess.
 
 **Only a measured hour is a target.** The board never presents a censored hour as a number
 to aim at, and never prints the arrival ceiling as demand: the ceiling is the game's own
@@ -504,11 +519,11 @@ arrivals formula, and on a clothing store it over-predicts the customers actuall
 four times over, because it counts arrivals the game then turns away for having nothing
 they want to buy. It is carried to bound a censored hour from above, and for nothing else.
 
-**The shifts.** Each role's stations are manned from the largest throughput down, the hours
-they are wanted are joined into runs, and each run is cut into the fewest shifts of at most
+**The entries.** Each role's stations are manned from the largest throughput down, the hours
+they are wanted are joined into runs, and each run is cut into the fewest entries of at most
 twelve hours — the game's own cap, which divides a 24-hour day exactly twice. A dip between
 two runs is bridged only while the site's slack budget lasts: 10% of the week's required
-station-hours, cheapest dip first, and the price of the whole shifts is carried as
+station-hours, cheapest dip first, and the price of the whole entries is carried as
 `slack.cost` either way. Cleaning stations and security lockers get one person for every
 open hour instead of a derived need, because the game stores no model to derive one from,
 and they are filled after the serving stations so neither ever takes a person off a queue.
@@ -516,7 +531,7 @@ and they are filled after the serving stations so neither ever takes a person of
 **When the doors are open.** `open` is each weekday's opening slots as `[start, end]`
 pairs, and an empty list for a day the site stays shut — a list, because the game's own
 field is one. The hour between two slots is the doors being shut, not trade dipping, so
-nothing is ever rostered into it and it is never bridged.
+nothing is ever scheduled into it and it is never bridged.
 
 **A site that cannot be planned says so.** Saves are not always tidy, and a site whose
 schedule or stations the planner chokes on gets a row carrying `failed` and its name alone.
@@ -532,51 +547,51 @@ written down.
 
 **What the plan replaces, priced.** `cost.current` is the whole schedule's weekly wage
 bill and `cost.currentCover` the part of it the plan would really replace — the cleaning
-and security shifts alone; `current.coverFragments` counts the two-hour scraps on that same
+and security hours alone; `current.coverFragments` counts the two-hour scraps on that same
 side, as `current.fragments` does for the whole schedule. Where the plan holds serving
-shifts the two questions have the same answer, because it replaces the whole week. Where it
+hours the two questions have the same answer, because it replaces the whole week. Where it
 is cover alone they do not, and quoting the first would promise a saving made of serving
-shifts nobody is replacing.
+hours nobody is replacing.
 
 **Two tables, and indices into them.** A site's row lists its `stations` and its `people`
-once each, and every shift, hiring note and placement below points at them by position
+once each, and every entry, hiring note and placement below points at them by position
 rather than repeating the game's 24-character ids. The two long lists — the plan's `shifts`
 and the current schedule's `current.list` — share one compact row: `d` weekday, `s` station,
 `f` and `t` the hours it runs from and to, `p` the person, and `k` the kind of duty, which
-is left off an ordinary serving shift.
+is left off an ordinary serving entry.
 
-**The people.** Everyone assigned to the site, plus anyone hired and not yet posted
+**The people.** Everyone assigned to the site, plus anyone hired and not yet assigned
 anywhere; candidates are applicants, not staff. **A customer service employee is never
 put on a cleaning station**, even though the game allows it: a register standing empty
 while the person who could be on it mops costs more than a cleaner's wage, so cleaning
 that only servers could do is a hiring line, and `headcount` counts it that way too. Slots are filled most-constrained-first, so
-somebody who wants no evenings takes the shift they can work before the unconstrained staff
-take it. No shift ever breaks a demand: a slot nobody may legally work becomes a hiring line
-instead, one total per role — and a security locker nobody staffs is real new spending
-rather than another shift, which is why `headcount` says which kind each line is. A hiring
-line counts people, not hours: four uncovered twelve-hour weekend shifts are 48 hours but
+somebody who wants no evenings takes the entry they can work before the unconstrained staff
+take it. No entry ever breaks a demand: a slot nobody may legally work becomes a hiring line
+instead, one total per role — and a Security guard locker nobody staffs is real new spending
+rather than another entry, which is why `headcount` says which kind each line is. A hiring
+line counts people, not hours: four uncovered twelve-hour weekend entries are 48 hours but
 need two hires, because nobody may work two of them on the same day. It is the fewest
 people who can work those lines: the count is searched upwards from the least the hours
 and the busiest day allow, spreading the lines evenly over the hires at each count, so two
 registers open around the clock are seven people and not the eight a first-come fill
 needs, and never more than first fit in either order gave. The placer realises that count: a
-line the one-at-a-time fill leaves open is offered to somebody on the roster who is free
+line the one-at-a-time fill leaves open is offered to somebody on the schedule who is free
 that day but full for the week, if they can hand one of their own entries to somebody else
-on the roster with room for it, both moves tested against every rule, and the giver kept at
+on the schedule with room for it, both moves tested against every rule, and the giver kept at
 or above their hours floor and day count. The week with those swaps is kept only if it
 leaves nobody short of hours or days whom the week without them would not.
 
-**Everybody rostered gets a full week, because nobody works two businesses.** An employee is
-posted to one building, so the thirty hours full time asks for have to come from that site
+**Everybody scheduled gets a full week, because nobody works two businesses.** An employee is
+assigned to one building, so the thirty hours full time asks for have to come from that site
 or from nowhere. The plan therefore fills a week one person at a time — nobody new is
-started while somebody already on the roster can legally take the shift, and among those the
+started while somebody already on the schedule can legally take the entry, and among those the
 hours go to the emptiest week, so they cross thirty together instead of one of them being
 stranded under it. Levelling the hours over everyone was the old behaviour and the wrong
 answer: 168 station-hours across nine full-timers is four people on 36 to 48 hours, not nine
 on 18 and nine failed demands. Nobody is given more than 50 hours either, full time's own
 ceiling, even where the save gives them no hours demand to cap them. Whoever the
-fill still leaves short is topped up from the fullest week on the roster — usually the
-same lines with a name moved, and where whole shifts cannot do it, one shift cut in two,
+fill still leaves short is topped up from the fullest week on the schedule — usually the
+same lines with a name moved, and where whole entries cannot do it, one entry cut in two,
 which is a line more to type — as long as the donor stays at or above their own minimum
 and keeps the days their demand asks for. It is all or nothing: a week the plan cannot
 actually get to its minimum is left exactly as it stands rather than part-filled, because a
@@ -584,11 +599,11 @@ scrap of a line beside a demand that still fails is worse than the shortfall sai
 56 station-hours will not give two people thirty each however they move, so that shop stays
 at 48 and 8. What is left over is
 said rather than shared out: `headcount.spare` counts the people the site holds who are given
-no shift at all, anyone under their weekly minimum is named in `shortHours` — the ones with
+no hours at all, anyone under their weekly minimum is named in `shortHours` — the ones with
 nothing at all are the most short of the lot — and anyone whose four- or five-day week
 cannot be filled is named in `shortDays`. Those are demands the player is about to fail, and
 what to do about it depends on whether they work here at all. Somebody given nothing is a
-person to post to a site that has the hours, or to let go. Somebody on a partial week is
+person to assign to a site that has the hours, or to let go. Somebody on a partial week is
 covering hours that would go uncovered if they were moved, so the honest line is that this
 site has nothing left to give them — a longer week here is not on offer, and neither is half
 a week at each of two shops.
@@ -601,11 +616,11 @@ somebody spare is an answer the player can act on and a partial week is not. The
 hold a day count they were meeting and lose it: that is the game's *Important* spent to
 settle its *Critical*.
 
-**Somebody hired and not yet posted anywhere belongs to one building.** The bench is
+**Somebody hired and not yet assigned anywhere belongs to one building.** The bench is
 offered to each site in turn, and the first site to give a bench member hours keeps them:
 they appear in that site's `bench`, count towards that site's `headcount.have`, and are
 gone from every later site's pool. One person's week is one week across the whole save, so
-nobody is rostered at two shops in the same hour.
+nobody is scheduled at two shops in the same hour.
 
 **Who has to be added first.** `addPeople` says, per plan, who the plan counts on that does
 not work at the site yet: `assign`, the unassigned staff it draws on (`id`, `name`, `skill`,
@@ -698,13 +713,13 @@ its code at build 3680:
 - **Hours and days.** Full-time is 30 to 50 assigned hours a week, part-time 10 to 30, and
   the hours worked so far this week must not pass the top. Four or five days a week counts
   the days assigned, and the days worked so far must not pass it; free weekends means no
-  Saturday or Sunday among them. A roster changed mid-week can meet the demand while the
+  Saturday or Sunday among them. A schedule changed mid-week can meet the demand while the
   week already worked has passed its top, so where that is the only failure the finding and
   the site's Crew say so: *Full-time for 4 (critical, worked over 50 hours this week)*, or
   *4 worked over 50 hours this week* when only some of the count fail that way.
 - **No shifts in a window.** Mornings 6-10, afternoons 14-16, evenings 18-22, nights 22-4.
-  Any shift of the employee's that touches the window, on a day their building is open,
-  breaks it. No cleaning shifts means no cleaning duty on an open day.
+  Any schedule entry of the employee's that touches the window, on a day their building is
+  open, breaks it. No cleaning shifts means no cleaning duty on an open day.
 - **At the desk.** Phones, monitors, mouse pads, chairs and desks are read from the
   employee's own workstation. Several accept more than the item they are named after: an
   Office Chair demand is also met by a multipurpose, Stump Mesh or Eames chair.
@@ -714,7 +729,7 @@ its code at build 3680:
 - **Clean workplace.** The building's cleanliness at 80% or more, scored from its dirt
   spots as the game scores it.
 - **Health insurance and a happy boss.** Cover through an HR manager's plan at the
-  demanded level or better, with that manager still in post; and your own happiness at 50%
+  demanded level or better, with that manager still employed; and your own happiness at 50%
   or more. No site can settle these, so they are one company line.
 
 The item lists and priorities are not in the help text; they come from the game's job
@@ -856,7 +871,7 @@ recommendation.
 - **Products & prices** (Businesses › Products & prices). For one shop or office: *your price*
   is the price set in the game (`configuredPrice`, "Not set" where none is); the *lowest market
   price* is what the save shows for the item in the business's own neighbourhood (the market
-  reconstruction the Game guide's Prices in your save uses, your own shops included; a supplier
+  reconstruction the Wiki's Prices in your save uses, your own shops included; a supplier
   event can withhold it, and it says so); the *average sold price* is the line's takings over its
   units sold, over the last seven days, from the unrounded figures (`soldPrice` on the line; none
   where nothing sold, and none on a board built before it was carried). "Above the lowest" and "below the lowest" compare the
@@ -916,7 +931,7 @@ and dims the rest; clicking scrolls there.
   uniform locker and the uniforms; without the locker there is nowhere to set a uniform,
   so that lamp is dashed rather than struck, and the roles with none are named beside it.
   An office is never asked about bathrooms, music or uniforms, so it draws the bars alone
-  and its workstations beside them, one square a desk, filled while somebody is posted at
+  and its workstations beside them, one square a desk, filled while somebody is placed at
   it at the busiest hour.
 - **Promotion** (a shop). Foot traffic and marketing against the game's own 100 cap, split
   into what the street brings and what campaigns add, with security and how many shoppers
@@ -966,7 +981,7 @@ and dims the rest; clicking scrolls there.
   The people a plan needs added come as one step, *Add N people to fill this plan: assign ...
   (unassigned) and hire ...*, with the hours that wait on them in its tip.
 
-  A shop whose plan holds no serving shift at all still gets the block, because its
+  A shop whose plan holds no serving hours at all still gets the block, because its
   cleaning and security cover does not wait on anything — and it is exactly the shop whose
   schedule is 182 two-hour scraps, so the 14 entries that replace them are the most setup
   work the board can save anybody. What the block may say there is decided by the plan
@@ -1001,7 +1016,7 @@ and dims the rest; clicking scrolls there.
   dashed to say so.
 
 The open site is held by address rather than by position, so a live refresh that
-re-sorts the roster by profit leaves you on the same shop.
+re-sorts the portfolio by profit leaves you on the same shop.
 
 ### What a depot's page shows
 
@@ -1039,16 +1054,16 @@ attention here* list, and each finding pulses the line it is about.
 
 ### What a factory's page shows
 
-A factory's page is its machines. A machine runs only while somebody is posted to it, so
-the figure is what the lines make at the roster, with the rated output beside it.
+A factory's page is its machines. A machine runs only while somebody is placed at it, so
+the figure is what the lines make at the hours scheduled, with the rated output beside it.
 
 - **The tiles.** The machines and how many are on a named line; what is made a day
   against the rated output; what ships against what is made; and the day's costs.
 - **Lines.** One row a line: the recipe, the workstation and machine numbers, and a
-  square a machine, filled by the share of the week it is rostered. A machine running a
+  square a machine, filled by the share of the week it is staffed. A machine running a
   recipe the board cannot name keeps the picker that names it, the same one the Supply
   page carries, and wears a `?`; a machine with no recipe at all is drawn as asleep, and
-  its belt stops. A square with no fill and no mark is one whose roster could not be read
+  its belt stops. A square with no fill and no mark is one whose schedule could not be read
   — not one standing idle.
 - **Inputs.** What the machines eat at full rate, against the daily top-up set to feed
   them, what arrived and what is on hand. A top-up too small for the line says what to
@@ -1251,13 +1266,13 @@ Supply › Production turns the same log on the factories themselves:
   an hour drawing exactly 9,600 a day). Against that, what actually leaves the factory,
   what is held, and the top-up targets carrying it out. A line that makes more than leaves
   and has three days of output piled up is called out.
-- A machine runs only while a factory worker is posted to it. The roster the game keeps
-  (`scheduleDays[].workShifts`, each shift posted to one machine) gives every machine its
+- A machine runs only while a factory worker is placed at it. The schedule the game keeps
+  (`scheduleDays[].workShifts`, each entry placing someone at one machine) gives every machine its
   staffed hours out of 168, and the **Staffed** column shows the share with the hours
-  nobody is on it: *#6 off Mon 12-16, 20-24; Wed 4-8...*. A wine machine rostered 144 of
+  nobody is on it: *#6 off Mon 12-16, 20-24; Wed 4-8...*. A wine machine staffed 144 of
   168 hours draws 86% of its grapes, which is how the model was checked. Needs are still
   stated at the full 24-hour rate, since that is what the set-up is for; an input that
-  arrives short by exactly the roster's share reads as *understaffed*, not as a logistics
+  arrives short by exactly the staffed share reads as *understaffed*, not as a logistics
   fault, and every machine not staffed round the clock is one line in the alerts with the
   hours to fill and the output not made.
 - **Factory inputs**: the delta the set-up screen never shows. Each input a factory
@@ -1298,24 +1313,24 @@ worth reading: one with a change to type, or a word other than covered, made her
 reading.
 
 **Hours a factory line runs.** Each line shows, a cell an hour, the hours a day its
-machines are rostered (the week of its least-rostered machine, as hours a day, with the
+machines are staffed (the week of its least-staffed machine, as hours a day, with the
 thinnest weekday named where it is lower: *12 (Sun 0 h)*) against the hours the
 sizing needs: 24 under Full production; under Shop demand, what the shops at the end of the chain use plus
 the margin, divided by what the machines make an hour, never past 24 (a line whose output
 nothing draws is sized at 24 there too). Too few hours over the week is **short**, a change
-to type: post factory workers for the hours it needs. More than it needs stays **covered**,
+to type: schedule factory workers for the hours it needs. More than it needs stays **covered**,
 with the hours that would do as a suggestion, never a change; the tab's verdict says how
 many lines could run fewer hours and how many factory workers could go. *Ships / day* adds
 what the line tops your own sites up to (*top-up out*) and what goes to a pier (*export*).
 
 **Staffing for factory lines.** Under the factories, the same rules as a shop's Staffing:
-one person per machine per hour, 12 hours the longest shift. Each line's run for the sizing
-on screen is cut into shifts of at most 12 hours, placed around the workers' own shift
-demands. Each factory is given the fewest of its own factory workers that cover the week:
-its machine-hours a week ÷ 50, rounded up, and one more while a shift stays open (cleaners,
+one person per machine per hour, 12 hours the longest entry. Each line's run for the sizing
+on screen is cut into entries of at most 12 hours, placed around the workers' own
+scheduling demands. Each factory is given the fewest of its own factory workers that cover the week:
+its machine-hours a week ÷ 50, rounded up, and one more while an entry stays open (cleaners,
 security and unassigned staff do not count). The rest *could go*: *2 could go: the week
 needs 10*; too few reads *hire 2: the week needs 14*, with what the difference does to the
-wage bill a day. Machines on a recipe the board cannot name yet are rostered too (24 h
+wage bill a day. Machines on a recipe the board cannot name yet are staffed too (24 h
 under Full production, their hours now under Shop demand), and the card says how many it includes. *Open
 factory page* opens the factory on its lines.
 

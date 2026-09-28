@@ -290,7 +290,7 @@ class OfficeAlertTextTests(unittest.TestCase):
         rows = [a for a in alerts([firm, shop], hours) if a["group"] == "atcap"]
         [staff] = rows
         self.assertEqual(staff["site"], firm["name"])
-        self.assertIn("so the answer is more staff at the computers", staff["text"])
+        self.assertIn("the fix is more staff at the computers", staff["text"])
         self.assertFalse(any("building capacity" in a["text"] for a in rows))
 
     def test_idle_office_staff_are_workstations(self):
@@ -300,7 +300,7 @@ class OfficeAlertTextTests(unittest.TestCase):
                 "worth": 332.57}
         [line] = [a for a in alerts([firm], [idle]) if a["group"] == "idlestaff"]
         # A finding with no week of runs is read as a week of one.
-        self.assertIn("16 staff-hours a week that buy nothing: 6 workstations Mon 9-13",
+        self.assertIn("16 staffed hours a week more than its customers need: 6 workstations Mon 9-13",
                       line["text"])
 
 

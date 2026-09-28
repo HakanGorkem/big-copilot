@@ -761,7 +761,7 @@ test('the fold button makes the sidebar a rail and back, remembered on this devi
   assert.equal(await page.locator('#nav > a[data-id="staffing"]').getAttribute('data-tip'), null);
 });
 
-test('a window of 1100 px or less starts on the rail; a choice made on this device wins, and one that cannot be stored lasts the visit', async t => {
+test('a window of 1100 px or less starts on the rail and keeps it: only a folded choice holds there; one that cannot be stored lasts the visit', async t => {
   const page = await board(t, {hash: '#supply/imports', width: 1100});
   await page.locator('#viewCtl .sbv-bar').waitFor();
   let s = await shell(page);
@@ -772,13 +772,24 @@ test('a window of 1100 px or less starts on the rail; a choice made on this devi
   const [tabs, ctl] = await page.evaluate(() => ['localNav', 'viewCtl'].map(id => { const r = document.getElementById(id).getBoundingClientRect(); return {top: r.top, bottom: r.bottom, right: r.right}; }));
   assert.ok(ctl.top >= tabs.bottom - 1, JSON.stringify({tabs, ctl}));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), 'nothing scrolls sideways');
-  // Unfolded here, it stays unfolded here.
+  // Unfolded here, it is full for this visit; a reload in a narrow window
+  // (a snapped half-screen, say) starts on the rail again (review item).
   await page.locator('#sdToggle').click();
+  assert.equal((await shell(page)).rail, false);
   await page.reload();
   await page.waitForFunction(() => typeof hasData === 'function' && hasData());
   s = await shell(page);
-  assert.equal(s.rail, false);
+  assert.equal(s.rail, true);
   assert.equal(s.stored, 'full');
+  // The same stored choice is full wider than 1100 px.
+  await page.setViewportSize({width: 1300, height: 900});
+  await page.waitForFunction(() => !document.body.classList.contains('sd-rail'));
+  // A folded choice holds at every width.
+  await page.locator('#sdToggle').click();
+  await page.setViewportSize({width: 1440, height: 900});
+  await page.reload();
+  await page.waitForFunction(() => typeof hasData === 'function' && hasData());
+  assert.equal((await shell(page)).rail, true);
   // Wider than 1100 with no choice made: full.
   const wide = await board(t, {hash: '#overview', width: 1101});
   assert.equal((await shell(wide)).rail, false);
@@ -811,4 +822,42 @@ test("the sidebar's one ··· opens beside it with What's new, Preferences and 
   await page.keyboard.press('Escape');
   assert.equal(await menu.isVisible(), false);
   if (own) assert.equal(await page.evaluate(() => document.activeElement.id), 'navMore');
+});
+
+// --- user testing, 28 September 2026 ---------------------------------------------------
+
+test("every select on the board wears the board's look, with no native arrow", async t => {
+  const page = await board(t, {hash: '#supply/imports', width: 1440});
+  for (const r of ['supply/imports', 'supply/production', 'expansion/factory', 'staffing/needs']) {
+    await page.evaluate(r => openRoute(r), r);
+    await page.waitForTimeout(150);
+    const bad = await page.evaluate(() => [...document.querySelectorAll('select')]
+      .filter(s => s.getClientRects().length && getComputedStyle(s).appearance !== 'none').map(s => s.outerHTML.slice(0, 90)));
+    assert.deepEqual(bad, [], r);
+  }
+});
+
+test('the planning basis shows only on a view it changes, as the view is filtered', async t => {
+  const page = await board(t, {hash: '#supply/imports', width: 1440});
+  const views = {changes: 'secChanges', imports: 'secImports', production: 'secProduction'};
+  const seen = [];
+  for (const [view, sec] of Object.entries(views)) for (const mode of ['changes', 'all']) {
+    const got = await page.evaluate(([view, sec, mode]) => {
+      openRoute('supply/' + view);
+      if (!sbMode[view] && mode === 'all') return null;
+      if (sbMode[view]) sbMode[view] = mode;
+      const draw = {changes: drawChangesView, imports: drawImportsView, production: drawProductionView}[view];
+      draw();
+      const shown = !!document.querySelector(`#sbBasis-${view}`);
+      const read = () => sbText(document.getElementById(sec).innerHTML);
+      const here = read();
+      const there = szWith(sizing === 'dem' ? 'cap' : 'dem', () => { draw(); return read(); });
+      draw();
+      return {shown, differs: here !== there};
+    }, [view, sec, mode]);
+    if (!got) continue;
+    seen.push(`${view}/${mode}:${got.shown}`);
+    assert.equal(got.shown, got.differs, `${view}/${mode}: the switch ${got.shown ? 'shows' : 'is hidden'} and the other basis ${got.differs ? 'changes' : 'does not change'} the view`);
+  }
+  assert.ok(seen.length >= 5, seen.join(' '));
 });

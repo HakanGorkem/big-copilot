@@ -541,3 +541,17 @@ test('a remembered folder is never offered as a file to choose again', async t =
   assert.notEqual(await text(page), 'Choose the save file again');
   assert.equal(await page.evaluate(() => sessionStorage.getItem('ledger_reopen')), null);
 });
+
+test('the landing save-folder box has More help, which opens the save help under it', async t => {
+  const page = await setup(t);
+  const more = page.locator('#saveMoreHelp');
+  assert.equal(await more.isVisible(), true);
+  assert.equal(await page.locator('#help').isVisible(), false);
+  await more.click();
+  assert.equal(await page.locator('#help').evaluate(d => d.open), true);
+  assert.equal(await more.getAttribute('aria-expanded'), 'true');
+  assert.match(await page.locator('#help').innerText(), /Browse savegame folder/);
+  await more.click();
+  assert.equal(await page.locator('#help').evaluate(d => d.open), false);
+  assert.equal(await more.getAttribute('aria-expanded'), 'false');
+});

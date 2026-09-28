@@ -399,7 +399,7 @@ test('the Plan imports card counts what the checklist has to do', async () => {
       document.querySelector('#planImportsCard .soon').textContent,
       document.querySelector('#planImportsCard .soon').className,
       document.querySelector('#planImportsCard .what').textContent,
-      document.querySelector('#sbcTop .sbc-n').textContent.replace(/(\d)(of)/, '$1 $2').replace(/(\d)(recorded)/, '$1 $2')]);
+      document.querySelector('#sbcTop .sb-road').getAttribute('aria-label').replace(' changes ', ' ')]);
     const [badge, cls, what, todo] = await card();
     assert.deepEqual([badge, cls, todo], ['1 TO CHANGE', 'soon live', '0 of 1 recorded or applied']);
     assert.match(what, /^Sugar at North Depot: Smart Delivery stock 900 → 1,400\.$/);

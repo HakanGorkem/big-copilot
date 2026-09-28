@@ -146,6 +146,18 @@
       showSaveLocation(select.value);
       try { localStorage.setItem("ledger_save_platform", select.value); } catch (e) {}
     });
+    /* More help opens the rest of the save help under the box: where the game
+       shows the folder, the "upload" wording, linking, the game text. */
+    const more = $("saveMoreHelp"), help = $("help");
+    if (more && help) {
+      more.addEventListener("click", (e) => {
+        e.preventDefault();
+        help.open = !help.open;
+        more.setAttribute("aria-expanded", String(help.open));
+        if (help.open) help.scrollIntoView({block: "nearest"});
+      });
+      help.addEventListener("toggle", () => more.setAttribute("aria-expanded", String(help.open)));
+    }
   }
 
   const stored = {

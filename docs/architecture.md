@@ -692,7 +692,7 @@ four of them. Each page is a `div.page` that `showPage()` unhides.
 | `staffing` | Staffing | `pageStaffing` | one view at a time — see below |
 | `growth` | Expansion | `pageGrowth` | one view at a time — see below |
 | `map` | City map (and Expansion › Find a location) | `pageMap` | `showCityMap` / `refreshCityMaps` in `web/map.js`, which also hosts the location finder as a mode of the page — `openFinder()` switches it on with a preset, `showFinder()` without one (a replayed entry's own filters, `nxFs`, else those on screen), and `CityMapView` ranks the `premises` rows beside the map. The route decides the mode: `map` is always the plain map, `expansion/finder` the finder. The board script heads the page (`#mapHead`) and puts the finder's ways on under it (`#finderCtx`), both from `drawFinderCtx()` |
-| `wiki` | Game guide | `pageWiki` | `wikiVisit` → `showWikiRoute` in `web/wiki.js`; the entry is omitted when `showWikiRoute` is undefined |
+| `wiki` | Wiki | `pageWiki` | `wikiVisit` → `showWikiRoute` in `web/wiki.js`; the entry is omitted when `showWikiRoute` is undefined |
 
 Company's views (Businesses):
 
@@ -811,9 +811,10 @@ controls starts with its content.
 
 Folded, the sidebar is a 64 px rail (`body.sd-rail`): icons with their names as tips, the short
 clock, Update as its icon. `#localNav` then goes back into `#localRow`, before the controls.
-`sdLayout()` decides: the reader's choice on this device (`localStorage` `ba_dash_sidebar`,
-`rail` or `full`, set by `sdSet()` and kept for the visit when storage refuses), else the rail at
-1100 px and under. An inline script at the top of `.sd-app` applies the same rule before the
+`sdLayout()` decides: the rail wherever the reader folded it on this device (`localStorage`
+`ba_dash_sidebar`, `rail` or `full`, set by `sdSet()` and kept for the visit when storage
+refuses), and at 1100 px and under unless it was unfolded there during this visit; a stored
+`full` holds only in a wider window, so a window snapped to half the screen gets the rail. An inline script at the top of `.sd-app` applies the same rule before the
 first paint. On a phone (560 px and under) the sidebar is a drawer (`body.sd-open`, `sdDrawer()`)
 opened by the bottom bar's Map & more, and the views sit at the top of the page as on the rail.
 `nxTopLine()` is what stays covered at the top of the window as the page scrolls: the update
@@ -979,12 +980,12 @@ all three.
 | Anchor | What goes in it | Test that covers it |
 | --- | --- | --- |
 | The markup: `<div class="page" id="page…">` for a page, or `<section class="sec rv" id="sec…" data-sub="…">` inside its page for a view; a page with views also gets its `<nav class="seg" id="…Nav">` | The host element | the navigation tests, indirectly |
-| `const PAGES = [` (board script) | *Only for a page*: `{id, label, host, newFeature?}` | `tests/navigation.test.cjs`, "the sidebar is Overview, Businesses, Supply, Staffing, Expansion, then City map and Game guide" |
+| `const PAGES = [` (board script) | *Only for a page*: `{id, label, host, newFeature?}` | `tests/navigation.test.cjs`, "the sidebar is Overview, Businesses, Supply, Staffing, Expansion, then City map and Wiki" |
 | `const ICON = {` (board script) | *Only for a page*: its nav icon, keyed by page id | none |
 | `const SUBS = {` (board script) | *Only for a view*: its `[id, label, section]` item; a new page with views needs the whole entry | `tests/navigation.test.cjs`, "Businesses carries Results, Products & prices, Standards and Milestones; Staffing its three views" and "every view in SUBS has its SEC_PAGE row and a PAGE_DRAWS tag" |
 | `const SEC_PAGE = {` (board script) | `secX: [page, view]` for every section. Without it `reveal()`, the sub-nav and `pageFromHash()` fail | `tests/navigation.test.cjs`, "every view in SUBS has its SEC_PAGE row …" and "every Company section deep link opens the view that holds it"; `tests/alert_kinds.test.cjs`, "the supply kinds land on the Supply view of their route" |
 | `const PAGE_DRAWS = [` (board script) | `["page/view", () => drawX()]`, tagged with every view whose markup it writes | `tests/calm_refresh.test.cjs`, "a refresh on Today draws Today …"; `tests/navigation.test.cjs`, "every PAGE_DRAWS tag names a real page or view" and the SUBS test above |
-| `const ROUTES = {`, `const AREAS = [`, `routeViewLabel(` (board script) | *For a route*: `{host: [page, view?], scopes?, enter?, after?, into?}`, its view id in its area's `views`, and its words; `HOST_ROUTES` names it when a host view shows it by default, and `docs/ui-route-migration.md` lists it | `tests/shell_routes.test.cjs`, "every finding kind names a real route, and every route is a view of its area"; `tests/navigation.test.cjs`, "the masthead is Overview, Businesses, Supply, Staffing, Expansion, then City map and Game guide" |
+| `const ROUTES = {`, `const AREAS = [`, `routeViewLabel(` (board script) | *For a route*: `{host: [page, view?], scopes?, enter?, after?, into?}`, its view id in its area's `views`, and its words; `HOST_ROUTES` names it when a host view shows it by default, and `docs/ui-route-migration.md` lists it | `tests/shell_routes.test.cjs`, "every finding kind names a real route, and every route is a view of its area"; `tests/navigation.test.cjs`, "the sidebar is Overview, Businesses, Supply, Staffing, Expansion, then City map and Wiki" |
 | `const ROUTE_ALIASES =` (board script) | *Only when* an old page or view name becomes a route | `tests/navigation.test.cjs`, "the old #payroll hash, #secPayroll and a remembered Payroll open Staffing › Payroll" and "the #staff hash, #secStaff and a remembered Staff open Staffing › Staff needs" |
 | `const SS_VIEWS = [` (board script) | `{id, t, p, ic, syn, go}`, so search can open it | `tests/search.test.cjs`, "the index holds every group …" |
 | `function showPage(` (board script) | *Only if* the page loads or draws when shown, as the Map does | none |
@@ -1046,7 +1047,7 @@ Then `python build_web.py`.
 
 | Anchor | What goes in it | Test that covers it |
 | --- | --- | --- |
-| `<aside class="news-strip" id="newsStrip" data-news-id="…">` in `BANNER` in `build_web.py` | A new `data-news-id`, so it shows again to anyone who dismissed the last one; the `.news-copy` text; the `#newsLink` href, which is written out rather than taken from `WORKSHOP_URL` | `tests/news.test.cjs`, "the strip shows on first load with its text, Workshop link and named Dismiss" |
+| `<aside class="news-strip" id="newsStrip" data-news-id="…">` in `BANNER` in `build_web.py` | A new `data-news-id`, so it shows again to anyone who dismissed the last one; the `.news-copy` text; the `#newsLink` href, which is written out rather than taken from a URL constant | `tests/news.test.cjs`, "the strip shows on first load with its text, translation link and named Dismiss" |
 | `.news-strip{` in `BANNER`'s `<style>` | *Only for* a layout change | `tests/news.test.cjs`, the "stack without overlap" tests |
 | `/* One-time news strip (#newsStrip in build_web.py)` in `web/update.js` | Nothing; it shows and dismisses the strip, remembered under `bc_news_dismissed` | `tests/news.test.cjs`, "Dismiss hides the strip …" |
 

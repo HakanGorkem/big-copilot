@@ -488,7 +488,7 @@ const wikiWhy = text => text
   ? `<span class="why" data-tip="${attr(text)}" tabindex="0"><i>?</i></span>` : "";
 const WIKI_CHEV = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>';
 /* The trail's first step, the Wiki itself. */
-const wikiCrumbHome = () => tt("wiki.crumb.home", "Game guide");
+const wikiCrumbHome = () => tt("wiki.crumb.home2", "Wiki");
 function wikiCrumb(trail){
   return `<nav class="wk-crumb" aria-label="${attr(tt("wiki.crumb.aria", "Breadcrumb"))}">${trail.map((step, i) =>
     (i ? WIKI_CHEV : "") + (step.href

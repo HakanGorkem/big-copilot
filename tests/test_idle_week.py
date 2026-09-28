@@ -97,8 +97,8 @@ class IdleWeekTests(unittest.TestCase):
         self.assertEqual(row["worth"], money(72 * 105.0 / 7))
         self.assertEqual(
             row["text"],
-            "Pump runs 72 staff-hours a week that buy nothing: "
-            "3 fitness planning boards Mon-Wed 8-20 for 10 customers an hour")
+            "Pump has 72 staffed hours a week more than its customers need: "
+            "3 fitness planning boards Mon-Wed 8-20, at 10 customers an hour")
 
     def test_the_id_does_not_move_with_the_days(self):
         """A silenced line stays silenced when another weekday joins it."""
@@ -125,9 +125,9 @@ class IdleWeekTests(unittest.TestCase):
         # itself end "and 5 scattered hours".
         self.assertEqual(
             row["text"],
-            "Pump runs 48 staff-hours a week that buy nothing: "
-            "2 fitness planning boards Mon 8-20; 4 fitness planning boards Tue 8-20 "
-            "for 10 customers an hour")
+            "Pump has 48 staffed hours a week more than its customers need: "
+            "2 fitness planning boards Mon 8-20; 4 fitness planning boards Tue 8-20, "
+            "at 10 customers an hour")
 
     def test_an_unpriced_role_does_not_hide_a_priced_one(self):
         """The biggest run belongs to a role with no wage; the priced one still shows."""

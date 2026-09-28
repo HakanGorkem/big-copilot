@@ -310,7 +310,7 @@ class GymGridTests(unittest.TestCase):
                              (STREET, 3), {(STREET, 3): {"TotalSales": 1000}}, [], {}, 3)
         [line] = [a for a in _alerts([business], EMPTY_SUPPLY, [], [], [], [idle], [], 3, 0.0)
                   ["lines"] if a["group"] == "idlestaff"]
-        self.assertIn("Pump runs 24 staff-hours a week that buy nothing: "
+        self.assertIn("Pump has 24 staffed hours a week more than its customers need: "
                       "3 fitness planning boards Mon 8-20", plain(line["text"]))
 
     def test_one_trainer_then_two_give_two_findings_with_two_ids(self):
