@@ -987,7 +987,7 @@
     }
     lastCheck = Date.now();
     armWatch();  // polling /health is also what keeps the mod attached
-    if (built && look && watchTimer) lookAgain(gen);
+    if (built && look && watchTimer) lookAgain();
   }
 
   // After a build from the link the board took, while the player watches the
@@ -1002,7 +1002,7 @@
   // watching while its /health was on the way. `lookRun` is the latest look's
   // promise, kept for the tests to await; nothing else reads it.
   let lookRun = null;
-  function lookAgain(gen) {
+  function lookAgain() {
     lookRun = (async () => {
       // A failure is the page's own mistake, never the game's: said in the
       // console, and never an unhandled rejection.
