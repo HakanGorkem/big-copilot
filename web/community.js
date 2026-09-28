@@ -169,8 +169,9 @@
       // heartbeat normally replaces it long before that.
       staleTimer = setTimeout(() => { staleTimer = null; paintOnline(); }, at + STALE_MS - Date.now() + 1000);
     } else {
+      // No count to show: the line says nothing (declutter S6).
       live.classList.add("community-unavailable");
-      em.textContent = tt("comm.online.none", "Online count unavailable");
+      em.textContent = "";
       live.removeAttribute("title");
     }
   }

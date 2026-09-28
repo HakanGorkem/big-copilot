@@ -27,9 +27,11 @@ const WIDTHS = [360, 768, 1280, 1500, 1501, 1920];
    A conversion pull request adds its row; from then on English left on
    screen there fails the sweep. */
 const CONVERTED = {
-  /* The masthead's own lines: its live dot's word is community.js's. */
-  nav: '#nav, #companyNav, #supplyNav, #growthNav, #clock > b, #clock > small:not(.fv-diffline), #clock .flag, '
-    + '#clock .fv-diff, #ssField, .ss-ask, #ssAskMini',
+  /* The masthead's own lines: its live dot's word is community.js's. The
+     shell's places, references, the area's row, the arrival strip's way back
+     and the phone's bar are the redesign's (docs/ui-route-migration.md). */
+  nav: '#nav, #navRefs, #localNav, #arrive .nx-back, #phoneNav, #companyNav, #supplyNav, #growthNav, #staffingNav, #clock > b, '
+    + '#clock > small:not(.fv-diffline), #clock .flag, #clock .fv-diff, #ssField',
   foot: '.sitefoot',
   /* A finding's headline and its detail, on Today and in the site panel. */
   f: '.find .what, .find .more, .sp-find .what, .sp-find .more',
@@ -45,12 +47,13 @@ const CONVERTED = {
   map: '#cityMapPage .map-head .layers, #cityMapPage .fswitch, #cityMapPage .filters .lab, #cityMapPage .fchip.cat, '
     + '#cityMapPage .fchip.show, #cityMapPage .fchip.num, #cityMapPage .fnew, #cityMapPage .fhead, #cityMapPage .places .empty, '
     + '#cityMapPage .site .nums, #cityMapPage .site .go2',
-  /* Today's own words: the tiles, the list's head and count lines, each
-     finding's figure, the silenced line and the Next moves cards. The
-     finding sentences are Python's (f); the kinds panel is left out, as its
-     rows are the kinds' names (nav) and it redraws each time it opens, and so
-     is Ask the board under Next moves (the search palette's). */
-  today: '#kpis, #alertHead, #alerts .amt, #alertMinor .td-count, #silenced, #secMoves h2, #secMoves .moves',
+  /* The Overview's own words: the figures, the list's head and count lines,
+     its groups, each finding's figure, Details, action and the pane's labels,
+     "Show N more", the silenced line and All tools. The finding sentences are
+     Python's (f); the kinds panel is left out, as its rows are the kinds'
+     names (nav) and it redraws each time it opens. */
+  today: '#kpis, #alertHead, #alerts .amt, #alerts .ov-band, #alerts .ov-det, #alerts .ov-act, #alerts .ov-x .lab, '
+    + '#ovMore, #ovNews, #alertMinor .td-count, #silenced, #secMoves',
   /* Supply's own words: the switches, the checklist strip's chrome, each
      tab's verdict, sizing row, headers, status words, reasons, counts, units
      and notes, the factory staffing block, and the diagram's legend and
@@ -72,7 +75,13 @@ const CONVERTED = {
   co: '#secDaily .sechead, #dailyBox .chartbox, #rhythmSites thead, #rhythmSites td:not(.l), #rhythmSites td.l + td.l, '
     + '#secPortfolio .sechead, #portfolio thead, #portfolio tfoot, #portfolio tr.chain, #portfolio tr.kid td:not(.l), '
     + '#secProducts .sechead, #secProducts thead, #secProducts td:not(.l), #secProducts > p, '
-    + '#secPayroll .sechead, #secPayroll > p, #secGoals',
+    + '#secPayroll .sechead, #secPayroll > p, #secGoals, '
+    /* The redesign's adapters: Standards' subjects, a shop's prices, and the
+       Staffing lists' heads, states and buttons (the names in them are left
+       out). */
+    + '#secStandards .sechead, #secStandards .nx-card b > span, #secPrices .sechead, #secPrices .nx-part, #secPrices [data-price-guide] small, '
+    + '#secSchedules .sechead, #secSchedules .st, #secSchedules .nx-part, #secSchedules .nx-btn, '
+    + '#secNeeds .sechead, #secNeeds .nx-part, #secNeeds .nx-btn, #secNeeds p.quiet',
   /* The Wiki's own words: the home view's search row, legend, topic shelf
      heading and states; a guide's section headings, checklist cards and
      captions (its labels are guideUi's, keyed wiki.ui.*), tiles, card and lane
@@ -335,6 +344,11 @@ const LINK_HEALTH = {schemaVersion: 1, stamp: 's1', busy: false, company: 'Costy
   day: 12, hour: 9, minute: 5, refreshedAt: '2026-09-25T09:05:00Z', writes: []};
 async function shell(t, {ui = '', width = 1280, remembered = false, permission = 'granted', held = false} = {}){
   const context = await browser.newContext({viewport: {width, height: 900}, locale: 'en-US', reducedMotion: 'reduce'});
+  /* The game link is 127.0.0.1 and this page is not: a browser with Local
+     Network Access (Edge, newer Chrome) holds the request for a prompt nobody
+     answers. The player grants it once; here it is granted up front. A
+     browser without the permission ignores it. */
+  await context.grantPermissions(['local-network-access']).catch(() => {});
   t.after(() => context.close());
   await context.addInitScript(({remembered, permission, held}) => {
     // `held`: the first read of a save waits for readSave(fail), which lets
@@ -493,10 +507,11 @@ test('a change of language writes the strip\'s file line again, for a save and f
   const {page, errors} = await shell(t, {remembered: true});
   const meta = () => page.locator('#srcMeta').textContent();
   const folder = await meta();
-  assert.match(folder, / · autosave from .* · built in \d+\.\d s · watching$/);
+  // Watching is the menu's Watch button's to say, not the strip's (declutter S1).
+  assert.match(folder, / · autosave from .* · built in \d+\.\d s$/);
   await page.evaluate(table => ttSetTable('de', table), TABLE);
   const pseudo = await meta();
-  assert.match(pseudo, /\[áútóšávé fróm .*\] · \[búílt íñ \d+,\d š·+\] · \[wátçhíñg·+\]$/, pseudo);
+  assert.match(pseudo, /\[áútóšávé fróm .*\] · \[búílt íñ \d+,\d š·+\]$/, pseudo);
   await page.evaluate(() => ttSetTable('en', null));
   assert.equal(await meta(), folder);
   // Linked to the game: the line names the game's day and the link.
@@ -630,9 +645,10 @@ test('the Growth page fits in the pseudo-locale, with a market and a plan', asyn
       const norm = s => s.replace(/[\d\s.,:;$%+\-–—×·/()!?%'"‹›…#]+/g, '');
       const where = `${width}px growth ${view}`;
       /* The page's own sideways scroll is the sweep's above; here only what
-         the Growth page itself pushes past the window counts. */
+         the Growth page itself pushes past the window counts. A table that
+         scrolls inside its own box (.scrollx, Peter's testing A5) pushes nothing. */
       const past = p => p.evaluate(() => [...document.querySelectorAll('#pageGrowth *')]
-        .filter(e => e.getClientRects().length && e.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
+        .filter(e => e.getClientRects().length && !e.closest('.scrollx') && e.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
         .map(e => `${e.tagName.toLowerCase()}.${String(e.className).split(' ')[0]}`));
       const wasPast = await past(en.page);
       assert.deepEqual((await past(xx.page)).filter(e => !wasPast.includes(e)), [], `${where}: the page scrolls sideways`);

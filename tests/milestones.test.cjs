@@ -14,7 +14,7 @@ const board = (goals = {typesRun: 1, typesTotal: 3}) => {
   const section = {innerHTML: ''};
   const context = vm.createContext({
     $: id => (assert.equal(id, 'secGoals'), section),
-    sechead: (title, o) => `<head why="${o.why ?? ''}">${o.quiet}</head>`,
+    sechead: (title, o = {}) => `<head why="${o.why ?? ''}">${title}${o.quiet ? ` · ${o.quiet}` : ''}</head>`,
     icon: () => '',
     compact: n => String(n),
     D: {goals, meta: {}},
@@ -34,15 +34,23 @@ const pop = h => board().context.fvDiffPopHtml(h);
 const rule = (name, value, normal, lean, unit = '×') =>
   ({name, value, normal, unit, lean, what: 'what it does'});
 
-test('Milestones is the checklist and its totals, with the buildings a total, not a goal', () => {
+test('Milestones is the career goals and the totals, with the buildings a total, not a goal', () => {
   const html = draw({typesRun: 5, typesTotal: 24, buildingsOwned: 0, buildingsTotal: 885, rivalsDefeated: 0,
     rivalsTotal: 4, goalsDone: 44, diplomas: 5, diplomasTotal: 5, goodsProduced: 321, taxesPaid: 0});
-  assert.match(html, /<head why="">career totals<\/head>/);
+  // The heading alone: no line under it saying what the goals are.
+  assert.match(html, /<head why="">Career goals<\/head>/);
+  assert.doesNotMatch(html, /Taxes paid<\/span><span class="v">\$0<\/span><span class="sub">/);
   assert.doesNotMatch(html, /Every building owned|885/);
-  // tt() writes the tax as the board's compact() does ("$0"), not as this
-  // sandbox's stub.
-  assert.match(html, /321 goods produced · \$0 in tax paid · 0 buildings owned<\/p>/);
-  assert.match(draw({buildingsOwned: 1}), /· 1 building owned</);
+  // Each goal with a total has its bar; the complete one is ticked; personal
+  // goals have no total and no bar.
+  assert.match(html, /Every business type run<\/span><span class="bz-mbar" role="img" aria-label="5 of 24"><i style="--v:20\.8%"><\/i><\/span><span class="c">5 \/ 24<\/span>/);
+  assert.match(html, /class="mile bz-mile done"><span class="box"><\/span><span class="bz-ml">Diplomas earned/);
+  assert.match(html, /Personal goals done<\/span><span class="bz-mbar none"><\/span><span class="c">44 done/);
+  // The running totals, as tiles.
+  assert.match(html, /Goods produced<\/span><span class="v">321<\/span>/);
+  assert.match(html, /Taxes paid<\/span><span class="v">\$0<\/span>/);
+  assert.match(html, /Buildings owned<\/span><span class="v">0<\/span>/);
+  assert.match(draw({buildingsOwned: 1}), /Buildings owned<\/span><span class="v">1<\/span>/);
   // The difficulty is no longer here: no chips, no "playing on".
   assert.doesNotMatch(html, /class="rules"|playing on/);
 });

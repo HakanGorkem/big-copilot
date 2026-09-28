@@ -574,8 +574,8 @@ test('a Japanese goods-flow node and a German heat-grid header stay inside their
   node.stock = 0;
   await boardOn(page, payload);
   await page.evaluate(async table => { gnTables.set('ja', Promise.resolve(table)); await setGameNames('ja'); }, ja);
-  // The goods-flow diagram is a view of Supply's tabs: the depot's tab, drawn as the diagram.
-  await page.evaluate(() => { showPage('supply'); sbViewOn = 'diagram'; showSub('supply', 'warehouses'); drawSupplyTab('warehouses'); wireAll(); });
+  // The goods-flow diagram is Supply's Goods flow view.
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'flow'); drawFlowView(); drawFlow(); wireAll(); });
   // On screen, so the widths below are measured and not a hidden svg's zeros.
   assert.ok(await page.evaluate(() => document.querySelector('#flow').getBoundingClientRect().width > 0));
   const boxes = await page.$$eval('#flow .node, .flow .node', nodes => nodes.map(g => {
@@ -635,16 +635,18 @@ test('no game-name token reaches the page, in English or in German', async t => 
       showPage(p); await wait(); look(p);
       for(const [view] of (SUBS[p] || {items: []}).items){ showSub(p, view); await wait(); look(`${p}/${view}`); }
     }
-    /* Supply's tabs, each in both lists, as the diagram, in both sizings. */
+    /* Supply's views, each in both lists, in both planning bases. */
     showPage('supply');
-    for(const mode of ['cap', 'dem']) for(const which of ['changes', 'all']) for(const view of ['list', 'diagram']){
-      sizing = mode; sbWhich = which; sbViewOn = view;
-      for(const [tab] of SUBS.supply.items){
-        showSub('supply', tab); drawSupplyTab(tab); wireAll(); await wait();
-        look(`supply/${tab} ${mode} ${which} ${view}`);
+    for(const mode of ['cap', 'dem']) for(const which of ['changes', 'all']){
+      sizing = mode; sbWhich = which;
+      for(const [view] of SUBS.supply.items){
+        if(sbMode[view]) sbMode[view] = which;
+        showSub('supply', view); drawSupplyView(view); if(view === 'flow') drawFlow(); wireAll(); await wait();
+        look(`supply/${view} ${mode} ${which}`);
       }
     }
-    sizing = 'cap'; sbWhich = 'changes'; sbViewOn = 'list';
+    sizing = 'cap'; sbWhich = 'changes';
+    for(const v of Object.keys(sbMode)) sbMode[v] = 'changes';
     for(const b of D.businesses){ openSite(b.key); await wait(); look(`site ${b.name}`); }
     showPage('today'); await wait();
     const index = ssBuild();

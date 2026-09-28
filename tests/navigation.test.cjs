@@ -17,7 +17,8 @@ function board({saved = {}, data = {}} = {}) {
   const elements = new Map();
   let chartDraws = 0, wikiVisits = 0, sitePanels = 0;
   const $ = id => {
-    if (!elements.has(id)) elements.set(id, {hidden:false, innerHTML:'', addEventListener(type, fn){this[type] = fn;}});
+    if (!elements.has(id)) elements.set(id, {hidden:false, innerHTML:'', attributes:{}, addEventListener(type, fn){this[type] = fn;},
+      setAttribute(name, value){this.attributes[name] = String(value);}, removeAttribute(name){delete this.attributes[name];}});
     return elements.get(id);
   };
   const location = {hash:'#today'};
@@ -31,7 +32,7 @@ function board({saved = {}, data = {}} = {}) {
       },
       back(){move(-1);},
     },
-    localStorage:{getItem(key){return saved[key] ?? null;}, setItem(){}},
+    localStorage:{getItem(key){return saved[key] ?? null;}, setItem(key, value){saved[key] = String(value);}},
     document:{querySelectorAll(){return [];}, body:{classList:{add(){}, remove(){}}},
               addEventListener(type, fn, capture){if (capture) captured[type] = fn;}},
     window:{scrollY:0, addEventListener(type, fn){listeners[type] = fn;}},
@@ -72,6 +73,10 @@ function board({saved = {}, data = {}} = {}) {
     shell(){ load(); context.bootShell(); },
     move,
     /* A plain or modified click caught by the board's capture listener. */
+    /* A click on a place in the masthead: its link is what closest() finds. */
+    nav(id, ref = 'nav'){
+      $(ref).click({button: 0, preventDefault(){}, target:{closest: sel => sel.includes('a[data-id]') ? {dataset:{id}} : null}});
+    },
     click(href, mods = {}){
       const e = {button: 0, ...mods, prevented: false, stopped: false,
         target:{closest: sel => sel.includes('#site/') && href.startsWith('#site/') ? {getAttribute: () => href, closest: () => null} : null},
@@ -86,49 +91,76 @@ function board({saved = {}, data = {}} = {}) {
   };
 }
 
-test('the top row is Today, Company, Supply, Growth, Map, Wiki', () => {
+/* The redesign's sidebar (docs/ui-route-migration.md): five destinations,
+   then the two references, then the foot's ···. The pages behind them are
+   hosts, which keep their ids. */
+test('the sidebar is Overview, Businesses, Supply, Staffing, Expansion, then City map and Wiki', () => {
   const b = board();
-  assert.deepEqual([...vm.runInContext('PAGES.map(p => p.label)', b.context)],
-    ['Today', 'Company', 'Supply', 'Growth', 'Map', 'Wiki']);
+  assert.deepEqual([...vm.runInContext('AREAS.map(a => a.label)', b.context)],
+    ['Overview', 'Businesses', 'Supply', 'Staffing', 'Expansion']);
+  assert.deepEqual([...vm.runInContext('REFS.map(r => r.label)', b.context)], ['City map', 'Wiki']);
   assert.ok(!vm.runInContext('PAGES.some(p => p.id === "results")', b.context),
-    'Results is a view inside Company now, not a page of its own');
-  assert.match(b.$('nav').innerHTML, /data-id="wiki"/);
-  assert.match(b.$('nav').innerHTML, /data-id="company"/);
+    'Results is a view inside Businesses, not a page of its own');
+  for (const id of ['overview', 'businesses', 'supply', 'staffing', 'expansion'])
+    assert.match(b.$('nav').innerHTML, new RegExp(`data-id="${id}"`));
+  assert.match(b.$('navRefs').innerHTML, /data-id="map"/);
+  assert.match(b.$('navRefs').innerHTML, /data-id="wiki"/);
+  // The utilities are the foot's ···, after the references, inside the sidebar.
+  const side = between(source, '<nav class="sd" id="mast"', '<div class="wrap">');
+  assert.ok(side.indexOf('id="navRefs"') < side.indexOf('class="sd-foot"')
+    && side.indexOf('class="sd-foot"') < side.indexOf('id="navMore"'), 'the utilities menu sits in the foot, after the references');
+  assert.doesNotMatch(b.$('navRefs').innerHTML, /navMore/);
+  assert.match(b.$('phoneNav').innerHTML, /data-id="staffing"[\s\S]*id="phoneMore"/, 'a phone has all five places and Map & more');
 });
 
-test('Company carries Results, Products, Staff and Milestones', () => {
+test('Businesses carries Results, Products & prices, Standards and Milestones; Staffing its three views', () => {
   const b = board();
   const items = vm.runInContext('SUBS.company.items', b.context);
-  assert.deepEqual([...items].map(([, label]) => label), ['Results', 'Products', 'Staff', 'Milestones']);
-  assert.deepEqual([...items].map(([, , anchor]) => anchor), ['secDaily', 'secProducts', 'secStaff', 'secGoals']);
+  assert.deepEqual([...items].map(([, label]) => label), ['Results', 'Products & prices', 'Standards', 'Milestones']);
+  assert.deepEqual([...items].map(([, , anchor]) => anchor), ['secDaily', 'secProducts', 'secStandards', 'secGoals']);
   assert.equal(vm.runInContext('SUBS.company.start', b.context), 'results');
-  b.context.showSub('company', 'staff');
-  assert.match(b.$('companyNav').innerHTML, /href="#secStaff" data-id="staff" class="on"/);
+  const staffing = vm.runInContext('SUBS.staffing.items', b.context);
+  assert.deepEqual([...staffing].map(([, label]) => label), ['Schedules', 'Staff needs', 'Payroll']);
+  assert.deepEqual([...staffing].map(([, , anchor]) => anchor), ['secSchedules', 'secStaff', 'secPayroll'],
+    'Staff needs is anchored on the hiring page (issue #89)');
+  b.context.showSub('staffing', 'payroll');
+  assert.match(b.$('staffingNav').innerHTML, /href="#secPayroll" data-id="payroll" class="on"/);
 });
 
-/* Payroll became Staff: an old hash, an old section link and a view
-   remembered as Payroll all open Staff. */
-test('the old #payroll hash, #secPayroll and a remembered Payroll open Staff', () => {
+/* Main folded Payroll into its Company › Staff page (issue #89); the redesign
+   keeps both as Staffing views. An old hash, an old section link and a
+   remembered view each open the one it named. */
+test('the old #payroll hash, #secPayroll and a remembered Payroll open Staffing › Payroll', () => {
   for (const hash of ['#payroll', '#secPayroll']) {
-    const b = board();
+    const b = board({data: sites()});
     b.context.location.hash = hash;
     b.boot();
-    assert.equal(b.page(), 'company', hash);
-    assert.equal(b.sub('company'), 'staff', hash);
+    assert.equal(b.page(), 'staffing', hash);
+    assert.equal(b.sub('staffing'), 'payroll', hash);
+    assert.equal(vm.runInContext('route', b.context), 'staffing/payroll', hash);
   }
-  const b = board({saved: {ba_dash_company: 'payroll'}});
-  assert.equal(b.sub('company'), 'staff');
+  const saved = {ba_dash_company: 'payroll', ba_dash_page: 'company'};
+  const b = board({saved});
+  assert.equal(b.sub('company'), 'results', 'Company has no Payroll view any more');
+  assert.equal(saved.ba_dash_staffing, 'payroll', 'the remembered view moves to Staffing');
+  assert.equal(saved.ba_dash_route, 'staffing/payroll', 'and a board opened with no hash opens it');
 });
 
-/* Staff is a Company view, so its own name as a hash opens it rather than
-   leaving the board on Today. */
-test('the #staff hash opens Company on Staff', () => {
-  const b = board();
-  b.context.location.hash = '#staff';
-  b.boot();
-  assert.equal(b.page(), 'company');
-  assert.equal(b.sub('company'), 'staff');
-  assert.equal(vm.runInContext('pageFromHash("staff")', b.context), 'company');
+/* Staff was a Company view on main: its name, its section and a remembered
+   Staff open Staffing › Staff needs, whose second half is that page. */
+test('the #staff hash, #secStaff and a remembered Staff open Staffing › Staff needs', () => {
+  for (const hash of ['#staff', '#secStaff']) {
+    const b = board({data: sites()});
+    b.context.location.hash = hash;
+    b.boot();
+    assert.equal(b.page(), 'staffing', hash);
+    assert.equal(b.sub('staffing'), 'needs', hash);
+    assert.equal(vm.runInContext('route', b.context), 'staffing/needs', hash);
+  }
+  assert.equal(vm.runInContext('pageFromHash("staff")', board().context), 'staffing');
+  const saved = {ba_dash_company: 'staff'};
+  board({saved});
+  assert.equal(saved.ba_dash_staffing, 'needs');
 });
 
 test('the site panel decides its own visibility when a Company view arrives', () => {
@@ -151,13 +183,14 @@ test('a Today finding opens Company on Results, and Back returns to Today', () =
 });
 
 test('every Company section deep link opens the view that holds it', () => {
-  for (const [hash, view] of [['#secDaily','results'], ['#secPortfolio','results'],
-                              ['#secProducts','products'], ['#secStaff','staff'], ['#secPayroll','staff'], ['#secGoals','milestones']]) {
+  for (const [hash, pageId, view] of [['#secDaily','company','results'], ['#secPortfolio','company','results'],
+                              ['#secProducts','company','products'], ['#secStaff','staffing','needs'],
+                              ['#secPayroll','staffing','payroll'], ['#secGoals','company','milestones']]) {
     const b = board();
     b.context.location.hash = hash;
     b.boot();
-    assert.equal(b.page(), 'company', hash);
-    assert.equal(b.sub('company'), view, hash);
+    assert.equal(b.page(), pageId, hash);
+    assert.equal(b.sub(pageId), view, hash);
     assert.equal(b.context.location.hash, hash, 'the deep link survives the normalising replace');
   }
 });
@@ -193,7 +226,7 @@ test('the old #results hash still opens Company on its Results view', () => {
 /* The view Company was last left on is remembered, so an old link has to say
    which view it means — not just which page. */
 test('#results opens Results even when Company was last left on another view', () => {
-  for (const saved of ['products', 'staff', 'milestones']) {
+  for (const saved of ['products', 'standards', 'milestones']) {
     const b = board({saved: {ba_dash_company: saved}});
     assert.equal(b.sub('company'), saved, 'the remembered view is where Company would open');
     b.context.location.hash = '#results';
@@ -227,36 +260,37 @@ test('the Results chart is drawn once its container is on screen, and only then'
   assert.ok(b.charts() > after, 'coming back redraws the chart that measured nothing while hidden');
 });
 
-test('Supply is three tabs, one per object', () => {
+test('Supply is five task views; shops, warehouses and factories are their scope', () => {
   const b = board();
   const items = vm.runInContext('SUBS.supply.items', b.context);
   assert.deepEqual([...items].map(([k, label, anchor]) => [k, label, anchor]),
-    [['shops', 'Shops', 'secShops'], ['warehouses', 'Warehouses', 'secWarehouses'], ['factories', 'Factories', 'secFactories']]);
-  b.context.showSub('supply', 'factories');
-  assert.match(b.$('supplyNav').innerHTML, /href="#secFactories" data-id="factories" class="on">/);
-  assert.match(b.$('supplyNav').innerHTML, /<span>Factories<\/span>/);
+    [['changes', 'Changes', 'secChanges'], ['imports', 'Imports', 'secImports'], ['deliveries', 'Deliveries', 'secDeliveries'],
+     ['production', 'Production', 'secProduction'], ['flow', 'Goods flow', 'secFlow']]);
+  b.context.showSub('supply', 'production');
+  assert.match(b.$('supplyNav').innerHTML, /href="#secProduction" data-id="production" class="on">/);
 });
 
-test('a Supply view remembered from before R13 opens the tab that took its place', () => {
-  const remembered = saved => {
-    const b = board({saved});
-    return {sub: b.sub('supply'), auto: vm.runInContext('supplyAuto', b.context)};
-  };
-  assert.deepEqual(remembered({ba_dash_supply: 'checks'}), {sub: 'shops', auto: false});
-  // Goods flow is Warehouses, with the diagram on (remembered under ba_dash_supply_view).
-  assert.deepEqual(remembered({ba_dash_supply: 'map'}), {sub: 'warehouses', auto: false});
-  // Orders, or no view at all: the tab with the most to type, picked when the checklist draws.
-  assert.equal(remembered({ba_dash_supply: 'orders'}).auto, true);
-  assert.equal(remembered({}).auto, true);
-  assert.deepEqual(remembered({ba_dash_supply: 'factories'}), {sub: 'factories', auto: false});
+test('a Supply view remembered from before the redesign opens the view that took its place', () => {
+  const remembered = saved => { const b = board({saved}); return {sub: b.sub('supply'), kept: saved.ba_dash_supply}; };
+  // The R13 tabs: Shops is Deliveries, Warehouses Imports, Factories Production.
+  assert.deepEqual(remembered({ba_dash_supply: 'shops'}), {sub: 'deliveries', kept: 'deliveries'});
+  assert.deepEqual(remembered({ba_dash_supply: 'warehouses'}), {sub: 'imports', kept: 'imports'});
+  assert.deepEqual(remembered({ba_dash_supply: 'factories'}), {sub: 'production', kept: 'production'});
+  // A tab left with the diagram on is Goods flow.
+  assert.equal(remembered({ba_dash_supply: 'warehouses', ba_dash_supply_view: 'diagram'}).sub, 'flow');
+  // Before R13: Checks, Goods flow and Orders.
+  assert.equal(remembered({ba_dash_supply: 'checks'}).sub, 'deliveries');
+  assert.equal(remembered({ba_dash_supply: 'map'}).sub, 'flow');
+  assert.equal(remembered({ba_dash_supply: 'orders'}).sub, 'changes');
+  // Nothing remembered: Changes, the area's first view.
+  assert.equal(remembered({}).sub, 'changes');
 });
 
 test('top menu preserves the sequence through Back and Forward without duplicates', () => {
   const b = board();
-  for (const id of ['company', 'supply', 'supply']) {
-    b.$('nav').click({preventDefault(){}, target:{closest(){return {dataset:{id}};}}});
-  }
-  assert.deepEqual(b.entries, ['#today', '#company', '#supply']);
+  for (const id of ['businesses', 'supply', 'supply']) b.nav(id);
+  assert.deepEqual(b.entries, ['#today', '#businesses/results', '#supply/changes'],
+    'each place writes its route; the first visit to Supply opens Changes');
   b.move(-1); assert.equal(b.page(), 'company');
   b.move(-1); assert.equal(b.page(), 'today');
   b.move(1); assert.equal(b.page(), 'company');
@@ -268,7 +302,7 @@ test('startup normalises the current entry without creating an extra visit', () 
   const b = board();
   b.context.location.hash = '';
   b.boot();
-  assert.deepEqual(b.entries, ['#today']);
+  assert.deepEqual(b.entries, ['#overview']);
   b.context.showPage('company');
   b.move(-1);
   assert.equal(b.page(), 'today');
@@ -279,7 +313,7 @@ test('replaying a section hash keeps that history entry intact', () => {
   b.context.history.pushState(null, '', '#secStock');
   b.move(0);
   assert.equal(b.page(), 'supply');
-  assert.equal(b.sub('supply'), 'shops', 'an old Checks link opens the tab that took its place');
+  assert.equal(b.sub('supply'), 'deliveries', 'an old Checks link opens the view that took its place');
   assert.equal(b.context.location.hash, '#secStock');
   assert.deepEqual(b.entries, ['#today', '#secStock']);
   b.move(-1);
@@ -287,11 +321,13 @@ test('replaying a section hash keeps that history entry intact', () => {
 });
 
 for (const [pageId, view, anchor, nav] of [
-  ['supply','shops','secShops','supplyNav'], ['supply','warehouses','secWarehouses','supplyNav'],
-  ['supply','factories','secFactories','supplyNav'],
+  ['supply','changes','secChanges','supplyNav'], ['supply','imports','secImports','supplyNav'],
+  ['supply','deliveries','secDeliveries','supplyNav'], ['supply','production','secProduction','supplyNav'],
+  ['supply','flow','secFlow','supplyNav'],
   ['growth','market','secMarket','growthNav'], ['growth','plan','secPlan','growthNav'],
-  ['company','products','secProducts','companyNav'], ['company','staff','secStaff','companyNav'],
-  ['company','milestones','secGoals','companyNav'],
+  ['company','products','secProducts','companyNav'], ['staffing','payroll','secPayroll','staffingNav'],
+  ['company','milestones','secGoals','companyNav'], ['company','standards','secStandards','companyNav'],
+  ['staffing','schedules','secSchedules','staffingNav'], ['staffing','needs','secStaff','staffingNav'],
 ]) test(`modified-click destination boots ${pageId}/${view}`, () => {
   const b = board();
   b.context.showSub(pageId, view);
@@ -334,7 +370,7 @@ test('clicking the Wiki tab from a page inside it goes back to the shelf', () =>
   const b = board();
   b.context.history.pushState(null, '', '#wiki/products-umbrella');
   b.move(0);
-  b.$('nav').click({preventDefault(){}, target:{closest(){return {dataset:{id:'wiki'}};}}});
+  b.nav('wiki', 'navRefs');
   assert.equal(b.context.location.hash, '#wiki');
 });
 
@@ -356,9 +392,9 @@ test('with no save the board opens on the Wiki and says the rest needs one', () 
 test('with no save a click on another tab does not open an empty page', () => {
   const b = board({data:null});
   b.shell();
-  b.$('nav').click({preventDefault(){}, target:{closest(){return {dataset:{id:'company'}};}}});
+  b.nav('businesses');
   assert.equal(b.page(), 'wiki');
-  b.$('nav').click({preventDefault(){}, target:{closest(){return {dataset:{id:'wiki'}};}}});
+  b.nav('wiki', 'navRefs');
   assert.equal(b.page(), 'wiki');
 });
 
@@ -449,9 +485,9 @@ test('Company in the nav, and a Company hash, are the portfolio again', () => {
   const b = board({data: sites()});
   b.boot();
   b.context.openSite(SHOP);
-  b.$('nav').click({preventDefault(){}, target:{closest(){return {dataset:{id:'company'}};}}});
+  b.nav('businesses');
   assert.equal(b.site(), null);
-  assert.equal(b.context.location.hash, '#company');
+  assert.equal(b.context.location.hash, '#businesses/results');
   b.move(-1);
   assert.equal(b.site(), SHOP);
   b.context.showSub('company', 'products');
@@ -465,11 +501,11 @@ test('an address that answers nothing lands on the portfolio and says so', () =>
   assert.equal(b.page(), 'company');
   assert.equal(b.sub('company'), 'results');
   assert.equal(b.site(), null);
-  assert.equal(b.context.location.hash, '#company');
+  assert.equal(b.context.location.hash, '#businesses/results');
   b.context.history.pushState(null, '', '#site/nowhere-2');
   b.move(0);
   assert.equal(b.site(), null);
-  assert.equal(b.context.location.hash, '#company', 'typed into an open board too');
+  assert.equal(b.context.location.hash, '#businesses/results', 'typed into an open board too');
 });
 
 test('a slug is the key alone, written readably', () => {
@@ -540,7 +576,7 @@ test('a history entry keeps what others stored on it; a new one starts clean', (
   b.states[0] = {wiki: 'scroll'};
   b.context.location.hash = '#site/nowhere-1';
   b.boot();
-  assert.equal(b.context.location.hash, '#company');
+  assert.equal(b.context.location.hash, '#businesses/results');
   assert.deepEqual({...b.states[0]}, {wiki: 'scroll'}, 'replacing the entry keeps its state');
   b.context.openSite(SHOP, false, 'a1');
   assert.deepEqual(Object.keys(b.states[1]), ['ssFrom'], 'a new entry carries only the way back');
@@ -550,20 +586,21 @@ test('arriving from a finding names the page it was on, through Back, Forward an
   const b = board({data: sites()});
   b.boot();
   b.context.openSite(SHOP, false, 'a1');
-  assert.deepEqual({...b.from()}, {label: 'Today', hash: '#today'});
-  assert.deepEqual({...b.states[1].ssFrom}, {label: 'Today', hash: '#today'}, 'the entry carries it');
+  assert.deepEqual({...b.from()}, {label: 'Needs attention', hash: '#today'});
+  assert.deepEqual({...b.states[1].ssFrom}, {label: 'Needs attention', hash: '#today'}, 'the entry carries it');
   b.move(-1); b.move(1);
-  assert.deepEqual({...b.from()}, {label: 'Today', hash: '#today'});
+  assert.deepEqual({...b.from()}, {label: 'Needs attention', hash: '#today'});
   // A reload replays the same entry.
   const again = board({data: sites()});
   again.context.location.hash = '#site/fifthavenue-57';
-  again.states[0] = {ssFrom: {label: 'Today', hash: '#today'}};
+  again.states[0] = {ssFrom: {label: 'Needs attention', hash: '#today'}};
   again.boot();
-  assert.equal(again.from().label, 'Today');
+  assert.equal(again.from().label, 'Needs attention');
   // Anywhere else a finding is clicked: the view's own word.
-  b.context.showSub('supply', 'warehouses'); b.context.showPage('supply');
+  b.context.showSub('supply', 'imports'); b.context.showPage('supply');
   b.context.openSite(DEPOT, false, 'a2');
-  assert.deepEqual({...b.from()}, {label: 'Warehouses', hash: '#supply'});
+  assert.deepEqual({...b.from()}, {label: 'Imports', hash: '#supply/imports'},
+    'a Supply view is named as itself');
   // The picker, a name or a portfolio row is no finding: back to the portfolio.
   b.context.openSite(SHOP);
   assert.equal(b.from(), null);
@@ -574,7 +611,7 @@ test('the crumb leads back where the reader came from, else to the portfolio', (
   b.boot();
   b.context.openSite(SHOP, false, 'a1');
   const html = b.context.siteCrumbs(SHOP, 'HART. Clothing', true);
-  assert.match(html, /<a class="ss-crumb from" href="#today" data-ss="back">.*Today<\/a>/);
+  assert.match(html, /<a class="ss-crumb from" href="#today" data-ss="back">.*Needs attention<\/a>/);
   assert.match(html, /data-ss="portfolio">Portfolio<\/a><i>›<\/i><a href="#secPortfolio" data-ss="chain" data-chain="Clothing Stores">/);
   assert.match(html, /<div class="ss-pick" id="sitePick">/);
   // Clicking it is the browser's own Back.
@@ -613,12 +650,12 @@ test('a search or a question that opens a site names where it was asked from, as
   b.boot();
   // ssOpenSite() passes cameFrom: no finding, and still a way back.
   b.context.openSite(SHOP, true, null, 'push', true);
-  assert.deepEqual({...b.from()}, {label: 'Today', hash: '#today'});
-  assert.deepEqual({...b.states[1].ssFrom}, {label: 'Today', hash: '#today'});
+  assert.deepEqual({...b.from()}, {label: 'Needs attention', hash: '#today'});
+  assert.deepEqual({...b.states[1].ssFrom}, {label: 'Needs attention', hash: '#today'});
   // A home opens the same way.
   b.move(-1);
   assert.ok(b.context.openSite(FLAT, true, null, 'push', true));
-  assert.equal(b.from().label, 'Today');
+  assert.equal(b.from().label, 'Needs attention');
   // From one site's page to another there is nothing new to go back to.
   b.context.openSite(SHOP, true, null, 'push', true);
   assert.equal(b.from(), null);
@@ -639,12 +676,12 @@ test('the site on screen, opened again, keeps its way back', () => {
   const b = board({data: sites()});
   b.boot();
   b.context.openSite(SHOP, false, 'a1');
-  assert.equal(b.from().label, 'Today');
+  assert.equal(b.from().label, 'Needs attention');
   // Its name, the picker's own entry, or a search for it.
   b.context.openSite(SHOP);
-  assert.equal(b.from().label, 'Today');
+  assert.equal(b.from().label, 'Needs attention');
   b.context.openSite(SHOP, true, null, 'push', true);
-  assert.equal(b.from().label, 'Today');
+  assert.equal(b.from().label, 'Needs attention');
   // Another site is somewhere new.
   b.context.openSite(DEPOT);
   assert.equal(b.from(), null);

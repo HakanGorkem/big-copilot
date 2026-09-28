@@ -160,28 +160,28 @@ test('a refresh leaves Today, an open site and Supply standing as they were', as
   assert.deepEqual(depot.now, still);
   assert.deepEqual(depot.later, still);
 
-  await page.evaluate(() => { showPage('supply'); showSub('supply', 'shops'); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'deliveries'); });
   await settle(page);
-  const supply = await refresh(page, '#secShops > *');
-  assert.ok(supply.rebuilt, 'the refresh rebuilt the Shops tab');
+  const supply = await refresh(page, '#secDeliveries > *');
+  assert.ok(supply.rebuilt, 'the refresh rebuilt Deliveries');
   assert.deepEqual(supply.now, still);
   assert.deepEqual(supply.later, still);
 });
 
 test('what a refresh redraws on a view out of sight is there on the way back', async t => {
   const page = await board(t);
-  // Staff has been seen: its Payroll role cards arrived.
-  await page.evaluate(() => { showPage('company'); showSub('company', 'staff'); });
+  // Staff needs has been seen: its hiring page arrived.
+  await page.evaluate(() => { showPage('staffing'); showSub('staffing', 'needs'); });
   await settle(page);
-  assert.ok(await page.locator('#secStaff #hrPayroll .role').count() > 0, 'the fixture has role cards');
+  assert.ok(await page.locator('#secStaff .hs-head').count() > 0, 'the hiring page is drawn');
   assert.equal(await page.locator('#secStaff .rv:not(.in)').count(), 0, 'everything on Staff has arrived');
   await page.evaluate(() => showPage('today'));
   await settle(page);
-  await page.evaluate(() => { window.calmOld = document.querySelector('#secStaff .role'); });
+  await page.evaluate(() => { window.calmOld = document.querySelector('#secStaff .hs-head'); });
   await deliver(page);
-  await page.evaluate(() => showPage('company'));
-  assert.ok(await page.evaluate(() => window.calmOld !== document.querySelector('#secStaff .role')),
-    'the refresh rebuilt the role cards');
+  await page.evaluate(() => showPage('staffing'));
+  assert.ok(await page.evaluate(() => window.calmOld !== document.querySelector('#secStaff .hs-head')),
+    'the refresh rebuilt the hiring page'); 
   assert.deepEqual(await motion(page), still);
 });
 
@@ -190,9 +190,9 @@ test('going somewhere new and opening a site still arrive', async t => {
   await settle(page);
   await deliver(page);
   // A page not visited yet: its sections slide in.
-  await page.evaluate(() => { showPage('supply'); showSub('supply', 'warehouses'); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'imports'); });
   const supply = await motion(page);
-  assert.ok(supply.moving.some(m => /^opacity on section#secWarehouses\.sec\.rv\.sb-tab\.in$/.test(m)), supply.moving.join('\n'));
+  assert.ok(supply.moving.some(m => /^opacity on section#secImports\.sec\.rv\.sb-view\.in$/.test(m)), supply.moving.join('\n'));
   await settle(page);
   // A site opened: its head and blocks arrive, staggered.
   await page.evaluate(key => openSite(key, false), GIFTS);
@@ -219,38 +219,41 @@ async function asRedrawn(page) {
 
 test('a refresh on Today draws Today; every other page waits for its visit and opens on the new numbers', async t => {
   const page = await board(t);
-  // Every view seen once, Company last on Staff and Supply on Shops.
+  // Every view seen once, Staffing last on Staff needs and Supply on Shops.
   await page.evaluate(() => {
-    for (const [p, v] of [['growth', 'market'], ['supply', 'warehouses'], ['supply', 'shops'], ['company', 'results'], ['company', 'staff']]) {
+    for (const [p, v] of [['growth', 'market'], ['supply', 'imports'], ['supply', 'deliveries'], ['company', 'results'], ['staffing', 'needs']]) {
       showPage(p); showSub(p, v);
     }
   });
-  await page.click('#nav a[data-id="today"]');
+  await page.click('#nav a[data-id="overview"]');
   await settle(page);
   // Blocks of each page as they stand now, to tell a redraw from none.
   const mark = () => page.evaluate(() => {
     window.calmOld = {kpis: '#kpis > *', payroll: '#secStaff > *', portfolio: '#portfolio tbody',
-      stock: '#secShops > *', market: '#market > *'};
+      stock: '#secDeliveries > *', market: '#market > *'};
     for (const k in calmOld) calmOld[k] = document.querySelector(calmOld[k]);
   });
   const standing = () => page.evaluate(() =>
     Object.fromEntries(Object.entries(calmOld).map(([k, el]) => [k, !!el && el.isConnected])));
   await mark();
-  assert.match(await page.locator('#hrPayroll .facts').textContent(), /^People3Wages a day/);
+  // The hiring page as drawn for the save before, marked to tell a redraw from none.
+  const old = () => page.locator('#secStaff .hs-head[data-old]').count();
+  await page.evaluate(() => { document.querySelector('#secStaff .hs-head').dataset.old = '1'; });
 
   // (a) The refresh redraws Today and leaves the other pages' markup alone.
   await deliver(page, later);
   assert.match(await page.locator('#kpis').innerText(), /25,000/, 'Today has the new cash');
   assert.deepEqual(await standing(), {kpis: false, payroll: true, portfolio: true, stock: true, market: true});
-  assert.match(await page.locator('#hrPayroll .facts').textContent(), /^People3Wages a day/, 'Staff waits for its visit');
+  assert.equal(await old(), 1, 'Staff waits for its visit');
 
-  // (b) By the nav: Company opens on Staff, drawn for the new numbers.
-  await page.click('#nav a[data-id="company"]');
-  assert.match(await page.locator('#hrPayroll .facts').textContent(), /^People4Wages a day/);
+  // (b) By the nav: Staffing opens on Staff needs, the view it was left on,
+  // drawn for the new numbers.
+  await page.click('#nav a[data-id="staffing"]');
+  assert.equal(await old(), 0, 'drawn again for the new numbers');
   assert.deepEqual(await motion(page), still, 'a view seen before comes back already arrived');
   let [shown, redrawn] = await asRedrawn(page);
   assert.equal(shown, redrawn);
-  await page.click('#nav a[data-id="today"]');
+  await page.click('#nav a[data-id="overview"]');
 
   // By a section link on Today: the profit tile opens Company > Results.
   await mark();
@@ -264,7 +267,7 @@ test('a refresh on Today draws Today; every other page waits for its visit and o
 
   // By Back: Supply was the page before Today.
   await page.click('#nav a[data-id="supply"]');
-  await page.click('#nav a[data-id="today"]');
+  await page.click('#nav a[data-id="overview"]');
   await mark();
   await deliver(page, later);
   assert.equal((await standing()).stock, true);
@@ -275,7 +278,7 @@ test('a refresh on Today draws Today; every other page waits for its visit and o
   assert.equal(shown, redrawn);
 
   // A site opened from a finding on Today: its page, and the portfolio under it.
-  await page.click('#nav a[data-id="today"]');
+  await page.click('#nav a[data-id="overview"]');
   await mark();
   await deliver(page);
   await page.locator('#alerts .find a[href^="#site/"]').first().click();
@@ -289,7 +292,7 @@ test('a refresh on Today draws Today; every other page waits for its visit and o
   await mark();
   await deliver(page, later);
   assert.equal((await standing()).kpis, true, 'Today waits for its visit too');
-  await page.click('#nav a[data-id="today"]');
+  await page.click('#nav a[data-id="overview"]');
   assert.match(await page.locator('#kpis').innerText(), /25,000/);
   [shown, redrawn] = await asRedrawn(page);
   assert.equal(shown, redrawn);
@@ -305,7 +308,7 @@ test('a view drawn on its visit is wired once', async t => {
   await page.evaluate(() => { showPage('company'); showSub('company', 'results'); showPage('today'); });
   await deliver(page, later);
   // Drawn on the way in, after the boot and the refresh have each wired the board.
-  await page.click('#nav a[data-id="company"]');
+  await page.click('#nav a[data-id="businesses"]');
   const chain = page.locator('#portfolio tr.chain').first();
   await chain.click();
   assert.equal(await chain.evaluate(tr => tr.classList.contains('open')), true, 'one click opens the chain');
@@ -313,7 +316,7 @@ test('a view drawn on its visit is wired once', async t => {
   assert.equal(await chain.evaluate(tr => tr.classList.contains('open')), false, 'and one closes it');
   // Today, drawn on its visit: a severity counter hides its findings, once.
   await deliver(page);
-  await page.click('#nav a[data-id="today"]');
+  await page.click('#nav a[data-id="overview"]');
   const sev = page.locator('#alertHead .sev[data-kind]').first();
   await sev.click();
   assert.equal(await sev.evaluate(s => s.classList.contains('off')), true);
@@ -323,32 +326,34 @@ test('a view drawn on its visit is wired once', async t => {
 
 test('a draw that throws on the way in leaves the view out of date, not the reader stuck', async t => {
   const page = await board(t);
-  await page.evaluate(() => { showPage('company'); showSub('company', 'staff'); showPage('today'); });
+  await page.evaluate(() => { showPage('staffing'); showSub('staffing', 'needs'); showPage('today'); });
   await deliver(page, later);
   const stale = () => page.evaluate(() => [...pageStale].some(row => /drawStaff/.test(String(row[1]))));
   assert.equal(await stale(), true, 'Staff waits for its visit');
+  await page.evaluate(() => { const h = document.querySelector('#secStaff .hs-head'); if(h) h.dataset.old = '1'; });
+  const old = () => page.locator('#secStaff .hs-head[data-old]').count();
   const messages = [];
   page.on('console', m => { if (m.type() === 'error') messages.push(m.text()); });
   await page.evaluate(() => {
     window.calmDraw = window.drawStaff;
     window.drawStaff = () => { throw new Error('payroll broke'); };
   });
-  await page.click('#nav a[data-id="company"]');
-  assert.equal(await page.evaluate(() => page), 'company', 'the nav click still opens Company');
-  assert.equal(await page.locator('#pageCompany').isHidden(), false);
+  await page.click('#nav a[data-id="staffing"]');
+  assert.equal(await page.evaluate(() => page), 'staffing', 'the nav click still opens Staffing');
+  assert.equal(await page.locator('#pageStaffing').isHidden(), false);
   assert.equal(await page.locator('#pageToday').isHidden(), true);
   assert.equal(await stale(), true, 'the view is still out of date');
   assert.ok(messages.some(m => /payroll broke/.test(m)), messages.join('\n'));
-  assert.match(await page.locator('#hrPayroll .facts').textContent(), /^People3Wages a day/);
+  assert.equal(await old(), 1, 'the page still shows the save before');
   // The view shows the save before; the Live dot says so.
   assert.deepEqual(await liveDot(page), {stale: true, says: 'Stale', why: 'payroll broke'});
 
   await page.evaluate(() => { window.drawStaff = window.calmDraw; });
-  await page.click('#nav a[data-id="today"]');
-  await page.click('#nav a[data-id="company"]');
+  await page.click('#nav a[data-id="overview"]');
+  await page.click('#nav a[data-id="staffing"]');
   assert.equal(await stale(), false);
-  assert.match(await page.locator('#hrPayroll .facts').textContent(), /^People4Wages a day/, 'drawn on the next visit');
-  assert.deepEqual(await liveDot(page), {stale: false, says: 'LIVE', why: ''});
+  assert.equal(await old(), 0, 'drawn on the next visit');
+  assert.deepEqual(await liveDot(page), {stale: false, says: '', why: ''});
 });
 
 // The masthead's Live dot: marked Stale or not, what it says, and why.
@@ -388,7 +393,7 @@ test('one row that throws on a view does not keep the others from drawing, and i
   assert.deepEqual(await due(), []);
   assert.deepEqual(await liveDot(page), {stale: true, says: 'Stale', why: 'rebuild broke'});
   await page.evaluate(() => window.calmWatch.stale(''));
-  assert.deepEqual(await liveDot(page), {stale: false, says: 'LIVE', why: ''});
+  assert.deepEqual(await liveDot(page), {stale: false, says: '', why: ''});
 
   // The next board clears a row's mark too; the row is tried again on its visit.
   await page.evaluate(() => {
@@ -400,7 +405,7 @@ test('one row that throws on a view does not keep the others from drawing, and i
   assert.equal((await liveDot(page)).stale, true);
   await page.evaluate(() => { window.drawPortfolio = window.calmDraw; showSub('company', 'products'); });
   await deliver(page, later);
-  assert.deepEqual(await liveDot(page), {stale: false, says: 'LIVE', why: ''});
+  assert.deepEqual(await liveDot(page), {stale: false, says: '', why: ''});
 });
 
 test('a row that throws while the board is drawn leaves the rest drawn, wired and marked Stale', async t => {
@@ -429,7 +434,7 @@ test('a row that throws while the board is drawn leaves the rest drawn, wired an
   // Once it draws again, the next board clears the mark.
   await page.evaluate(() => { window.drawAlerts = window.calmDraw; });
   await deliver(page, later);
-  assert.deepEqual(await liveDot(page), {stale: false, says: 'LIVE', why: ''});
+  assert.deepEqual(await liveDot(page), {stale: false, says: '', why: ''});
   assert.equal(await page.evaluate(() => [...pageStale].some(row => /drawAlerts/.test(String(row[1])))), false);
 });
 
@@ -444,17 +449,17 @@ test('a row drawn on every page that threw is tried again on the next page opene
   await deliver(page, later);
   assert.deepEqual(await liveDot(page), {stale: true, says: 'Stale', why: 'finder line broke'});
   await page.evaluate(() => { window.drawFindLocation = window.calmDraw; });
-  await page.click('#nav a[data-id="company"]');
-  assert.deepEqual(await liveDot(page), {stale: false, says: 'LIVE', why: ''});
+  await page.click('#nav a[data-id="businesses"]');
+  assert.deepEqual(await liveDot(page), {stale: false, says: '', why: ''});
   assert.equal(await page.evaluate(() => [...pageStale].some(row => /drawFindLocation/.test(String(row[1])))), false);
 });
 
 test('a refresh keeps a Set to figure being typed, and the focus on its box', async t => {
   const page = await board(t);
   // Every line shown: the depot's lines are all covered, so none would be by default.
-  await page.evaluate(() => { showPage('supply'); showSub('supply', 'warehouses'); sbWhich = 'all'; drawSupplyTab('warehouses'); wireAll(); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'imports'); sbMode.imports = 'all'; drawSupplyView('imports'); wireAll(); });
   const typed = await page.evaluate(() => {
-    const box = document.querySelector('#secWarehouses input[data-imp]');
+    const box = document.querySelector('#secImports input[data-imp]');
     if (!box) return null;
     box.focus();
     box.value = '1234';  // typed, not committed: no change event yet
@@ -476,9 +481,9 @@ test('a refresh keeps a Set to figure being typed, and the focus on its box', as
 
 test('Enter keeps a Set to figure put back by a refresh', async t => {
   const page = await board(t);
-  await page.evaluate(() => { showPage('supply'); showSub('supply', 'warehouses'); sbWhich = 'all'; drawSupplyTab('warehouses'); wireAll(); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'imports'); sbMode.imports = 'all'; drawSupplyView('imports'); wireAll(); });
   const typed = await page.evaluate(() => {
-    const box = document.querySelector('#secWarehouses input[data-imp]');
+    const box = document.querySelector('#secImports input[data-imp]');
     box.focus(); box.value = '4321';
     return box.dataset.imp;
   });
@@ -498,9 +503,9 @@ test('Enter keeps a Set to figure put back by a refresh', async t => {
 
 test('a Set to figure put back by a refresh and edited again is committed once', async t => {
   const page = await board(t);
-  await page.evaluate(() => { showPage('supply'); showSub('supply', 'warehouses'); sbWhich = 'all'; drawSupplyTab('warehouses'); wireAll(); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'imports'); sbMode.imports = 'all'; drawSupplyView('imports'); wireAll(); });
   const typed = await page.evaluate(() => {
-    const box = document.querySelector('#secWarehouses input[data-imp]');
+    const box = document.querySelector('#secImports input[data-imp]');
     box.focus(); box.value = '432';
     window.calmKept = 0;
     const keep = window.impSetKeep;

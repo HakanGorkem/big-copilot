@@ -922,7 +922,7 @@ test('the planner control sits with a business\'s own range, never with the rest
   assert.doesNotMatch(section(coffee, 'Also sells'), /id="wikiPlanSlot"/);
   assert.equal((coffee.match(/id="wikiPlanSlot"/g) || []).length, 1);
   assert.match(slot.innerHTML, /data-wiki-plan/);
-  assert.match(slot.innerHTML, /Open the Growth planner with Coffee Shop selected/);
+  assert.match(slot.innerHTML, /Open Plan a factory with Coffee Shop selected/);
 
   // With no recipes of its own the control goes with the range itself.
   const hair = await w.go('wiki/businesstypes-hairdresser');

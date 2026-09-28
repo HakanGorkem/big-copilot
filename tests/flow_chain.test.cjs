@@ -36,15 +36,22 @@ async function board(t, data, width){
   page.on('pageerror', e => errors.push(String(e)));
   t.after(() => assert.deepEqual(errors, [], 'no script error on the page'));
   await page.route('https://**', route => route.abort());
-  await page.route('http://board.test/**', route => route.fulfill({contentType: 'text/html', body: html}));
+  /* The web build loads its own scripts (app.js, community.js) beside the
+     page: those are web/'s files, not the page again. */
+  await page.route('http://board.test/**', route => {
+    const p = new URL(route.request().url()).pathname;
+    if(p === '/' || process.env.BOARD_TARGET !== 'web') return route.fulfill({contentType: 'text/html', body: html});
+    const f = path.join(root, 'web', decodeURIComponent(p));
+    return fs.existsSync(f) ? route.fulfill({path: f}) : route.fulfill({status: 404, body: ''});
+  });
   await page.goto('http://board.test/');
   await page.emulateMedia({reducedMotion: 'reduce'});
   await page.evaluate(data => {
-    D = data; sbWhich = 'all'; sbViewOn = 'diagram'; sub.supply = 'shops';
+    D = data; sbWhich = 'all'; sub.supply = 'flow';
     document.body.classList.add('has-board');
     document.querySelectorAll('.page').forEach(el => { el.hidden = el.id !== 'pageSupply'; });
     document.querySelectorAll('#pageSupply section').forEach(el => { el.hidden = false; el.classList.add('measured'); });
-    drawSupplyStrip(); drawShopsTab(); drawWarehousesTab(); drawFactoriesTab(); wireAll();
+    drawSupplyStrip(); drawFlowView(); wireAll();
     drawFlow();
   }, data);
   return page;
@@ -105,7 +112,8 @@ test('a portrait tablet gets the chain too, wider cards; a desktop box keeps the
   assert.equal(d.chain, false);
   assert.equal(d.svg, true);
   assert.equal(d.svgNodes, 7, 'every node, the shop no pipe reaches too');
-  assert.ok(await desk.evaluate(() => document.getElementById('sbFlowBox').getBoundingClientRect().width) >= 950);
+  // Beside the full sidebar, still past the breakpoint (FLOW_CHAIN_MAX).
+  assert.ok(await desk.evaluate(() => document.getElementById('sbFlowBox').getBoundingClientRect().width) >= 900);
   assert.equal(await desk.evaluate(() => document.getElementById('flowChain').innerHTML), '');
   // The window narrowing past the breakpoint redraws the chain, and back.
   await desk.setViewportSize({width: 600, height: 1000});
@@ -207,8 +215,8 @@ test('a tap gives the rows and the site page; a vanished site drops the focus', 
   assert.equal((await rows.textContent()).trim(), `Its ${n} rows`);
   assert.equal(await page.locator('#flowChain [data-fc-site]').count(), 1);
   await rows.click();
-  assert.equal(await page.evaluate(() => [sbViewMode(), sub.supply].join()), 'list,factories');
-  assert.equal(await page.locator('#secFactories .sb-obj.lit').count(), 1);
+  assert.equal(await page.evaluate(() => sub.supply), 'production');
+  assert.equal(await page.locator('#secProduction .sb-obj.lit').count(), 1);
 
   const again = await board(t, fixture(), 390);
   await again.locator('#flowChain .sb-fc-band [data-fc-id="dist#6"]').click();
@@ -411,7 +419,7 @@ test('a site followed on the chain does not dim the picture the box grows into',
 
 test('a live refresh keeps the site followed and the open group, and lays the pipes again', async t => {
   const page = await board(t, depotWith(4), 390);
-  await page.evaluate(() => { showPage('supply'); sbViewOn = 'diagram'; showSub('supply', 'shops'); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'flow'); });
   await page.locator('#flowChain [data-fc-group="g:dist#6"]').click();
   /* A live refresh: fresh data, and the Supply rows of PAGE_DRAWS run the
      calm way renderCalm() runs them (the fixture is Supply's payload only, so
@@ -421,7 +429,7 @@ test('a live refresh keeps the site followed and the open group, and lays the pi
     document.querySelector('#flowChain .sb-fc-chain').dataset.old = '1';
     D = JSON.parse(JSON.stringify(D));
     rvCalm = true;
-    try{ PAGE_DRAWS.filter(r => r[0] && r[0].split(' ').includes('supply/shops')).forEach(r => r[1]()); }
+    try{ PAGE_DRAWS.filter(r => r[0] && r[0].split(' ').includes('supply/flow')).forEach(r => r[1]()); }
     finally{ rvCalm = false; }
     return !document.querySelector('#flowChain [data-old]');
   });
@@ -433,4 +441,143 @@ test('a live refresh keeps the site followed and the open group, and lays the pi
   assert.equal(await page.evaluate(() => flowPickId), 'dist#6');
   assert.match(await page.locator('#flowChain .sb-fc-where').textContent(), /Following Cake Distr\./);
   assert.ok((await state(page)).pipes.length >= 2);
+});
+
+/* How the picture meets a desk box: it opens on the whole chain, no larger
+   than 1:1, with no blank band above or below it; the reader zooms and drags
+   from there (Peter's testing, A3, replaced the sideways scroll). */
+const measure = page => page.evaluate(() => {
+  const svg = document.getElementById('flow'), box = document.getElementById('sbFlowBox'), sc = document.getElementById('sbFlowScroll');
+  const s = svg.getBoundingClientRect(), b = box.getBoundingClientRect();
+  const heads = [...svg.querySelectorAll('text.col')];
+  const bottom = Math.max(...[...svg.querySelectorAll('.node rect')].map(r => r.getBoundingClientRect().bottom));
+  const text = svg.querySelector('.node text:not(.s)');
+  return {heads: heads.map(x => x.textContent), scale: svg.getScreenCTM().a,
+    headGap: heads[0].getBoundingClientRect().top - s.top, bottomGap: s.bottom - bottom,
+    lastHeadRight: heads[heads.length - 1].getBoundingClientRect().right, boxRight: b.right,
+    font: parseFloat(getComputedStyle(text).fontSize) * svg.getScreenCTM().a,
+    scrolls: sc.scrollWidth > sc.clientWidth, fade: sc.classList.contains('sb-flow-more-r'),
+    page: document.documentElement.scrollWidth - document.documentElement.clientWidth};
+});
+/* The chain with a second factory tier: importer, depot, factory, depot, factory, shops. */
+function sixStages(){
+  const data = fixture();
+  const g = data.supply.graph;
+  g.nodes.push({...g.nodes.find(n => n.id === 'factory#2'), id: 'factory#7', name: '[BF] Bread Works', tag: 'BF', site: null, items: []});
+  g.links.push({from: 'dist#6', to: 'factory#7', perDay: 200, items: 1, slugs: ['cake'], cadence: 'daily', paused: false},
+    {from: 'factory#7', to: 'shop#4', perDay: 150, items: 1, slugs: ['bread'], cadence: 'daily', paused: false});
+  return data;
+}
+
+test('the five-stage fixture chain fits a 1366 window with the sidebar folded: shrunk no further than 0.8, its Shops in the box, no blank band', async t => {
+  const page = await board(t, fixture(), 1366);
+  // Folded to its rail, the sidebar leaves the page nearly the whole window.
+  await page.evaluate(() => new Promise(done => { sdSet(true); requestAnimationFrame(() => requestAnimationFrame(done)); }));
+  const m = await measure(page);
+  assert.deepEqual(m.heads, ['IMPORTERS', 'DEPOTS', 'FACTORIES', 'DEPOTS', 'SHOPS']);
+  assert.ok(m.scale >= 0.8 && m.scale < 1, `scaled to ${m.scale.toFixed(2)}`);
+  assert.ok(m.lastHeadRight <= m.boxRight, `SHOPS ends at ${m.lastHeadRight.toFixed(0)}, the box at ${m.boxRight.toFixed(0)}`);
+  assert.equal(m.scrolls, false);
+  assert.ok(m.headGap < 30, `the heads start ${m.headGap.toFixed(0)} px under the top`);
+  assert.ok(m.bottomGap < 30, `${m.bottomGap.toFixed(0)} px under the last site`);
+  assert.ok(m.font >= 9.2, `names at ${m.font.toFixed(1)} px`);
+});
+
+/* The picture moves like the City map (Peter's testing, A3): a camera on the
+   svg's viewBox. */
+const cam = page => page.evaluate(() => {
+  const v = document.getElementById('flow').getAttribute('viewBox').split(' ').map(Number);
+  return {x: v[0], y: v[1], w: v[2], h: v[3], s: flowScale(), cx: v[0] + v[2] / 2, cy: v[1] + v[3] / 2};
+});
+const allInside = page => page.evaluate(() => {
+  const st = document.getElementById('sbFlowScroll').getBoundingClientRect();
+  return [...document.querySelectorAll('#flow .node')].every(n => { const b = n.querySelector('rect').getBoundingClientRect();
+    return b.left >= st.left - 1 && b.right <= st.right + 1 && b.top >= st.top - 1 && b.bottom <= st.bottom + 1; });
+});
+
+test('Goods flow moves like the map: the whole chain first, + and − zoom about the middle, ⌂ fits, a drag moves it and is no click, the wheel zooms, the keys do too', async t => {
+  const page = await board(t, sixStages(), 1280);
+  // The whole chain at first, no larger than 1:1, and nothing scrolls sideways.
+  assert.equal(await allInside(page), true);
+  const c0 = await cam(page);
+  assert.ok(c0.s <= 1, `fitted at ${c0.s}`);
+  assert.equal(await page.evaluate(() => document.getElementById('sbFlowScroll').scrollWidth <= document.getElementById('sbFlowScroll').clientWidth), true);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
+  assert.deepEqual(await page.locator('#sbFlowZoom button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label'))),
+    ['Zoom in', 'Zoom out', 'The whole chain']);
+  // + zooms in about the middle, − back out.
+  await page.click('#sbFlowZoom [data-fz="in"]');
+  const c1 = await cam(page);
+  assert.ok(c1.s > c0.s * 1.3, `${c1.s} after + from ${c0.s}`);
+  assert.ok(Math.abs(c1.cx - c0.cx) < 1 && Math.abs(c1.cy - c0.cy) < 1, 'the middle stays');
+  await page.click('#sbFlowZoom [data-fz="out"]');
+  assert.ok(Math.abs((await cam(page)).s - c0.s) < 1e-3);
+  await page.click('#sbFlowZoom [data-fz="in"]');
+  // A drag moves the picture with the pointer, and opens nothing.
+  const box = await page.locator('#sbFlowScroll').boundingBox();
+  const hash = await page.evaluate(() => location.hash), before = await cam(page);
+  const node = await page.locator('#flow .node').first().boundingBox();
+  const from = {x: Math.max(box.x + 5, Math.min(box.x + box.width - 5, node.x + node.width / 2)), y: Math.max(box.y + 5, Math.min(box.y + box.height - 5, node.y + node.height / 2))};
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x - 120, from.y - 30, {steps: 8});
+  await page.mouse.up();
+  const after = await cam(page);
+  assert.ok(Math.abs((after.x - before.x) * after.s - 120) < 4, `moved ${(after.x - before.x) * after.s}px`);
+  assert.equal(await page.evaluate(() => location.hash), hash, 'the drag was no click on a site');
+  // The wheel zooms about the pointer.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const w0 = (await cam(page)).s;
+  await page.mouse.wheel(0, -400);
+  await page.waitForFunction(s => flowScale() > s, w0);
+  // ⌂ brings the whole chain back.
+  await page.click('#sbFlowZoom [data-fz="fit"]');
+  assert.equal(await allInside(page), true);
+  // The stage takes the keyboard: + zooms, an arrow moves, 0 fits.
+  await page.locator('#sbFlowScroll').focus();
+  const k0 = await cam(page);
+  await page.keyboard.press('+');
+  assert.ok((await cam(page)).s > k0.s);
+  const k1 = await cam(page);
+  await page.keyboard.press('ArrowRight');
+  assert.ok((await cam(page)).x > k1.x);
+  await page.keyboard.press('0');
+  assert.equal(await allInside(page), true);
+});
+
+test('following a site centres it, at a size its name reads', async t => {
+  const page = await board(t, sixStages(), 1280);
+  await page.evaluate(() => { flowPickId = 'shop#4'; drawFlowView(); drawFlow(); applyFlow(); });
+  const got = await page.evaluate(() => {
+    const st = document.getElementById('sbFlowScroll').getBoundingClientRect();
+    const r = document.querySelector('#flow .node[data-id="shop#4"] rect').getBoundingClientRect();
+    return {dx: (r.left + r.width / 2) - (st.left + st.width / 2), dy: (r.top + r.height / 2) - (st.top + st.height / 2), s: flowScale()};
+  });
+  assert.ok(Math.abs(got.dx) < 2 && Math.abs(got.dy) < 2, JSON.stringify(got));
+  assert.ok(got.s >= 0.9, `readable: ${got.s}`);
+});
+
+/* Carried from chunk 2's review: a live refresh redraws Goods flow, and the
+   picture stays where the reader left it (only a newly followed site moves
+   it); the legend sits outside the stage, so it stays in view. */
+test('a redraw keeps the camera where the reader left it, and the legend stays in view', async t => {
+  const page = await board(t, sixStages(), 1280);
+  await page.click('#sbFlowZoom [data-fz="in"]');
+  await page.locator('#sbFlowScroll').focus();
+  await page.keyboard.press('ArrowRight');
+  const left = await cam(page);
+  // The refresh: the view and the picture drawn again from the same numbers.
+  await page.evaluate(() => { D = JSON.parse(JSON.stringify(D)); drawFlowView(); drawFlow(); });
+  assert.deepEqual(await cam(page), left, 'the picture is where it was');
+  const leg = await page.evaluate(() => { const b = document.getElementById('sbFlowBox').getBoundingClientRect(), l = document.querySelector('#sbFlowBox .sb-flowleg').getBoundingClientRect();
+    return l.left >= b.left - 1 && l.right <= b.right + 1; });
+  assert.equal(leg, true, 'the legend does not move away');
+  // A newly followed site moves it; followed again after a redraw it does not.
+  await page.evaluate(() => { flowPickId = 'shop#4'; drawFlowView(); drawFlow(); });
+  const followed = await cam(page);
+  assert.notDeepEqual(followed, left, 'a newly followed site is brought into view');
+  await page.keyboard.press('ArrowDown');
+  const moved = await cam(page);
+  await page.evaluate(() => { D = JSON.parse(JSON.stringify(D)); drawFlowView(); drawFlow(); });
+  assert.deepEqual(await cam(page), moved, 'the same site followed again does not snap back');
 });

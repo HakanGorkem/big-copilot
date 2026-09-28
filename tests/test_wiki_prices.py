@@ -126,6 +126,22 @@ class WikiPricesTests(unittest.TestCase):
         self.assertEqual(lines["free"]["configuredPrice"], 0)
         self.assertIsNone(lines["unpriced"]["configuredPrice"])
 
+    def test_sold_price_is_takings_over_units_unrounded(self):
+        """Products & prices' average sold price: one $10 sale in a week is $10,
+        not the rounded daily revenue over the rounded daily rate ($14.30),
+        and a line that sold nothing has none."""
+        day = lambda n, sales: {"dayNumber": n, "totalCustomers": 1 if sales else 0,
+                                "itemSales": {"$items": sales}}
+        b = shop(1, 10.0, businessTypeName="ba:businesstype_coffeeshop", orderHistory={"$items": [
+            day(1, [{"itemName": ITEM, "amountSold": 1, "totalPrice": 10.0}]), *[day(n, []) for n in range(2, 8)]]},
+            itemInstances={"$items": []})
+        b["retailPrices"]["$items"].append({"itemName": "idle", "price": 3.0})
+        result = _business(Save({}, {}, ""), Names({}), b, ("street", 1), {}, [], {}, 10)
+        lines = {line["slug"]: line for line in result["lines"]}
+        self.assertEqual(lines[ITEM]["soldPrice"], 10.0)
+        self.assertEqual(lines[ITEM]["rate"], 0.1)
+        self.assertIsNone(lines["idle"]["soldPrice"])
+
 
 if __name__ == "__main__":
     unittest.main()

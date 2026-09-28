@@ -77,22 +77,22 @@ async function board(data = fixture()){
   await page.route('https://**', route => route.abort());
   await page.setContent(html, {waitUntil: 'load'});
   await page.evaluate(data => {
-    D = data; sbWhich = 'all'; supplySort = {}; supplyAuto = false; sub.supply = 'shops';
+    D = data; sbWhich = 'all'; sbMode.imports = sbMode.deliveries = sbMode.production = 'all'; supplySort = {}; sub.supply = 'deliveries';
     document.body.classList.add('has-board');
     document.querySelectorAll('.page').forEach(el => { el.hidden = el.id !== 'pageSupply'; });
     document.querySelectorAll('#pageSupply section').forEach(el => { el.hidden = false; el.classList.add('measured'); });
-    drawSupplyStrip(); drawShopsTab(); drawWarehousesTab(); drawFactoriesTab(); wireAll();
+    drawSupplyStrip(); drawChangesView(); drawImportsView(); drawDeliveriesView(); drawProductionView(); wireAll();
   }, data);
   return page;
 }
 // The Product cell of a Shops row names the product (the tick and the shop come first).
-const products = page => page.$$eval('#secShops tbody tr', rows => rows.map(r => r.cells[2].textContent.trim()));
-const header = (page, label) => page.locator('#secShops thead th', {hasText: label});
-const shopNote = page => page.locator('#secShops .sb-tw .sb-more').textContent();
+const products = page => page.$$eval('#secDeliveries [data-sb-table="shops"] tbody tr', rows => rows.map(r => r.cells[2].textContent.trim()));
+const header = (page, label) => page.locator('#secDeliveries [data-sb-table="shops"] thead th', {hasText: label});
+const shopNote = page => page.locator('#secDeliveries .sb-tw[data-sb-table="shops"] .sb-more').textContent();
 /* Each depot is its own table; the product cell opens with the material. */
-const depots = page => page.$$eval('#secWarehouses .sb-obj', list =>
+const depots = page => page.$$eval('#secImports .sb-obj', list =>
   list.map(d => [...d.querySelectorAll('tbody tr')].map(r => r.cells[1].firstChild.textContent.trim())));
-const inputs = page => page.$$eval('#secFactories [data-sb-table="factory-inputs"] tbody tr', rows =>
+const inputs = page => page.$$eval('#secProduction [data-sb-table="factory-inputs"] tbody tr', rows =>
   rows.map(r => r.cells[1].firstChild.textContent.trim()));
 
 test('a Shops header sorts high to low, then low to high, then back to the usual order', async () => {
@@ -108,10 +108,10 @@ test('a Shops header sorts high to low, then low to high, then back to the usual
     await header(page, 'Pressure').click();
     assert.deepEqual(await products(page), ['Milk', 'Apples', 'Bread', 'Eggs']);
     assert.equal(await header(page, 'Pressure').getAttribute('aria-sort'), 'ascending');
-    await page.locator('#secShops [data-usual]').click();
+    await page.locator('#secDeliveries [data-sb-table="shops"] [data-usual]').click();
     assert.deepEqual(await products(page), ['Bread', 'Apples', 'Milk', 'Eggs']);
     assert.equal(await header(page, 'Pressure').getAttribute('aria-sort'), 'none');
-    assert.equal(await page.locator('#secShops .sb-tw .sb-more').count(), 0);
+    assert.equal(await page.locator('#secDeliveries .sb-tw[data-sb-table="shops"] .sb-more').count(), 0);
   } finally { await page.close(); }
 });
 
@@ -158,7 +158,7 @@ test('usual order from the keyboard puts the focus on the column it un-sorted', 
   const page = await board();
   try{
     await header(page, 'Pressure').click();
-    await page.locator('#secShops [data-usual]').focus();
+    await page.locator('#secDeliveries [data-sb-table="shops"] [data-usual]').focus();
     await page.keyboard.press('Enter');
     assert.deepEqual(await products(page), ['Bread', 'Apples', 'Milk', 'Eggs']);
     assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Pressure');
@@ -169,7 +169,7 @@ test('usual order clicked with the mouse leaves the focus where the click put it
   const page = await board();
   try{
     await header(page, 'Pressure').click();
-    await page.locator('#secShops [data-usual]').click();
+    await page.locator('#secDeliveries [data-sb-table="shops"] [data-usual]').click();
     assert.deepEqual(await products(page), ['Bread', 'Apples', 'Milk', 'Eggs']);
     // Not carried back up to a header the reader did not ask for.
     assert.equal(await page.evaluate(() => !!document.activeElement?.closest('thead')), false);
@@ -181,26 +181,26 @@ test('depot lines sort inside each depot, and the depots keep their order', asyn
   try{
     // Usual order: most used a week first.
     assert.deepEqual(await depots(page), [['Pear', 'Apple', 'Fig'], ['Lime', 'Kiwi', 'Kale']]);
-    const first = page.locator('#secWarehouses .sb-obj').first();
+    const first = page.locator('#secImports .sb-obj').first();
     await first.locator('thead th', {hasText: 'On hand'}).click();
     assert.deepEqual(await depots(page), [['Pear', 'Apple', 'Fig'], ['Kiwi', 'Lime', 'Kale']]);
     // Every depot's header shows the one order.
-    assert.deepEqual(await page.$$eval('#secWarehouses thead th[data-dir]', th => th.map(x => x.textContent)), ['On hand', 'On hand']);
-    await page.locator('#secWarehouses .sb-obj').first().locator('thead th', {hasText: 'Product'}).click();
+    assert.deepEqual(await page.$$eval('#secImports thead th[data-dir]', th => th.map(x => x.textContent)), ['On hand', 'On hand']);
+    await page.locator('#secImports .sb-obj').first().locator('thead th', {hasText: 'Product'}).click();
     assert.deepEqual(await depots(page), [['Apple', 'Fig', 'Pear'], ['Kale', 'Kiwi', 'Lime']]);
-    assert.match(await page.locator('#secWarehouses .sb-more').first().textContent(), /Sorted by Product, A to Z/);
-    await page.locator('#secWarehouses [data-usual]').first().click();
+    assert.match(await page.locator('#secImports .sb-more').first().textContent(), /Sorted by Product, A to Z/);
+    await page.locator('#secImports [data-usual]').first().click();
     assert.deepEqual(await depots(page), [['Pear', 'Apple', 'Fig'], ['Lime', 'Kiwi', 'Kale']]);
     // What to set a line to is an action, not a figure; the Shops order is untouched.
-    assert.equal(await page.locator('#secWarehouses thead th', {hasText: 'Order / top-up'}).first().locator('button').count(), 0);
-    assert.equal(await page.locator('#secShops thead th[data-dir]').count(), 0);
+    assert.equal(await page.locator('#secImports thead th', {hasText: 'Order / top-up'}).first().locator('button').count(), 0);
+    assert.equal(await page.locator('#secDeliveries [data-sb-table="shops"] thead th[data-dir]').count(), 0);
   } finally { await page.close(); }
 });
 
 test('an import nothing uses sorts as a dash, not as a zero', async () => {
   const page = await board();
   try{
-    const south = page.locator('#secWarehouses .sb-obj').nth(1);
+    const south = page.locator('#secImports .sb-obj').nth(1);
     const used = south.locator('thead th', {hasText: 'Uses / week'});
     await used.click();
     assert.deepEqual((await depots(page))[1], ['Lime', 'Kiwi', 'Kale']);
@@ -213,14 +213,14 @@ test('factory inputs sort inside their factory, a route with no reading last', a
   const page = await board();
   try{
     assert.deepEqual(await inputs(page), ['Pear', 'Apple', 'Fig']);
-    const arrives = page.locator('#secFactories thead th', {hasText: 'Arrived / day'});
+    const arrives = page.locator('#secProduction thead th', {hasText: 'Arrived / day'});
     await arrives.click();
     assert.deepEqual(await inputs(page), ['Pear', 'Apple', 'Fig']);
     await arrives.click();
     assert.deepEqual(await inputs(page), ['Apple', 'Pear', 'Fig']);
-    assert.match(await page.locator('#secFactories [data-sb-table="factory-inputs"] .sb-more').textContent(), /Sorted by Arrived \/ day, low to high/);
+    assert.match(await page.locator('#secProduction [data-sb-table="factory-inputs"] .sb-more').textContent(), /Sorted by Arrived \/ day, low to high/);
     // The lines keep their own order.
-    assert.equal(await page.locator('#secFactories [data-sb-table="factory-lines"] thead th[data-dir]').count(), 0);
+    assert.equal(await page.locator('#secProduction [data-sb-table="factory-lines"] thead th[data-dir]').count(), 0);
   } finally { await page.close(); }
 });
 

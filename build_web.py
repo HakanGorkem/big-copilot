@@ -144,7 +144,7 @@ ICON_MORE = '<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.4"></circle><c
 BANNER = r"""<style>
 [hidden]{display:none!important}
 body.has-board .landing{display:none}
-body:not(.has-board) .wrap{display:none}
+body:not(.has-board) .wrap,body:not(.has-board) .sd-app{display:none}
 button.btn,button.btn2,button.ibtn{font-family:inherit;line-height:inherit}
 .release-banner{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:16px;padding:5px clamp(16px,2.5vw,40px);border-bottom:1px solid var(--rule-soft);background:color-mix(in srgb,var(--accent) 5%,var(--ground));color:var(--ink-2);font-size:12px;line-height:1.5}
 .release-copy{display:flex;align-items:baseline;gap:12px;flex:1;min-width:0}
@@ -167,7 +167,6 @@ button.btn,button.btn2,button.ibtn{font-family:inherit;line-height:inherit}
 .release-actions .release-dismiss:hover{background:var(--raised);color:var(--ink)}
 .release-actions svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .release-banner :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-body .mast{top:var(--release-height,0px)}
 @media(max-width:540px){.release-banner{gap:10px;padding-top:6px;padding-bottom:6px}.release-copy{display:block;font-size:11px}.release-copy details{margin-top:1px;border-left:0;padding-left:13px}}
 /* One-time news strip under the update banner; web/update.js shows it. It
    sits in the flow, so it pushes the page down and scrolls away beneath the sticky
@@ -182,6 +181,12 @@ body .mast{top:var(--release-height,0px)}
 .news-dismiss svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .news-strip :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 @media(max-width:540px){.news-strip{gap:10px;padding-top:6px;padding-bottom:6px;font-size:11px}.news-copy a{white-space:normal}}
+/* On a phone with a board loaded the news keeps to two short lines, so the board's first finding stays on the
+   first screen: the tag and its link, then the sentence cut to one line (read whole by a screen reader). */
+@media(max-width:540px){body.has-board .news-strip{padding-top:4px;padding-bottom:4px}
+  body.has-board .news-copy{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px}
+  body.has-board .news-copy a{order:-1;margin-left:0}body.has-board .news-tag{order:-2;margin-right:0}
+  body.has-board .news-copy > span{flex:1 0 100%;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}}
 
 /* landing (generator) ------------------------------------------------------ */
 .landing{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:80px 0;perspective:1000px}
@@ -189,7 +194,7 @@ body .mast{top:var(--release-height,0px)}
 .landing > p{margin:0;color:var(--ink-2);font-size:15px;max-width:460px;text-align:center;text-wrap:pretty}
 .drop{
   width:560px;height:280px;border-radius:16px;border:1.5px dashed var(--rule);display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:16px;cursor:pointer;transition:border-color .2s,background .2s,transform .12s ease-out;position:relative;
+  align-items:center;justify-content:center;gap:16px;transition:border-color .2s,background .2s,transform .12s ease-out;position:relative;
   transform:rotateX(var(--rx,0)) rotateY(var(--ry,0));transform-style:preserve-3d;
 }
 .drop:hover,.drop.lg-over{border-color:var(--accent);background:var(--surface)}
@@ -233,8 +238,12 @@ button.btn{border:0;cursor:pointer}
 .strip .st .led.lg-dim{background:var(--ink-3)}
 .strip .file{text-transform:uppercase}
 .strip .file:empty,.strip #srcStatus:empty{display:none}
-.strip .btn2:disabled{opacity:.4;pointer-events:none}
+.strip .btn2:disabled,.sd .nx-src .btn2:disabled{opacity:.4;pointer-events:none}
 .strip .st{min-width:0;flex-wrap:wrap}
+/* All well on the board: Update and ··· alone; reading: the bar alone. */
+.strip.calm .st{display:none}
+.source-row .strip.calm{justify-content:flex-end;background:none;border-color:transparent;padding:0 0 0 16px}
+.strip.reading #srcLed,.strip.reading #srcStatus,.strip.reading #srcMeta{display:none}
 .strip #srcStatus:not(.err),.strip .file,.strip .right > *{white-space:nowrap}
 .strip .right{flex:none}
 /* On the board the file line is the strip's one long piece of text: it wraps
@@ -288,7 +297,7 @@ button.btn{border:0;cursor:pointer}
 .save-option-meta{display:block;margin-top:2px;font:400 10px/1.5 "IBM Plex Mono",monospace;color:var(--ink-2)}
 .menu-panel .save-picker{width:100%;margin-bottom:8px}
 .menu-panel .save-options{position:relative;top:auto;right:auto;width:100%;max-width:none;margin-top:6px;box-shadow:none}
-.strip .right .menu-panel{white-space:normal}
+.strip .right .menu-panel,.sd .nx-src .menu-panel{white-space:normal}
 .landing details.help{width:560px;margin-top:-8px}
 .landing details.help:not([open]){display:none}
 .landing details.help > summary{display:none}
@@ -301,6 +310,9 @@ button.btn{border:0;cursor:pointer}
 .save-location label{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 8px;font-size:12px;color:var(--ink-3)}
 .save-location select{max-width:100%;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:4px 6px}
 .save-location p{margin:8px 0 0;font-size:12px;line-height:1.6;color:var(--ink-3)}
+/* The rest of the save help, folded under the box (review item: nothing else opens it on the landing). */
+.save-location .lg-morehelp{display:inline-block;margin-top:6px;font-size:12px}
+.menu-panel .save-location .lg-morehelp{display:none}
 .menu-panel .save-location{width:100%;max-width:100%}
 @media (max-width:1100px){.landing .orb{display:none}}
 @media (max-width:640px){.drop,.landing .strip,.landing details.help{width:calc(100vw - 48px)}}
@@ -341,6 +353,18 @@ details.help[open] summary::after{content:"\2013"}
 
 /* the More menu's panel ------------------------------------------------- */
 .menu{position:relative}
+/* Update and ··· at the board's sidebar foot. The panel opens beside the
+   sidebar, its foot level with the button's (wireMenu() places it); on a
+   phone, across the window above the button. The board's utilities end it. */
+.sd .nx-src #updateBtn{white-space:nowrap}
+.sd .nx-src #updateBtn.busy{position:relative;overflow:hidden}
+.sd .nx-src #updateBtn.busy::after{content:"";position:absolute;left:0;bottom:0;height:2px;width:40%;background:var(--accent);animation:nx-read 1.1s ease-in-out infinite}
+@keyframes nx-read{from{left:-40%}to{left:100%}}
+.sd .nx-src .menu-panel{position:fixed;right:auto;top:auto;max-height:calc(100vh - 24px)}
+@media (max-width:560px){.sd .nx-src .menu-panel{width:auto;max-height:calc(100vh - 90px);overflow:auto}}
+@media (prefers-reduced-motion:reduce){.sd .nx-src #updateBtn.busy::after{animation:none;width:100%;left:0}}
+.menu-panel .nx-util{gap:10px;align-items:center}
+.menu-panel .nx-util svg{width:16px;height:16px;stroke:var(--ink-3);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .menu-panel{display:none;position:absolute;right:0;top:calc(100% + 8px);width:320px;padding:10px;background:var(--surface);
   border:1px solid var(--rule);border-radius:10px;box-shadow:0 12px 32px color-mix(in srgb,var(--ink) 16%,transparent);z-index:40;
   max-height:min(650px,80vh);overflow:auto;text-align:left}
@@ -386,10 +410,9 @@ details.help[open] summary::after{content:"\2013"}
 <section class="landing" id="landing">
   <div class="brand rv" id="lgBrand"><span class="wordmark">Big Copilot</span><span class="dot" id="lgDot"></span></div>
   <p class="rv" id="welcomeLede" data-tt="land.lede">Drop a Big Ambitions save. Everything is read in this tab and nothing leaves it.</p>
-  <div class="drop rv" id="drop" role="button" tabindex="0" title="Choose the folder named Big Ambitions inside SaveGames, or drop it here. The page looks through every company folder in it and takes the newest save; a menu then lets you pick another character or save." data-tt-title="land.drop.title">
+  <div class="drop rv" id="drop" title="Drop the folder named Big Ambitions inside SaveGames here. The page looks through every company folder in it and takes the newest save; a menu then lets you pick another character or save." data-tt-title="land.drop.title2">
     <div class="folder"><i class="tab"></i><i></i><span class="file"></span><i class="flap"></i></div>
     <b data-tt="land.drop.head">Drop your save folder anywhere</b>
-    <span data-tt="land.drop.sub">the newest .hsg in it opens</span>
   </div>
   <div class="row rv" id="entryRow">
     <button type="button" class="btn" id="folderBtn" title="Choose the folder named Big Ambitions inside SaveGames. The page looks through every company folder in it and takes the newest save." data-tt-title="land.folder.title">__ICON_FOLDER__Choose the folder</button>
@@ -398,6 +421,7 @@ details.help[open] summary::after{content:"\2013"}
   </div>
   <div class="save-location rv" id="saveLocation">
     <label for="savePlatform"><span data-tt="land.where.label">Save folder</span> <select id="savePlatform" aria-label="Operating system for save folder help" data-tt-aria-label="land.where.select"><option value="windows">Windows</option><option value="mac">macOS</option><option value="other" selected data-tt="land.where.other">Other / unknown</option></select></label>
+    <a href="#help" class="link lg-morehelp" id="saveMoreHelp" aria-controls="help" aria-expanded="false" data-tt="land.where.more">More help</a>
     <div class="path-row" id="savePathRow" hidden><code id="savePath"></code><button type="button" class="copy" id="savePathCopy" data-copy="savePath">Copy</button></div>
     <p id="saveLocationHint">Choose Windows or macOS to see its save folder, or select a .hsg file.</p>
   </div>
@@ -413,7 +437,6 @@ details.help[open] summary::after{content:"\2013"}
     </div>
     <p class="quiet lg-note" id="srcNote" hidden></p>
   </div>
-  <!--__FOOTER__-->
   <details class="help" id="help">
     <summary data-tt="land.help.summary">Where is my save?</summary>
     <div class="help-content">
@@ -434,6 +457,7 @@ details.help[open] summary::after{content:"\2013"}
       <p class="lg-quiet"><button type="button" class="lg-text" id="forgetHistory" title="Two weeks of demand and sixty days of cash history are kept in this browser for the trends. Forgetting them starts a fresh record." data-tt-title="land.forget.title" data-tt="land.forget">Forget history</button> <span data-tt="land.forget.after">&middot; the page only reads your saves, from a folder or from the running game.</span></p>
     </div>
   </details>
+  <!--__FOOTER__-->
   <div class="orb" id="lgOrb" aria-hidden="true"><i></i><u></u></div>
   <input type="file" id="folderPick" webkitdirectory directory multiple hidden>
   <input type="file" id="localePick" accept=".json" hidden>
@@ -444,17 +468,21 @@ details.help[open] summary::after{content:"\2013"}
      the board has its own footer and carries them itself. -->
 <template id="boardControls">
   <div class="menu" id="srcMenu">
-    <button type="button" class="ibtn tr" id="menuBtn" aria-haspopup="true" aria-expanded="false" aria-label="More" data-tip="Change folder · one file · watch · game text · history · about" data-tt-aria-label="app.menu.more" data-tt-tip="app.menu.tip">__ICON_MORE__</button>
+    <button type="button" class="ibtn tr" id="menuBtn" aria-haspopup="true" aria-expanded="false" aria-label="More" data-tip="Change folder · one file · watch the game" data-tt-aria-label="app.menu.more" data-tt-tip="app.menu.tip2">__ICON_MORE__</button>
     <div class="menu-panel">
       <div class="menu-heading" data-tt="app.menu.source">Save source</div>
+      <p class="menu-src" id="menuSrcLine"></p>
       <div id="menuSourceSlot"></div>
       <button type="button" class="lg-btn lg-watch" id="watchBtn" hidden>Watch</button>
-      <p class="menu-hint" data-tt="app.menu.hint">Pick a character or one save above and the board follows it, or link to the running game. Or drop a .hsg save anywhere.</p>
-      <div class="menu-divider"></div>
-      <div id="menuChipSlot"></div>
-      <p class="menu-hint" id="menuChipHint"></p>
+      <!-- Game text and Forget history are Preferences' (declutter X5): their
+           controls wait here, out of sight, for its rows to drive them. -->
+      <div id="menuChipSlot" hidden></div>
+      <p class="menu-hint" id="menuChipHint" hidden></p>
       <div id="menuHelpSlot"></div>
-      <div class="menu-foot"><div id="menuFootSlot" class="foot-links"></div></div>
+      <div class="menu-foot" hidden><div id="menuFootSlot" class="foot-links"></div></div>
+      <!-- The board's utilities (What's new, Preferences, Help & feedback),
+           drawn by its nxMenuInto(): the sidebar has this one ···. -->
+      <div id="menuUtilSlot"></div>
     </div>
   </div>
 </template>

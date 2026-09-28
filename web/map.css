@@ -261,18 +261,6 @@
 .map-dialog-head h2{margin:0;font-size:18px;font-weight:600;letter-spacing:-.01em}
 .map-dialog .stage{height:560px}
 body.map-modal-open{overflow:hidden}
-/* The sixth page must remain reachable without widening the document. */
-@media(max-width:1100px){
- .wrap .mast{height:auto;min-height:100px;gap:10px 16px;flex-wrap:wrap;padding:12px 0}
- .mast .brand{max-width:45%;min-width:0}
- .mast .wordmark{font-size:24px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
- .mast .clock{max-width:50%;margin-left:auto}
- .mast .clock b{font-size:13px}
- .mast .nav{order:3;flex-basis:100%;min-width:0;margin-left:0;flex-wrap:wrap;gap:4px}
- .mast .nav a{padding:8px 10px}
- .mast .nav a.on{background:var(--accent-soft)}
- .mast .nav .ink,.mast .orb{display:none}
-}
 /* narrow: the panel drops under the stage; the card and chrome keep their places */
 @media(max-width:760px){
  .stage{height:52dvh;min-height:300px}

@@ -532,7 +532,7 @@ test('a factory line short of its hours is one "Factory run hours" row; more hou
   const rows = JSON.parse(JSON.stringify(context.buildOrderChecklist([], [], [], [], [], businesses, [], [], lines)));
   assert.deepEqual(rows.map(r => [r.kind, r.item, r.current, r.proposed, r.mode]),
     [['Factory run hours', 'Cake', 12, 24, 'hours']]);
-  assert.match(rows[0].reason, /24 hours a day, on each of its 2 machines; the roster has them 12\. Sized 24\/7/);
+  assert.match(rows[0].reason, /^Staff Cake for 24 hours a day, on each of its 2 machines; the schedule has them 12\. Planned for full production/);
   // Keyed by the item's key, as every checklist row is.
   assert.equal(rows[0].key, JSON.stringify(['Factory run hours', 'factory#2', 'ba:itemname_cake', 12, 24, null]));
   assert.match(context.orderChecklistText(rows, 'Company'), /Cake: run 12 -> 24 hours\/day/);

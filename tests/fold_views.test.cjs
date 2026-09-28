@@ -89,7 +89,7 @@ test('By weekday is offered only when a company series clears the weekly-cycle t
     assert.equal((await some.page.locator('#dailyBox .fv-basis').innerText()).replace(/\s+/g, ' ').trim(),
       'Company revenue · every site · 4 weeks');
     assert.equal(await readout(some.page), 'Peaks Friday +16 · lowest Sunday −18');
-    assert.match(await some.page.locator('#dailyHead .why').getAttribute('data-tip'), /from the company's last 4 weeks of daily results/);
+    assert.match(await some.page.locator('[data-view-ctl="businesses/results"] .why').getAttribute('data-tip'), /from the company's last 4 weeks of daily results/);
     // One run of text: the read-out's flex gap does not split "Peaks Friday +16".
     assert.equal(await some.page.locator('#dailyBox .fv-readout > *').count(), 1);
     // Day 73 is a Wednesday: its column is outlined, and the tooltip reads it.
@@ -187,9 +187,12 @@ test('the difficulty chip sits on the build line on a desktop and opens its sett
     const knob = n => pop.locator('.fv-rule').nth(n).locator('.me').evaluate(el => parseFloat(el.style.left));
     assert.ok(await knob(1) > 50);
     assert.ok(await knob(2) < 50);
-    // Under its chip, inside the window.
+    // Beside its chip, which is at the sidebar's foot: above it where there is
+    // no room under it, never over it, inside the window.
     const [chip, box] = await Promise.all([mast.boundingBox(), pop.boundingBox()]);
-    assert.ok(box.y > chip.y + chip.height - 1 && box.x + box.width <= 1600);
+    const {height} = page.viewportSize();
+    assert.ok((box.y > chip.y + chip.height - 1 || box.y + box.height < chip.y + 1) && box.x + box.width <= 1600 && box.y + box.height <= height,
+      JSON.stringify({chip, box}));
     // Focus goes into the dialog, and Esc brings it back to the chip with no
     // tooltip left open over the closed popover.
     assert.equal(await page.evaluate(() => document.activeElement.id), 'fvDiffPop');
@@ -207,38 +210,39 @@ test('the difficulty chip sits on the build line on a desktop and opens its sett
 // Game save names are not capped; this one is 36 characters.
 const LONG = 'The Very Long Name Of A Company Save';
 const FLAGS = {locale: false, build: 3683};
-// The masthead as drawn: every box in it, rounded to the pixel. Measured once
-// the search field has fitted itself to what is left (ssFitMast(), run by a
-// ResizeObserver on the clock, before the next paint): in between, the field
-// and the new clock can share a width neither of them keeps.
+// The sidebar as drawn: every box in it, rounded to the pixel, a frame after
+// the name and the clock are written.
 const mastBoxes = (page, [save, flags]) => page.evaluate(async ([save, flags, FLAGS]) => {
   D.meta.save = save;
   if (flags) Object.assign(D.meta, FLAGS);
   drawMast();
   await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
   const box = el => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round); };
-  return {mast: box(document.querySelector('.mast')), brand: box(document.querySelector('.brand')),
+  return {mast: box(document.getElementById('mast')), brand: box(document.querySelector('.sd .brand')),
     nav: box(document.getElementById('nav')), clock: box(document.getElementById('clock')),
     lines: [...document.querySelectorAll('#clock > small')].map(box),
     scroll: document.documentElement.scrollWidth, room: document.documentElement.getBoundingClientRect().width};
 }, [save, flags, FLAGS]);
 
 const NORMAL = {label: 'Normal', slot: 2, harder: 0, easier: 0, startingMoney: 0, rules: []};
-// Where the search control starts, and where the sphere's first ball needs it
-// to start: 40 px after the nav, 100 px of ball, 12 px of gap.
-const ballRoom = page => page.evaluate(() => ({control: ssMastControl().getBoundingClientRect().left,
-  right: ssMastControl().getBoundingClientRect().right,
-  rest: document.getElementById('nav').getBoundingClientRect().right + SS_BALL_ROOM,
-  clock: document.getElementById('clock').getBoundingClientRect().left}));
+// The search control, the head its balls rest on, the balls, and the clock,
+// top to bottom down the sidebar.
+const ballRoom = page => page.evaluate(() => {
+  const r = el => el.getBoundingClientRect();
+  return {control: r(ssMastControl()), head: r(document.getElementById('sdHead')), side: r(document.getElementById('mast')),
+    // The rail shows its short clock instead.
+    balls: [...document.querySelectorAll('.sd .orb.live:not(.nx-off)')].map(r),
+    clock: r(document.getElementById(document.body.classList.contains('sd-rail') ? 'sdClk' : 'clock'))};
+});
 
-test("at 1501 px and over the chip ends the clock's last line, inside the masthead", async () => {
+test("at 1501 px and over the chip ends the clock's last line, inside the sidebar", async () => {
   for (const width of [1501, 1530, 1600]) for (const save of ['Fixture', LONG]) for (const flags of [false, true]) {
     const what = `${width} ${save.length} chars${flags ? ' with flags' : ''}`;
     const {page, errors} = await board({width});
     try {
       const b = await mastBoxes(page, [save, flags]);
       assert.ok(b.scroll <= b.room, `${what} scrolls sideways`);
-      // The clock's content box stays inside the masthead.
+      // The clock's content box stays inside the sidebar.
       const [ml, mt, mw, mh] = b.mast, [cl, ct, cw, ch] = b.clock;
       assert.ok(cl >= ml && ct >= mt && cl + cw <= ml + mw && ct + ch <= mt + mh, `${what}: clock ${b.clock} outside ${b.mast}`);
       // In the clock's last line and no other, never a line of its own (the web
@@ -247,15 +251,15 @@ test("at 1501 px and over the chip ends the clock's last line, inside the masthe
       assert.deepEqual(lines, [...Array(lines.length - 1).fill(0), 1], what);
       assert.equal(await page.locator('#clock .fv-diff').isVisible(), true, what);
       assert.equal(await page.locator('#footDiff .fv-diff').isVisible(), false, what);
-      // The search field (or its icon) ends before the clock.
+      // The search field (or its icon) is above the clock.
       const room = await ballRoom(page);
-      assert.ok(room.right <= room.clock, `${what}: search ${room.right} runs into the clock ${room.clock}`);
+      assert.ok(room.control.bottom <= room.clock.top, `${what}: search ${room.control.bottom} runs into the clock ${room.clock.top}`);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   }
 });
 
-test("at 1500 px and under the masthead is the board's own, and the chip is in the footer", async () => {
+test("at 1500 px and under the sidebar is the board's own, and the chip is in the footer", async () => {
   for (const width of [1500, 1440, 1301, 900, 540, 390]) for (const save of ['Fixture', LONG]) for (const flags of [false, true]) {
     const what = `${width} ${save.length} chars${flags ? ' with flags' : ''}`;
     const boxes = [];
@@ -276,20 +280,22 @@ test("at 1500 px and under the masthead is the board's own, and the chip is in t
   }
 });
 
-test("the search control keeps out of the sphere's resting place, Normal or Custom chip", async () => {
-  for (const houseRules of [NORMAL, CUSTOM]) for (const width of [1501, 1530, 1440, 1301]) for (const save of ['Fixture', LONG]) {
-    // A 36-character name leaves no room for the ball and the icon together
-    // at 1301 px, chip or no chip (the brand and the nav alone reach past it),
-    // nor with the Custom chip on the clock at 1501 and 1530 px. The icon then
-    // sits over the ball's resting place; accepted, rather than moving the chip.
-    if (save === LONG && (width === 1301 || (houseRules === CUSTOM && width >= 1501 && width <= 1530))) continue;
+test("the search control keeps out of the sphere's resting place, Normal or Custom chip, any name", async () => {
+  for (const houseRules of [NORMAL, CUSTOM]) for (const width of [1501, 1530, 1440, 1301, 1000]) for (const save of ['Fixture', LONG]) {
     const what = `${houseRules.label} ${width} ${save.length} chars`;
     const {page, errors} = await board({width, houseRules});
     try {
       await mastBoxes(page, [save, false]);
       const room = await ballRoom(page);
-      assert.ok(room.control >= room.rest - 0.5, `${what}: search at ${room.control} is in the ball's room, which ends at ${room.rest}`);
-      assert.ok(room.clock - room.right >= 12 - 0.5, `${what}: and stays the sphere's gap clear of the clock`);
+      // The balls rest on the head's rule, inside the sidebar; the search
+      // control starts below that rule, and the clock below the control.
+      for (const b of room.balls) {
+        assert.ok(b.bottom <= room.head.bottom + 0.5 && b.right <= room.side.right, `${what}: a ball ${JSON.stringify(b)} leaves the head`);
+        assert.ok(b.bottom <= room.control.top + 0.5, `${what}: a ball sits on the search control`);
+      }
+      assert.ok(room.control.top >= room.head.bottom - 0.5, `${what}: search at ${room.control.top} is in the head`);
+      assert.ok(room.control.right <= room.side.right, `${what}: search inside the sidebar`);
+      assert.ok(room.clock.top >= room.control.bottom, `${what}: and the clock is below it`);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   }

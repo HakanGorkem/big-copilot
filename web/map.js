@@ -359,7 +359,7 @@ const MAP_WORDS = {
   get home(){ return tt("map.layer.home", "Homes"); },
   get homeTip(){ return tt("map.layer.home.tip", "Homes you rent, white on the map."); },
   get fnd(){ return tt("map.layer.fnd", "Findings"); },
-  get fndTip(){ return tt("map.layer.fnd.tip", "Sites with a finding from Today. Red is critical, amber is worth a look, grey is for information. The dots show once you zoom in."); },
+  get fndTip(){ return tt("map.layer.fnd.tip", "Sites with a finding in Needs attention. Red is critical, amber is worth a look, grey is for information. The dots show once you zoom in."); },
   get all(){ return tt("map.layer.all", "All"); },
   get allTip(){ return tt("map.layer.all.tip", "Every address in the city, as faint outlines. Off by default."); },
   get layersWhy(){ return tt("map.layers.why", "The chips are layers: your businesses, buildings you own, homes you rent, sites with a finding, every address. Click one to switch it off; off is dimmed, never gone. Pick a place from the list or on the map and its card opens beside the building. Drag to pan, wheel to zoom."); },
@@ -450,7 +450,19 @@ class CityMapView {
     this.root.addEventListener('click', e => {
       if(!this.svg) return;
       const pick = e.target.closest('[data-pick]');
-      if(pick){ this.select(pick.dataset.pick); return; }
+      if(pick){
+        this.select(pick.dataset.pick);
+        // Narrow, the list is under the map: a row picked there brings the map,
+        // where its card opens, back into view (Find a location adds the
+        // area's row above it, so a lower row is often reached by scrolling).
+        if(this.narrow && this.list?.contains(pick) && this.stage){
+          // It lands under the masthead, which stays at the top of the window.
+          const r = this.stage.getBoundingClientRect(), mast = document.querySelector('.wrap .mast');
+          const top = mast && getComputedStyle(mast).position === 'sticky' ? mast.getBoundingClientRect().bottom : 0;
+          if(r.top < top || r.top > innerHeight) window.scrollBy({top: r.top - top, behavior: REDUCED ? 'auto' : 'smooth'});
+        }
+        return;
+      }
       const sorter = e.target.closest('.fhead [data-s]');
       if(sorter){ this.sortBy(sorter.dataset.s); return; }
       if(e.target.closest('[data-more]')){ this.showAll = true; this.update(); return; }
@@ -619,6 +631,10 @@ class CityMapView {
     const changed = () => { this.showAll = false; this.saveFinder(); this.update(); };
     this.root.querySelector('[data-f="tog"]').onclick = () => {
       this.fs.on = !this.fs.on; this.deselect(); changed();
+      // On, the page is Expansion › Find a location; off, the City map. Each
+      // is a visit of its own, so Back from one returns to the other.
+      if(this === cityMapPage && page === "map" && typeof openRoute === "function") openRoute(this.fs.on ? "expansion/finder" : "map", {scroll: false});
+      else if(this === cityMapPage && page === "map" && typeof routeSync === "function") routeSync();
     };
     this.root.querySelectorAll('.fchip.cat').forEach(chip => chip.onclick = () => {
       // A sort the player picked travels to the new category when it can; the
@@ -735,6 +751,7 @@ class CityMapView {
     // and a new load opens the plain map with the filters where they were left.
     const {on, ...filters} = this.fs;
     try{ localStorage.setItem(store, JSON.stringify(filters)); }catch(e){}
+    finderStateRemember(this);
   }
   /* Opened from Today or a Growth cell: the finder comes on with a preset. */
   setFinder(preset = {}){
@@ -747,6 +764,7 @@ class CityMapView {
     this.fs.sort = this.fs.cat === 'warehouse' ? 'm2' : 'score'; this.fs.sortPicked = false;
     this.saveFinder();
     this.selected = null; this.showAll = false;  // back to the 80-row cap
+    finderPickRemember(this);
     this.ready.then(ok => { if(ok) this.update(); });
   }
   /* --- saved searches ---------------------------------------------------------
@@ -1074,7 +1092,7 @@ class CityMapView {
     // type's row there.
     const demand = f.slug
       ? `<a class="num mf-grow" href="#secMarket" data-grow="${mapText(f.slug)}" data-tip="${
-          mapText(tt("map.demand.tip", "{type} in every neighbourhood, on Growth › Demand", {type: f.fit}))}"><b class="mono">${f.demand}</b><span>${
+          mapText(tt("map.demand.tip", "{type} in every neighbourhood, on Expansion › Demand", {type: f.fit}))}"><b class="mono">${f.demand}</b><span>${
           mapText(tt("map.stat.demandgo", "demand ›"))}</span></a>`
       : stat(f.demand, tt("map.stat.demand", "demand"));
     const traffic = tt("map.stat.traffic", "traffic");
@@ -1629,6 +1647,7 @@ class CityMapView {
   }
   async select(key, focus=true, fresh=false){
     this.selected=key;this.freshSelection=fresh;
+    finderPickRemember(this);
     if(!await this.ready) return;
     if(this.selected!==key) return; // A newer selection or character superseded this request.
     // A dialog that was just reopened has no layout yet; a cached rect from
@@ -1661,6 +1680,7 @@ class CityMapView {
   deselect(){
     if(!this.selected) return;
     this.selected = null; this.onSettled = null;
+    finderPickRemember(this);
     this.update();
   }
   resetCharacter(){
@@ -1689,6 +1709,9 @@ function showCityMap(){
    control that opened the finder is on a page now hidden. */
 function openFinder(preset = {}, focus = false){
   if(!premises()) return;
+  // The finder is Expansion › Find a location in the board's shell: the page
+  // it opens stands under that route (docs/ui-route-migration.md).
+  if(typeof routeNext !== "undefined" && routeNext === null) routeNext = "expansion/finder";
   showPage("map");
   showCityMap();
   const view = cityMapPage;
@@ -1705,8 +1728,91 @@ function openFinder(preset = {}, focus = false){
     if(!to) return;
     to.focus({preventScroll: true});
     // Narrow, the filters sit above the results in the same scroller, so the
-    // first result may still be below what the panel shows.
-    if(view.narrow) to.scrollIntoView({block: "nearest"});
+    // first result may still be below what the panel shows; on a short
+    // window the page's own heading and the arrival strip can push it under
+    // the window's edge too. The keyboard's place is always in view.
+    const r = to.getBoundingClientRect();
+    if(view.narrow || r.bottom > (window.innerHeight || 0) || r.top < 0) to.scrollIntoView({block: "nearest"});
+  });
+}
+/* Expansion › Find a location reached with no preset -- Back, Forward, a
+   reload, the area's own row, the masthead's remembered view: the finder as
+   the reader left it, switched on, its filters and saved searches untouched
+   (only openFinder() applies a preset). Its pick is the history entry's
+   (finderPickRestore()): `mode` is how the entry was reached, "push" for a
+   new visit, "none" or "replace" for Back, Forward and a reload. */
+function showFinder(mode = "push"){
+  if(!premises()) return;
+  if(typeof routeNext !== "undefined" && routeNext === null) routeNext = "expansion/finder";
+  showPage("map");
+  showCityMap();
+  const view = cityMapPage;
+  if(!view.fs.on){
+    view.loadFinder();
+    view.fs.on = true;
+    view.ready.then(ok => { if(ok) view.update(); });
+  }
+  /* Back, Forward and a reload give the visit the filters it had (nxFs):
+     two questions asked from Demand keep their own answers. A new visit
+     keeps the filters on screen, and they become its own. */
+  const kept = mode !== "push" ? finderEntryState() : null;
+  if(kept){
+    view.ready.then(ok => {
+      if(!ok) return;
+      view.fs = {...view.fs, ...view.savedFilters({filters: kept}), on: true};
+      view.clampSort(); view.showAll = false;
+      view.update();
+    });
+  } else finderStateRemember(view);
+  finderPickRestore(view, mode !== "push");
+}
+/* The filters of a visit to Find a location, kept on its history entry
+   (nxFs) beside its pick: written whenever they change (saveFinder()), read
+   when the entry is shown again. Only the finder's own, on the City map's
+   page while the finder is on. */
+function finderStateRemember(view){
+  if(view !== cityMapPage || typeof page === "undefined" || page !== "map" || !view.finderOn()) return;
+  try{
+    const st = Object.assign({}, history.state || {});
+    st.nxFs = finderPick(view.fs);
+    history.replaceState(st, '', location.href);
+  }catch(e){}
+  // The ways on under the map follow the business type picked.
+  if(typeof drawFinderCtx === "function") drawFinderCtx();
+}
+const finderEntryState = () => { try{ const s = (history.state || {}).nxFs; return s && typeof s === "object" ? s : null; }catch(e){ return null; } };
+/* The building picked in the finder is kept on the history entry (nxPick),
+   beside the route and the arrival, so a reload of Find a location -- or Back
+   to it -- opens it again. Only the finder's own pick, on the City map's page. */
+function finderPickRemember(view){
+  if(view !== cityMapPage) return;
+  try{
+    const st = Object.assign({}, history.state || {});
+    if(view.selected && view.finderOn()) st.nxPick = view.selected; else delete st.nxPick;
+    if((history.state || {}).nxPick === st.nxPick) return;
+    history.replaceState(Object.keys(st).length ? st : null, '', location.href);
+  }catch(e){}
+}
+/* The history entry is the pick's source of truth. A new visit (the area's
+   row, the masthead, a task without a preset) has no pick of its own yet: it
+   takes the one on screen, so a reload of it keeps it. Back, Forward and a
+   reload show the entry's own: its building where the results still hold it
+   (the same availability, category and filters) -- picked again, its row
+   pressed and its card open, whatever else was picked since -- and no pick
+   where the entry has none or its building has left the results, exactly as a
+   plain reload of that entry shows. */
+const finderEntryPick = () => { try{ return (history.state || {}).nxPick || null; }catch(e){ return null; } };
+function finderPickRestore(view, replay){
+  const entry = location.hash;
+  view.ready.then(ok => {
+    // The reader may have gone on while the map loaded: that visit decides.
+    if(!ok || page !== 'map' || !view.finderOn() || location.hash !== entry) return;
+    if(!replay){ finderPickRemember(view); return; }
+    const key = finderEntryPick();
+    if(key === view.selected) return;
+    if(key && view.rows().some(r => r.key === key)){ view.select(key, false); return; }
+    if(view.selected) view.deselect();
+    else finderPickRemember(view);
   });
 }
 function refreshCityMaps(){

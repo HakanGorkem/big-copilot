@@ -868,7 +868,7 @@
      "level": "warn",
      "site": "HART. Spirits",
      "siteKey": "ba:street_eighthstreet#5",
-     "text": "HART. Spirits fills the counters every day 17-19, 14 hours a week at 20/h and $450/day through the ceiling. Registers is the limit, so the answer is another counter",
+     "text": "HART. Spirits fills the counters every day 17-19, 14 hours a week at 20/h and $450/day of sales in those hours. Registers is the limit; the fix is another counter",
      "unit": "/day trade",
      "worth": 450.24
     },
@@ -971,6 +971,7 @@
      "slug": "ba:itemname_beer",
      "soldPerDay": 321,
      "soldPerWeek": 2250,
+     "soldPrice": 6.0,
      "tradeRate": 321.4,
      "units": 400,
      "weekSold": 2250.0
@@ -985,6 +986,7 @@
      "slug": "ba:itemname_sodacan",
      "soldPerDay": 0,
      "soldPerWeek": 0,
+     "soldPrice": null,
      "tradeRate": 0.0,
      "units": 0,
      "weekSold": 0.0
@@ -1276,6 +1278,7 @@
      "slug": "ba:itemname_umbrella",
      "soldPerDay": 21,
      "soldPerWeek": 150,
+     "soldPrice": 15.0,
      "tradeRate": 21.4,
      "units": 30,
      "weekSold": 150.0
@@ -1290,6 +1293,7 @@
      "slug": "ba:itemname_cheapgift",
      "soldPerDay": 86,
      "soldPerWeek": 600,
+     "soldPrice": 12.0,
      "tradeRate": 85.7,
      "units": 300,
      "weekSold": 600.0
@@ -1552,6 +1556,7 @@
      "slug": "ba:itemname_water",
      "soldPerDay": 0,
      "soldPerWeek": 0,
+     "soldPrice": null,
      "tradeRate": 0.0,
      "units": 1500,
      "weekSold": 0.0
@@ -1763,6 +1768,7 @@
      "slug": "ba:itemname_beer",
      "soldPerDay": 0,
      "soldPerWeek": 0,
+     "soldPrice": null,
      "tradeRate": 0.0,
      "units": 900,
      "weekSold": 0.0
@@ -1777,6 +1783,7 @@
      "slug": "ba:itemname_water",
      "soldPerDay": 0,
      "soldPerWeek": 0,
+     "soldPrice": null,
      "tradeRate": 0.0,
      "units": 500,
      "weekSold": 0.0
@@ -7262,7 +7269,7 @@
     "level": "warn",
     "site": "HART. Spirits",
     "siteKey": "ba:street_eighthstreet#5",
-    "text": "HART. Spirits fills the counters every day 17-19, 14 hours a week at 20/h and $450/day through the ceiling. Registers is the limit, so the answer is another counter",
+    "text": "HART. Spirits fills the counters every day 17-19, 14 hours a week at 20/h and $450/day of sales in those hours. Registers is the limit; the fix is another counter",
     "unit": "/day trade",
     "worth": 450.24
    },

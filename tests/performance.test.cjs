@@ -51,7 +51,7 @@ async function idleFrames(page) {
   await page.evaluate(() => { window.idleMark = null; });
   await page.waitForFunction(() => {
     const now = performance.now();
-    const orbs = [...document.querySelectorAll('#lgOrb.live, .mast .orb.live')];
+    const orbs = [...document.querySelectorAll('#lgOrb.live, .sd .orb.live')];
     const entered = orbs.length > 0 && orbs.every(o => /scale\(1(\.0+)?\)$/.test(o.style.transform));  // the browser writes "scale(1)"
     if (!entered || !window.idleMark || window.idleMark.calls !== animationCalls) {
       window.idleMark = {calls: animationCalls, at: now};
@@ -90,7 +90,7 @@ test('dashboard motion wakes for new balls and scrolling, and pauses while hidde
   const page = await fixture(t);
   assert.equal(await idleFrames(page), 0);
   await page.locator('.wordmark').click();
-  assert.equal(await page.locator('.mast .orb').count(), 2);
+  assert.equal(await page.locator('.sd .orb').count(), 2);
   assert.equal(await idleFrames(page), 0, 'a new ball settles');
   const before = await page.locator('#orb').evaluate(el => el.style.transform);
   await page.evaluate(() => {

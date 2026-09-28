@@ -488,7 +488,7 @@ const wikiWhy = text => text
   ? `<span class="why" data-tip="${attr(text)}" tabindex="0"><i>?</i></span>` : "";
 const WIKI_CHEV = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>';
 /* The trail's first step, the Wiki itself. */
-const wikiCrumbHome = () => tt("wiki.crumb.home", "Wiki");
+const wikiCrumbHome = () => tt("wiki.crumb.home2", "Wiki");
 function wikiCrumb(trail){
   return `<nav class="wk-crumb" aria-label="${attr(tt("wiki.crumb.aria", "Breadcrumb"))}">${trail.map((step, i) =>
     (i ? WIKI_CHEV : "") + (step.href
@@ -549,7 +549,6 @@ function wikiHome(){
       + `<span class="wk-ic">${wikiCatIcon(c)}</span><b>${wikiText(label)}</b>`
       + `<span class="wk-n">${wikiNum(count)}</span></a>`;
   }).join("");
-  const legend = Object.keys(WIKI_BADGE).map(k => wikiChip(k)).join("");
   return `
 <div class="sechead wk-top">
   <label class="wk-srch">${icon("search")}
@@ -557,8 +556,7 @@ function wikiHome(){
       placeholder="${attr(tt("wiki.search.placeholder", {one: "Search {n:,} page", other: "Search {n:,} pages"}, {n: held}))}" aria-label="${attr(tt("wiki.search.aria", "Search the wiki"))}"
       value="${attr(q)}">
     <span class="wk-cnt">${q ? wikiNum(hits.length) : ""}</span></label>
-  ${wikiWhy(tt("wiki.search.tip", "Search the game's help by page title or category. No save needed."))}
-  <span class="aside">${wikiStamp()}</span>
+  ${wikiWhy([tt("wiki.search.tip", "Search the game's help by page title or category. No save needed."), wikiStamp()].filter(Boolean).join(" "))}
 </div>
 ${q ? `<div class="wk-hits">${
     shown.map(e => wikiRow(e, q)).join("")
@@ -569,9 +567,6 @@ ${q ? `<div class="wk-hits">${
 ${shelf ? `<div class="wk-shelf">${shelf}</div>`
   : `<p class="wk-none">${wikiEsc(tt("wiki.shelf.none", "This build carries the pages but not the help menu's own shelf of categories. Search still finds every one of them."))}</p>`}
 ${q ? "" : wikiTopicShelf()}
-<div class="wk-legend">
-  ${legend}${wikiWhy(tt("wiki.legend.tip", "Badges show where a fact comes from. Hover or focus a badge for its meaning."))}
-</div>
 ${listed > held ? `<p class="quiet wk-foot">${wikiEsc(tt("wiki.shelf.held", {one: "{n:,} of the help menu's {total:,} pages is in this build.", other: "{n:,} of the help menu's {total:,} pages are in this build."}, {n: held, total: listed}))}</p>` : ""}`;
 }
 
@@ -725,6 +720,8 @@ function wikiSource(page){
    save reports. Steam's depot id and the build a shipped layout was authored on
    are different numbers; they stay in the source list below, with their own
    words, where they cannot be mistaken for this one. */
+/* As text for the search's tip: the pages being current is the normal state,
+   so no chip says it on the page (declutter M2). */
 function wikiStamp(){
   const p = wikiData.provenance || {};
   const sample = wikiData.sample || {};
@@ -732,11 +729,9 @@ function wikiStamp(){
   const claimed = p.saveBuildNumber ?? p.gameBuild;
   const build = typeof claimed === "number" || typeof claimed === "string" ? claimed : null;
   const bits = [];
-  if(when) bits.push(wikiChip("dim", tt("wiki.stamp.date", "game files of {date}", {date: String(when).slice(0, 10)}),
-    tt("wiki.stamp.date.tip", "The newest modification date of the game files this was read from — not when the reading ran.")));
-  if(build) bits.push(wikiChip("dim", tt("wiki.stamp.build", "save build {build}", {build: String(build)}),
-    tt("wiki.stamp.build.tip", "The build number a save reports for this installation. A save from a newer build may not match what these pages say.")));
-  return bits.join("");
+  if(when) bits.push(tt("wiki.stamp.date.said", "Read from game files of {date}, their newest modification date.", {date: String(when).slice(0, 10)}));
+  if(build) bits.push(tt("wiki.stamp.build.said", "A save from build {build} matches these pages; one from a newer build may not.", {build: String(build)}));
+  return bits.join(" ");
 }
 
 /* --- what a loaded save adds -------------------------------------------- */
@@ -1942,8 +1937,8 @@ function wikiPlanControl(){
        also carries stay here. The words for that distinction are authored. */
     slot.innerHTML = `<button type="button" class="btn2" data-wiki-plan
       data-tip="${attr(wikiCopy("plannerHint", own
-        ? tt("wiki.plan.tip", "Open the Growth planner with {name} selected.", {name: own})
-        : tt("wiki.plan.tip.range", "Open the Growth planner with this range selected.")))}"
+        ? tt("wiki.plan.tip", "Open Plan a factory with {name} selected.", {name: own})
+        : tt("wiki.plan.tip.range", "Open Plan a factory with this range selected.")))}"
       >${wikiText(wikiCopy("plannerLabel"))} ${icon("chev")}</button>`;
   else
     slot.innerHTML = `<span class="quiet" data-tip="${attr(hasData()

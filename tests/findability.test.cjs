@@ -100,7 +100,8 @@ test('a shop block reads out its most telling cell before anything is pointed at
   const page = await board({hours: grid(false, 3)});
   try {
     // The hour grid opens on the busiest hour spent at the ceiling, Monday first.
-    assert.match(await textOf(page.locator('#hourRead')), /^Worst hour · Monday 12:00 6 customers · .* · at the ceiling$/);
+    // "Worst hour" says the ceiling; the line does not say it again.
+    assert.match(await textOf(page.locator('#hourRead')), /^Worst hour · Monday 12:00 6 customers · .*register capacity on$/);
     assert.equal(await readOf(page, 'pull'), 'Foot traffic 41 + marketing 31 · 28 short of the cap');
     // Nothing on the page asks to be hovered any more.
     assert.doesNotMatch(await textOf(page.locator('#sitePanel')), /Hover an? /);
@@ -202,7 +203,7 @@ test('a factory reads out the machine that makes nothing, else the least staffed
     needs: [FACTORY_SITE.needs[0]]}), facts: INPUT_FACTS}});
   try {
     assert.equal(await readOf(page, 'lines'),
-      'Least staffed · Bottle of Wine · Machine 3 · 144 of 168 h rostered: nobody on it on Sundays');
+      'Least staffed · Bottle of Wine · Machine 3 · 144 of 168 h staffed: nobody on it on Sundays');
     assert.equal(await readOf(page, 'inputs'), 'Every input arrives in step');
   } finally { await page.close(); }
   // Covered because Produce up to holds the wine back says so, not "in step".
@@ -217,25 +218,18 @@ test('a factory reads out the machine that makes nothing, else the least staffed
 
 // --- cross-links -------------------------------------------------------------
 
-test('the Shelves and Fees heads link to the guide, landing on Prices in your save', async () => {
+test("the guide's Prices in your save is linked from Products & prices; the Shelves head, beside the header's Prices button, has no second link", async () => {
   let page = await board();
   try {
-    const link = page.locator('#sp-shelves .sechead .xl-guide');
-    assert.equal(await textOf(link), 'Compare with market prices ›');
+    assert.equal(await page.locator('#sp-shelves .sechead .xl-guide').count(), 0);
+    assert.equal(await page.locator('#sitePanel .sitehead [data-site-go="businesses/prices"]').count(), 1);
+    // Products & prices carries the guide's prices, and following it opens the guide there.
+    await page.evaluate(() => openRoute('businesses/prices'));
+    const link = page.locator('#secPrices [data-price-guide]');
     assert.equal(await link.getAttribute('href'), '#wiki/businesstypes-giftshop/prices');
-    // Following it opens the Wiki page on that route.
     await link.click();
     await page.waitForFunction(() => page === 'wiki');
     assert.match(await page.evaluate(() => location.hash), /^#wiki\/businesstypes-giftshop\/prices$/);
-  } finally { await page.close(); }
-  page = await board({shop: {status: 'office', type: 'Law Firm', typeSlug: 'ba:businesstype_lawfirm'}});
-  try {
-    assert.equal(await page.locator('#sp-shelves .xl-guide').getAttribute('href'), '#wiki/businesstypes-lawfirm/prices');
-  } finally { await page.close(); }
-  // A site whose type the save does not name gets no link rather than a dead one.
-  page = await board({shop: {typeSlug: null}});
-  try {
-    assert.equal(await page.locator('#sp-shelves .xl-guide').count(), 0);
   } finally { await page.close(); }
 });
 
@@ -250,8 +244,8 @@ test('a Growth type row and the Plan a chain type link to the setup guide', asyn
           1, ['ba:neighborhood_midtown'], 0, []),
       ];
     });
-    assert.match(rows[0], /<small>1 product · <a class="link xl-guide" href="#wiki\/businesstypes-cinema">Setup guide ›<\/a><\/small>/);
-    assert.match(rows[1], /<small>Lawyer Fee · you run one · <a class="link xl-guide" href="#wiki\/businesstypes-lawfirm">Setup guide ›<\/a><\/small>/);
+    assert.match(rows[0], /<small>1 product · <a class="link xl-guide" href="#wiki\/businesstypes-cinema">Wiki page ›<\/a><\/small>/);
+    assert.match(rows[1], /<small>Lawyer Fee · you run one · <a class="link xl-guide" href="#wiki\/businesstypes-lawfirm">Wiki page ›<\/a><\/small>/);
     await page.evaluate(() => {
       D.plan = {catalogue: {'ba:businesstype_gym': {type: 'Gym', products: ['ba:itemname_proteinbar'], services: []}},
                 own: {}, workstations: {}, sources: {}, prices: {}, recipes: []};
@@ -408,7 +402,7 @@ test("a site's page stands on its own, under a crumb row that carries the picker
     for (const sel of ['#secDaily', '#secRhythm', '#secPortfolio', '#companyNav'])
       assert.equal(await page.locator(sel).isHidden(), true, sel);
     assert.equal(await page.locator('#secDetail').isVisible(), true);
-    assert.equal(await page.locator('#nav a.on').getAttribute('data-id'), 'company', 'Company stays lit');
+    assert.equal(await page.locator('#nav > a.on').getAttribute('data-id'), 'businesses', 'Businesses stays lit');
     // The crumb row sits above the head and holds the picker; the close is gone.
     assert.equal(await page.locator('#sitePanel > .ss-crumbs + .sitehead').count(), 1);
     assert.equal(await page.locator('.ss-crumbs #sitePick select.sitepick').count(), 1);
@@ -419,8 +413,8 @@ test("a site's page stands on its own, under a crumb row that carries the picker
     assert.equal(await page.locator('#sitePick .seg a[data-key]').first().getAttribute('href'), THERE);
     // "Portfolio" is the way back: Results whole again, the portfolio in view.
     await page.locator('.ss-crumb').click();
-    assert.equal(await page.evaluate(() => [location.hash, siteOpen].join(' ')), '#company false');
-    for (const sel of ['#secDaily', '#secPortfolio', '#companyNav'])
+    assert.equal(await page.evaluate(() => [location.hash, siteOpen].join(' ')), '#businesses/results false');
+    for (const sel of ['#secDaily', '#secPortfolio', '#localNav a[data-route="businesses/results"].on'])
       assert.equal(await page.locator(sel).isVisible(), true, sel);
     assert.equal(await page.locator('#secDetail').isHidden(), true);
     // The chain in the trail opens that chain there.
@@ -447,17 +441,23 @@ test("a finding row's name opens the site's page; the rest of the row still open
     await name.click();
     // A name lights no finding, but it says where it was clicked, as a finding does.
     assert.equal(await page.evaluate(() => [location.hash, siteOpen, spArrived, siteFrom.label].join(' ')),
-                 `${HERE} true  Today`);
-    assert.equal(await page.locator('.ss-crumb.from').textContent(), 'Today');
+                 `${HERE} true  Needs attention`);
+    assert.equal(await page.locator('.ss-crumb.from').textContent(), 'Needs attention');
     // The row itself: the finding, lit, and the crumb names Today.
     await page.evaluate(() => showPage('today'));
     await page.locator('#alertSection .find .what').click();
     assert.equal(await page.evaluate(() => [location.hash, siteOpen, spArrived].join(' ')),
                  `${HERE} true loss1`);
-    assert.equal(await page.locator('.ss-crumb.from').textContent(), 'Today');
+    assert.equal(await page.locator('.ss-crumb.from').textContent(), 'Needs attention');
     assert.equal(await page.locator('.ss-trail').textContent(), 'Portfolio›Gift Shops›HART. Gifts');
-    await page.locator('.ss-crumb.from').click();
-    await page.waitForFunction(() => location.hash === '#today' && page === 'today');
+    // A finding's landing says why the reader is here, in the strip above the
+    // page, whose way back takes the crumb's place.
+    assert.equal(await page.locator('#arrive').isVisible(), true);
+    assert.match(await page.locator('#arrive').innerText(), /HART\. Gifts/);
+    assert.doesNotMatch(await page.locator('#arrive').innerText(), /You came from/);
+    assert.equal(await page.locator('.ss-crumb.from').isVisible(), false, 'one way back, not two');
+    await page.locator('#arrive .nx-back').click();
+    await page.waitForFunction(() => location.hash === '#overview' && page === 'today');
     assert.equal(await page.evaluate(() => siteOpen), false);
   } finally { await page.close(); }
 });
@@ -541,7 +541,7 @@ test("the address bar only ever trades another spelling of the open site's own a
   } finally { await page.close(); }
 });
 
-test('the portfolio and the Supply tabs name a site by a link to its page', async () => {
+test('the portfolio and the Supply views name a site by a link to its page', async () => {
   const page = await board({chains: [CHAIN], supply: {shops: [SHELF]}});
   try {
     await page.evaluate(() => { siteOpen = false; drawSite(); openChains.add('Gift Shops'); drawPortfolio(); });
@@ -553,14 +553,15 @@ test('the portfolio and the Supply tabs name a site by a link to its page', asyn
     // From the portfolio the way back is the portfolio.
     assert.equal(await page.evaluate(() => siteFrom), null);
     // Supply › Shops: the shop cell of a real row (after the tick).
-    await page.evaluate(() => { sbWhich = 'all'; reveal('secShops'); drawShopsTab(); wireAll(); });
-    const cell = page.locator('#secShops tbody tr').first().locator('td').nth(1);
+    await page.evaluate(() => { sbMode.deliveries = 'all'; reveal('secDeliveries'); drawDeliveriesView(); wireAll(); });
+    const cell = page.locator('#secDeliveries [data-sb-table="shops"] tbody tr').first().locator('td').nth(1);
     assert.equal(await cell.locator('a.ss-sl').getAttribute('href'), THERE);
     assert.equal(await cell.locator('.map-shortcut').count(), 1, 'the map button stays beside it');
     await cell.locator('a.ss-sl').click();
     assert.equal(await page.evaluate(() => [location.hash, page, siteKey].join(' ')), `${THERE} company ${OTHER}`);
-    // Anywhere else the crumb names the view the name was clicked on.
-    assert.equal(await page.evaluate(() => siteFrom && siteFrom.label), 'Shops');
+    // Anywhere else the crumb names the view the name was clicked on: the
+    // Shops scope is Supply › Deliveries.
+    assert.equal(await page.evaluate(() => siteFrom && siteFrom.label), 'Deliveries');
   } finally { await page.close(); }
 });
 
@@ -573,7 +574,7 @@ test("a crumb back to another site's page is the browser's Back, not a new visit
     }, FINDING);
     // Today, a site's name: its page, "‹ Today".
     await page.locator('#alertSection .find .site a.ss-sl').click();
-    assert.equal(await page.evaluate(() => siteFrom.label), 'Today');
+    assert.equal(await page.evaluate(() => siteFrom.label), 'Needs attention');
     // Another site's name on that page: its page, "‹ HART. Gifts".
     await page.evaluate(href => {
       const a = document.createElement('a');
@@ -587,7 +588,7 @@ test("a crumb back to another site's page is the browser's Back, not a new visit
     // The crumb goes back to the first site, where its own way back is still Today.
     await page.locator('.ss-crumb.from').click();
     await page.waitForFunction(here => location.hash === here, HERE);
-    assert.equal(await page.evaluate(() => siteFrom && siteFrom.label), 'Today');
+    assert.equal(await page.evaluate(() => siteFrom && siteFrom.label), 'Needs attention');
     assert.equal(await page.evaluate(() => history.length), length, 'Back, not a new visit');
   } finally { await page.close(); }
 });
@@ -611,7 +612,7 @@ test('a site given up while its page is open hands the page back to the portfoli
   try {
     await page.evaluate(key => { siteOpen = false; drawSite(); openSite(key); }, OTHER);
     await page.evaluate(() => { D = {...D, businesses: D.businesses.slice(0, 1)}; drawSite(); });
-    assert.equal(await page.evaluate(() => [location.hash, siteOpen].join(' ')), '#company false');
+    assert.equal(await page.evaluate(() => [location.hash, siteOpen].join(' ')), '#businesses/results false');
     assert.equal(await page.locator('#secPortfolio').isVisible(), true);
   } finally { await page.close(); }
 });
@@ -623,10 +624,10 @@ test("another character's save closes the page, its crumb and its evidence with 
       siteOpen = false; drawSite();
       D.alerts = [f]; drawAlerts(); showPage('today'); goToAlert(f);
     }, FINDING);
-    assert.equal(await page.evaluate(() => [location.hash, spArrived, siteFrom.label].join(' ')), `${HERE} loss1 Today`);
+    assert.equal(await page.evaluate(() => [location.hash, spArrived, siteFrom.label].join(' ')), `${HERE} loss1 Needs attention`);
     // The same address stands in the other company's save.
     await page.evaluate(() => { D = {...D, meta: {...D.meta, character: 'someone-else'}}; drawSite(); });
-    assert.equal(await page.evaluate(() => [location.hash, siteOpen, spArrived, siteFrom].join(' ')), '#company false  ');
+    assert.equal(await page.evaluate(() => [location.hash, siteOpen, spArrived, siteFrom].join(' ')), '#businesses/results false  ');
     assert.equal(await page.locator('#secPortfolio').isVisible(), true);
     assert.equal(await page.locator('#portfolio tr.kid.on').count(), 0, 'no portfolio row is lit as the open site');
   } finally { await page.close(); }
@@ -642,15 +643,16 @@ test("a site's page on a phone: a sticky crumb row, arrows round the list, nothi
     assert.equal(await page.locator('#sitePick > a.ibtn').first().isVisible(), true);
     assert.equal(await page.locator('#sitePick .seg > span').first().isHidden(), true);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.getBoundingClientRect().width), 'nothing scrolls sideways');
-    // Scrolled well past it, the row still sits right under the masthead.
+    // Scrolled well past it, the row still sits at the top of the window (the
+    // sidebar is a drawer on a phone, so nothing stands above it).
     const stuck = await page.evaluate(async () => {
       scrollTo(0, document.querySelector('.ss-crumbs').offsetTop + 600);
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       return {y: scrollY, top: document.querySelector('.ss-crumbs').getBoundingClientRect().top,
-              mast: document.getElementById('mast').getBoundingClientRect().bottom};
+              mast: nxTopLine()};
     });
     assert.ok(stuck.y > 400, `the page scrolled: ${JSON.stringify(stuck)}`);
-    assert.ok(Math.abs(stuck.top - stuck.mast) <= 1, `stuck under the masthead: ${JSON.stringify(stuck)}`);
+    assert.ok(Math.abs(stuck.top - stuck.mast) <= 1, `stuck at the top: ${JSON.stringify(stuck)}`);
     // A block landed on comes to rest below the crumb row, not under it.
     await page.evaluate(() => { scrollTo(0, 0); window.xlScroll = null; xlArrive('#sp-shelves'); });
     // The smooth scroll's end state: moved off the top, and still over three frames.

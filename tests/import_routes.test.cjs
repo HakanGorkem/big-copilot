@@ -1,6 +1,7 @@
-// Supply by object (R13): the Shops, Warehouses and Factories tabs and the one
-// change checklist read Python's one verdict per supply fact (supplyFact); the
-// board works none out of its own.
+// Supply's views (the redesign's chunk 2: Changes, Imports, Deliveries,
+// Production, Goods flow) and the one change checklist read Python's one
+// verdict per supply fact (supplyFact); the board works none out of its own.
+// Shops, warehouses and factories are each view's scope.
 // The board tests run on the synthetic R8 fixture (tests/fixtures/r8_supply.json).
 // The parity tests render real extraction from the Python test builders and
 // hold the tabs and the checklist to the facts that extraction sends.
@@ -28,9 +29,9 @@ before(async () => {
 });
 after(async () => { await browser?.close(); });
 
-/* The Supply page drawn from `data` under a sizing, every tab drawn. `which`
+/* The Supply page drawn from `data` under a basis, every view drawn. `which`
    is Needs a change or Everything; `names` are recipes named in this browser. */
-async function board(data, {mode = 'cap', names = null, which = 'all', tab = 'warehouses'} = {}){
+async function board(data, {mode = 'cap', names = null, which = 'all', tab = 'imports'} = {}){
   require('./_payload_contract.cjs').assertPayloadShape(data, 'import_routes');
   const page = await browser.newPage({viewport: {width: 1280, height: 1000}});
   await page.route('https://**', route => route.abort());
@@ -38,14 +39,20 @@ async function board(data, {mode = 'cap', names = null, which = 'all', tab = 'wa
   await page.goto('http://board.test/');
   await page.evaluate(([data, mode, names, which, tab]) => {
     if(names) localStorage.setItem('ba_line_names', JSON.stringify(names));
-    D = data; sizing = mode; sbWhich = which; supplySort = {}; supplyAuto = false; sub.supply = tab;
+    D = data; sizing = mode; sbWhich = which; sbMode.imports = sbMode.deliveries = sbMode.production = which;
+    supplySort = {}; sbSelOff = true; sbSel = null; sub.supply = tab;
     document.body.classList.add('has-board');
     document.querySelectorAll('.page').forEach(el => { el.hidden = el.id !== 'pageSupply'; });
     document.querySelectorAll('#pageSupply section').forEach(el => { el.hidden = false; el.classList.add('measured'); });
-    drawSupplyStrip(); drawShopsTab(); drawWarehousesTab(); drawFactoriesTab(); wireAll();
+    drawSupplyStrip(); drawChangesView(); drawImportsView(); drawDeliveriesView(); drawProductionView(); wireAll();
   }, [data, mode, names, which, tab]);
   return page;
 }
+/* Every view drawn again, as a refresh would. */
+const redraw = page => page.evaluate(() => { drawSupplyStrip(); drawChangesView(); drawImportsView(); drawDeliveriesView(); drawProductionView(); wireAll(); });
+/* How far along Changes is, as its road says it to a screen reader: "3 of 10
+   recorded or applied" (the words on screen went, Peter's testing A9). */
+const counted = page => page.$eval('#sbcTop .sb-road', el => el.getAttribute('aria-label').replace(' changes ', ' '));
 const actions = page => page.evaluate(() => sbData().rows.map(a =>
   ({kind: a.kind, item: a.item, current: a.current, proposed: a.proposed, tight: !!a.tight, paused: !!a.paused,
     ...(a.lower ? {lower: true} : {})})));
@@ -60,51 +67,65 @@ const rows = (page, sec) => page.$$eval(`#${sec} tr[data-slug]`, trs => trs.map(
   }),
   box: r.querySelector('input.imp-in')?.value ?? null,
   tick: !!r.querySelector('.sb-tick'),
+  // The status word's sentence is its tip (declutter G4).
+  tip: r.querySelector('.st .sb-v')?.dataset.tip || '',
 })));
 const bySlug = async (page, sec, s) => Object.fromEntries((await rows(page, sec))
   .filter(r => s === undefined || r.s === String(s)).map(r => [r.slug, r]));
+/* A depot's lines on both the views that list them: its imports on Imports,
+   its deliveries (a route-fed top-up, a wholesale contract, idle stock) on
+   Deliveries. */
+const depot = async (page, s) => ({...await bySlug(page, 'secDeliveries', s), ...await bySlug(page, 'secImports', s)});
 /* An element's text the way it reads: each text node apart. */
 const text = (page, sel) => page.$eval(sel, el => {
   const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), bits = [];
   while(w.nextNode()) bits.push(w.currentNode.textContent);
   return bits.join(' ').replace(/\s+/g, ' ').trim();
 });
+/* A view's summary: its tab's tip, not a line under the controls (declutter round 2). */
+const tabTip = (page, view) => page.evaluate(v => viewTips[`supply/${v}`] || '', view);
 /* Warehouses columns after the tick: Product, On hand, Draw, Busiest, Cover, Order / top-up, Uses / week, Status. */
 const WH = {item: 1, order: 6, uses: 7, status: 8};
 
-test('Warehouses lists every depot line, with the import lines\' Set to boxes and figures', async () => {
+test('Imports and Deliveries list every depot line, with the import lines\' Set to boxes and figures', async () => {
   const page = await board(fixture());
   try {
-    const hub = await bySlug(page, 'secWarehouses', 0);
+    const hub = await depot(page, 0);
     assert.deepEqual(Object.keys(hub).sort(), ['bags', 'butter', 'coffee', 'flour', 'milk', 'soda', 'sugar']);
     // Soda Can is held at the hub but imported by nobody: no box.
     assert.deepEqual(Object.values(hub).filter(r => r.box !== null).map(r => r.slug).sort(),
       ['bags', 'butter', 'coffee', 'flour', 'milk', 'sugar']);
     // The lines' 11,200 and the other sites' 2,800; 24/7 puts the margin on the sites' part only.
-    assert.match(hub.flour.cells[WH.uses], /^14,000 24\/7$/);
+    assert.match(hub.flour.cells[WH.uses], /^14,000$/);
     assert.equal(hub.flour.box, '14420');
-    assert.match(hub.flour.cells[WH.order], /raise/);
+    // The arrow to the box says raise: no chip says it again (declutter U12).
+    assert.doesNotMatch(hub.flour.cells[WH.order], /raise/);
     assert.match(hub.sugar.cells[WH.order], /resume import/);
     assert.equal(hub.sugar.box, '2800', 'a paused contract resumes as it stands');
     assert.match(hub.bags.cells[WH.status], /^idle/);
     assert.match(hub.butter.cells[WH.status], /^new/);
     assert.match(hub.coffee.cells[WH.order], /could lower/);
-    assert.match(hub.soda.cells[WH.status], /not routed: Garden Gym 53\/day/);
+    assert.match(hub.soda.tip, /Not routed: Garden Gym 53\/day/);
     // Uses / week carries Python's split on hover.
-    const tip = await page.locator('#secWarehouses tr[data-slug="coffee"] .sb-uses').getAttribute('data-tip');
+    const tip = await page.locator('#secImports tr[data-slug="coffee"] .sb-uses').getAttribute('data-tip');
     assert.match(tip, /shops 420 a week/);
-    const verdict = await page.locator('#secWarehouses .sb-verdict').textContent();
-    assert.match(verdict, /inside the margin/);
-    assert.match(verdict, /2 lines sit idle/);
-    // The second-tier depot, fed each morning from the factory, is on Warehouses too.
-    const cd = await bySlug(page, 'secWarehouses', 5);
+    // The verdict counts only what no tab count or status column says (declutter U6).
+    assert.equal(await page.locator('#secImports .sb-verdict').count(), 0, 'no summary line under the controls');
+    const verdict = await tabTip(page, 'imports');
+    assert.match(verdict, /reach their next delivery with room/);
+    assert.doesNotMatch(verdict, /inside the margin|fall short/);
+    // Soda is held and imported by nobody: a delivery, on Deliveries, not an import.
+    assert.ok(!(await bySlug(page, 'secImports', 0)).soda);
+    assert.match(await tabTip(page, 'deliveries'), /2 lines sit idle/);
+    // The second-tier depot, fed each morning from the factory, is on Deliveries.
+    const cd = await bySlug(page, 'secDeliveries', 5);
     assert.match(cd.cake.cells[WH.order], /^200 290 a day Bakery Factory's plan$/);
     assert.match(cd.cake.cells[WH.status], /^short/);
     assert.ok(cd.cake.tick);
   } finally { await page.close(); }
 });
 
-test('every change on the checklist is a fact\'s figure, and sits on its object\'s tab', async () => {
+test('every change on the checklist is a fact\'s figure, and sits on its task view', async () => {
   const page = await board(fixture());
   try {
     assert.deepEqual(await actions(page), [
@@ -120,14 +141,15 @@ test('every change on the checklist is a fact\'s figure, and sits on its object\
       {kind: 'Shop daily top-ups', item: 'Paper Bag', current: 1400, proposed: 30, tight: false, paused: false, lower: true},
       {kind: 'Shop daily top-ups', item: 'Paper Bag', current: 1500, proposed: 30, tight: false, paused: false, lower: true},
       {kind: 'Depot daily top-ups', item: 'Cake', current: 200, proposed: 290, tight: false, paused: false},
-      // The cake line is rostered 12 of the 24 hours 24/7 sizes it for.
+      // The cake line is staffed 12 of the 24 hours full production plans it for.
       {kind: 'Factory run hours', item: 'Cake', current: 12, proposed: 24, tight: false, paused: false},
     ]);
-    const tabs = await page.evaluate(() => Object.fromEntries(Object.entries(sbData().byTab).map(([t, r]) => [t, r.length])));
-    assert.deepEqual(tabs, {shops: 4, warehouses: 3, factories: 3});
-    assert.match(await page.locator('#secFactories').textContent(), /1,400\s*1,600\s*a day/);
-    // Every change has its tick; none is left to the "Other changes" list.
-    assert.equal(await page.locator('#pageSupply .sb-tick').count(), 10);
+    const views = await page.evaluate(() => Object.fromEntries(Object.entries(sbData().byView).map(([t, r]) => [t, r.length])));
+    assert.deepEqual(views, {imports: 2, deliveries: 5, production: 3});
+    assert.match(await page.locator('#secProduction').textContent(), /1,400\s*1,600\s*a day/);
+    // Every change has its tick on Changes, and on its view; none is left to the "Other changes" list.
+    assert.equal(await page.locator('#secChanges .sb-tick').count(), 10);
+    assert.equal(await page.locator('#secImports .sb-tick, #secDeliveries [data-sb-table="shops"] .sb-tick, #secDeliveries [data-sb-table="warehouses"] .sb-tick, #secProduction .sb-tick').count(), 10);
     assert.equal(await page.locator('#pageSupply .sb-part', {hasText: 'Other changes'}).count(), 0);
     // Today's card leaves the tight Flour order and the three top-ups to lower out, and says so:
     // 6 on the card and 4 more make the strip's 10.
@@ -138,43 +160,52 @@ test('every change on the checklist is a fact\'s figure, and sits on its object\
 });
 
 test('a tick stored under the old name-keyed form carries over to the key-based row', async () => {
-  const page = await board(fixture(), {which: 'changes', tab: 'warehouses'});
+  const page = await board(fixture(), {which: 'changes', tab: 'imports'});
   try {
     const legacy = JSON.stringify(['Weekly imports', 'hub#1', 'Flour', 14000, 14420, null]);
     const now = JSON.stringify(['Weekly imports', 'hub#1', 'flour', 14000, 14420, null]);
     await page.evaluate(legacy => {
       localStorage.setItem('ba_order_marks_v1:r8-fixture', JSON.stringify([legacy]));
       orderMarkCache.clear(); sbStamp++;
-      drawSupplyStrip(); drawShopsTab(); drawWarehousesTab(); drawFactoriesTab(); wireAll();
+      drawSupplyStrip(); drawChangesView(); drawImportsView(); drawDeliveriesView(); drawProductionView(); wireAll();
     }, legacy);
-    assert.equal(await page.locator('#secWarehouses tr[data-slug="flour"] .sb-tick').getAttribute('aria-pressed'), 'true');
-    assert.equal(await page.locator('#sbTrayText').textContent(), '1 of 10 typed in');
+    assert.equal(await page.locator('#secImports tr[data-slug="flour"] .sb-tick').getAttribute('aria-pressed'), 'true');
+    assert.equal(await counted(page), '1 of 10 recorded or applied');
     assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('ba_order_marks_v1:r8-fixture'))), [now]);
   } finally { await page.close(); }
 });
 
-test('the strip counts the ticks on every tab, and the tab badges what is left', async () => {
+test('Changes counts the marks on every view, and each view counts what is left', async () => {
   const page = await board(fixture(), {which: 'changes'});
   try {
-    const strip = () => page.locator('#sbTrayText').textContent();
-    const badges = () => page.$$eval('#supplyNav a', as => as.map(a => [a.dataset.id, a.querySelector('.sb-n')?.textContent || '✓']));
-    assert.equal(await strip(), '0 of 10 typed in');
-    assert.deepEqual(await badges(), [['shops', '4'], ['warehouses', '3'], ['factories', '3']]);
-    await page.locator('#secWarehouses tr[data-slug="flour"] .sb-tick').click();
-    await page.locator('#secFactories tr[data-slug="cake"] .sb-tick').click();
-    await page.locator('#secShops tr[data-slug="soda"] .sb-tick').click();
-    assert.equal(await strip(), '3 of 10 typed in');
-    assert.deepEqual(await badges(), [['shops', '3'], ['warehouses', '2'], ['factories', '2']]);
-    assert.match(await page.locator('#secWarehouses tr[data-slug="flour"]').getAttribute('class'), /sb-done/);
-    assert.equal(await page.locator('#sbCopyLeft').textContent(), '7');
+    const strip = () => counted(page);
+    const badges = () => page.evaluate(() => ({...sbLeft}));
+    assert.equal(await strip(), '0 of 10 recorded or applied');
+    assert.deepEqual(await badges(), {imports: 2, deliveries: 5, production: 3});
+    await page.locator('#secImports tr[data-slug="flour"] .sb-tick').click();
+    await page.locator('#secProduction tr[data-slug="cake"] .sb-tick').click();
+    await page.locator('#secDeliveries tr[data-slug="soda"] .sb-tick').click();
+    assert.equal(await strip(), '3 of 10 recorded or applied');
+    assert.deepEqual(await badges(), {imports: 1, deliveries: 4, production: 2});
+    assert.match(await page.locator('#secImports tr[data-slug="flour"]').getAttribute('class'), /sb-done/);
+    // The same mark shows on Changes, as Marked by you.
+    assert.match(await page.locator('#secChanges .sbc-row.sb-done').first().textContent(), /Marked by you/);
+    // The road says how far along the list is, and no counter says it again (A9);
+    // Copy remaining carries no second count.
+    assert.equal(await counted(page), '3 of 10 recorded or applied');
+    assert.equal(await page.locator('#sbcTop .sbc-n').count(), 0);
+    await page.evaluate(() => { openRoute('overview'); drawAlerts(); });
+    assert.doesNotMatch(await page.locator('#alertSection').innerText(), /Your changes/);
+    await page.evaluate(() => openRoute('supply/changes'));
+    assert.equal(await page.locator('#sbcTop [data-sb-copy="remaining"] small').count(), 0);
     // The ticks are kept on the device, per character, under the key the old checklist used.
     const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('ba_order_marks_v1:r8-fixture')));
     assert.equal(kept.length, 3);
     // The flour tick is Weekly imports only: its top-up into the factory is a row of its own.
-    assert.equal(await page.locator('#secFactories tr[data-slug="flour"] .sb-tick').getAttribute('aria-pressed'), 'false');
-    await page.locator('#sbReset').click();
-    assert.equal(await strip(), '0 of 10 typed in');
-    assert.equal(await page.locator('#secShops .sb-done').count(), 0);
+    assert.equal(await page.locator('#secProduction tr[data-slug="flour"] .sb-tick').getAttribute('aria-pressed'), 'false');
+    await page.locator('#secChanges [data-sbc-clear]').click();
+    assert.equal(await strip(), '0 of 10 recorded or applied');
+    assert.equal(await page.locator('#secDeliveries .sb-done').count(), 0);
   } finally { await page.close(); }
 });
 
@@ -182,97 +213,103 @@ test('idle rows fold into one group per cause, which opens on a click', async ()
   const page = await board(fixture(), {which: 'changes'});
   try {
     // Paper Bag topped up far above sales at three shops: one group.
-    const group = page.locator('#secShops tr.sb-gr');
+    const group = page.locator('#secDeliveries [data-sb-table="shops"] tr.sb-gr');
     assert.equal(await group.count(), 1);
     assert.match(await group.textContent(), /3 shops\s*Paper Bag/);
-    const kids = page.locator('#secShops tr[data-kid]');
+    const kids = page.locator('#secDeliveries [data-sb-table="shops"] tr[data-kid]');
     assert.equal(await kids.count(), 3);
     // Each shelf carries its lower target to type, and a tick; the group counts them.
     assert.match(await group.textContent(), /3 to type/);
     assert.equal(await kids.locator('.sb-tick').count(), 3);
     assert.match(await kids.first().textContent(), /3,000\s*120\s*a day/);
-    assert.equal(await page.locator('#secShops tr[data-kid].sb-open').count(), 0);
+    assert.equal(await page.locator('#secDeliveries [data-sb-table="shops"] tr[data-kid].sb-open').count(), 0);
     await group.click();
-    assert.equal(await page.locator('#secShops tr[data-kid].sb-open').count(), 3);
+    assert.equal(await page.locator('#secDeliveries [data-sb-table="shops"] tr[data-kid].sb-open').count(), 3);
     assert.equal(await kids.first().isVisible(), true);
     // The hub's two idle lines: one group, per site.
-    await page.evaluate(() => { sub.supply = 'warehouses'; drawWarehousesTab(); });
-    const hub = page.locator('#secWarehouses tr.sb-gr');
+    const hub = page.locator('#secDeliveries [data-sb-table="warehouses"] tr.sb-gr');
     assert.match(await hub.textContent(), /Idle stock\s*\+2/);
     await hub.locator('.sb-kids').click();
-    assert.equal(await page.locator('#secWarehouses tr[data-kid].sb-open').count(), 2);
+    assert.equal(await page.locator('#secDeliveries [data-sb-table="warehouses"] tr[data-kid].sb-open').count(), 2);
     // The group stays open through a redraw.
-    await page.evaluate(() => drawWarehousesTab());
-    assert.equal(await page.locator('#secWarehouses tr[data-kid].sb-open').count(), 2);
+    await page.evaluate(() => drawDeliveriesView());
+    assert.equal(await page.locator('#secDeliveries [data-sb-table="warehouses"] tr[data-kid].sb-open').count(), 2);
   } finally { await page.close(); }
 });
 
 test('Needs a change keeps the rows with a change or a word worth reading', async () => {
-  const page = await board(fixture(), {which: 'changes', tab: 'shops'});
+  const page = await board(fixture(), {which: 'changes', tab: 'deliveries'});
   try {
-    const shops = await rows(page, 'secShops');
+    const shelves = () => page.$$eval('#secDeliveries [data-sb-table="shops"] tr[data-slug]', trs => trs.map(r => ({s: r.dataset.s, slug: r.dataset.slug})));
+    const shops = await shelves();
     // The no-plan gym and the three idle paper-bag shelves; the covered and new shelves wait under Everything.
     assert.deepEqual(shops.map(r => `${r.s}:${r.slug}`).sort(), ['2:bags', '3:bags', '4:bags', '4:soda']);
-    assert.match(await page.locator('#secShops .sb-more').textContent(), /3 more shelves are fine/);
-    await page.locator('#secShops [data-sb-mode="all"]').click();
-    assert.equal((await rows(page, 'secShops')).length, 7);
-    assert.equal(await page.locator('#sbMode a.on').textContent(), 'Everything');
+    // No line counts the fine ones: Everything, in the view's one row, lists them.
+    assert.equal(await page.locator('#secDeliveries .sb-more', {hasText: 'fine'}).count(), 0);
+    await page.locator('#secDeliveries .sbv-mode [data-sb-mode="all"]').click();
+    assert.equal((await shelves()).length, 7);
+    assert.equal(await page.locator('#secDeliveries .sbv-mode a.on').textContent(), 'Everything');
   } finally { await page.close(); }
 });
 
 test('Demand sizing reads the facts\' Demand figures, and says where a shop is still ramping', async () => {
   const page = await board(fixture(), {mode: 'dem'});
   try {
-    const hub = await bySlug(page, 'secWarehouses', 0);
+    const hub = await depot(page, 0);
     assert.match(hub.flour.cells[WH.uses], /^10,920 may still be ramping$/);
     assert.equal(hub.flour.box, '14000');
     assert.match(hub.flour.cells[WH.status], /^covered/);
-    const ramp = await page.locator('#secWarehouses .sz-ramp').first().getAttribute('data-tip');
+    const ramp = await page.locator('#secImports .sz-ramp').first().getAttribute('data-tip');
     assert.match(ramp, /Cake Shop Midtown/);
-    assert.match(await page.locator('#secFactories').textContent(), /1,160\s*may still be ramping/);
-    assert.match(await page.locator('#secFactories .sb-ramp').textContent(), /Cake Shop Midtown/);
+    assert.match(await page.locator('#secProduction').textContent(), /1,160\s*may still be ramping/);
+    assert.match(await page.locator('#secProduction .sb-ramp').textContent(), /Cake Shop Midtown/);
     assert.deepEqual((await actions(page)).map(a => [a.kind, a.item]), [
       ['Weekly imports', 'Sugar'], ['Check the delivery route', 'Milk'], ['Shop daily top-ups', 'Paper Bag'],
       ['Shop daily top-ups', 'Soda Can'], ['Shop daily top-ups', 'Paper Bag'], ['Shop daily top-ups', 'Paper Bag'],
       ['Depot daily top-ups', 'Cake']]);
-    // The switch sits on Warehouses and on Factories, both on Demand.
-    assert.equal(await page.locator('#sbSizingW a.on').textContent(), 'Demand');
-    assert.equal(await page.locator('#sbSizingF a.on').textContent(), 'Demand');
+    // The basis sits on Imports, Production and Changes, all on Shop demand.
+    assert.equal(await page.locator('#sbBasis-imports a.on').textContent(), 'Shop demand');
+    assert.equal(await page.locator('#sbBasis-production a.on').textContent(), 'Shop demand');
+    assert.equal(await page.locator('#sbBasis-changes a.on').textContent(), 'Shop demand');
   } finally { await page.close(); }
 });
 
-test('the switch on either tab remembers the sizing on the device and redraws the board', async () => {
+test('the basis on any view is kept for this company, never on the device key, and redraws the board', async () => {
   const page = await board(fixture());
   try {
     await page.evaluate(() => { window.redrawn = 0;
-      renderAll = () => { window.redrawn++; drawSupplyStrip(); drawWarehousesTab(); drawFactoriesTab(); }; });
-    await page.locator('#sbSizingF').getByText('Demand').click();
-    assert.equal(await page.evaluate(() => [sizing, localStorage.getItem('ba_dash_sizing'), window.redrawn].join()), 'dem,dem,1');
-    assert.match(await page.locator('#secWarehouses').textContent(), /10,920/);
-    assert.equal(await page.locator('#sbSizingW a.on').textContent(), 'Demand');
-    await page.locator('#sbSizingW').getByText('24/7').click();
-    assert.equal(await page.evaluate(() => [sizing, localStorage.getItem('ba_dash_sizing'), window.redrawn].join()), 'cap,cap,2');
+      renderAll = () => { window.redrawn++; drawSupplyStrip(); drawChangesView(); drawImportsView(); drawProductionView(); }; });
+    await page.locator('#sbBasis-production').getByText('Shop demand').click();
+    const kept = () => page.evaluate(() => [sizing, localStorage.getItem('ba_dash_sizing:r8-fixture'), localStorage.getItem('ba_dash_sizing'), window.redrawn].join());
+    assert.equal(await kept(), 'dem,dem,,1');
+    assert.match(await page.locator('#secImports').textContent(), /10,920/);
+    assert.equal(await page.locator('#sbBasis-imports a.on').textContent(), 'Shop demand');
+    await page.locator('#sbBasis-imports').getByText('Full production').click();
+    assert.equal(await kept(), 'cap,cap,,2');
   } finally { await page.close(); }
 });
 
-test('a line short of its hours is a change at 24/7; under Demand it only may run fewer', async () => {
+test('a line short of its hours is a change at full production; under shop demand it only may run fewer', async () => {
   const cap = await board(fixture());
   try {
-    const cake = (await bySlug(cap, 'secFactories', 1)).cake;
+    const cake = (await bySlug(cap, 'secProduction', 1)).cake;
     assert.ok(cake.tick);
     // Line, Machines, Hours a day, Makes, Ships, Held, Status after the tick.
     assert.match(cake.cells[3], /^12 24 h$/);
-    assert.match(cake.cells[7], /^short rostered 12 of the 24 hours a day it needs, sized 24\/7$/);
-    assert.match(await cap.locator('#sbStrip').textContent(), /0 of 10/);
+    assert.match(cake.cells[7], /^short$/);
+    assert.match(cake.tip, /^Staffed 12 h of the 24 hours a day it needs\./);
+    assert.doesNotMatch(cake.tip, /planned for full production/);
+    assert.match(await counted(cap), /0 of 10/);
   } finally { await cap.close(); }
   const dem = await board(fixture(), {mode: 'dem'});
   try {
-    const cake = (await bySlug(dem, 'secFactories', 1)).cake;
+    const cake = (await bySlug(dem, 'secProduction', 1)).cake;
     assert.equal(cake.tick, false);
-    assert.match(cake.cells[7], /^covered needs 10 of its 12 hours: fewer would do$/);
+    assert.match(cake.cells[7], /^covered$/);
+    assert.match(cake.tip, /^Needs 10 of its 12 hours: fewer would do\./);
     assert.ok((await actions(dem)).every(a => a.kind !== 'Factory run hours'));
     // Bread feeds nothing a shop draws: Demand sizes it round the clock too.
-    assert.match((await bySlug(dem, 'secFactories', 1)).bread.cells[3], /24 h/);
+    assert.match((await bySlug(dem, 'secProduction', 1)).bread.cells[3], /24 h/);
   } finally { await dem.close(); }
 });
 
@@ -288,16 +325,19 @@ test('machines on a recipe not named yet are counted in the staffing card, and s
 test('under Demand the Factories verdict says, plainly, that fewer hours and workers would do', async () => {
   const page = await board(fixture(), {mode: 'dem'});
   try {
-    const verdict = await text(page, '#secFactories .sb-verdict');
-    assert.match(verdict, /Current rosters cover the needed hours; 1 line could run fewer hours and 2 factory workers could go \(Staffing for factory lines below\)/);
-    assert.doesNotMatch(await page.locator('#secFactories .sb-verdict b').allTextContents().then(t => t.join(' ')), /could/);
+    const verdict = await tabTip(page, 'production');
+    // Workers who could go are the staffing block's to count, below the lines.
+    assert.match(verdict, /Current schedules cover the needed hours; 1 line could run fewer hours\./);
+    assert.doesNotMatch(verdict, /could go|factory staffing below/);
+    assert.equal(await page.locator('#secProduction .sb-verdict').count(), 0, 'no summary line under the controls');
   } finally { await page.close(); }
   // At 24/7 the bakery has to hire: named, and no "Current rosters cover".
   const cap = await board(fixture());
   try {
-    const verdict = await text(cap, '#secFactories .sb-verdict');
-    assert.match(verdict, /2 to hire at .*Bakery Factory \(Staffing for factory lines below\)/);
-    assert.doesNotMatch(verdict, /Current rosters cover/);
+    const verdict = await tabTip(cap, 'production');
+    // The hires are the staffing block's own figure.
+    assert.doesNotMatch(verdict, /to hire|factory staffing below/);
+    assert.doesNotMatch(verdict, /Current schedules cover/);
   } finally { await cap.close(); }
   // Spares are counted, never netted against another factory's hires.
   const data = fixture();
@@ -305,15 +345,18 @@ test('under Demand the Factories verdict says, plainly, that fewer hours and wor
     headcount: {needed: 700, min: 14, have: 10, spare: 0, hire: 4}, delta: {workers: 4, perDay: 720}});
   const mixed = await board(data, {mode: 'dem'});
   try {
-    assert.match(await text(mixed, '#secFactories .sb-verdict'), /2 factory workers could go and 4 to hire at/);
+    assert.doesNotMatch(await tabTip(mixed, 'production'), /could go|to hire/);
+    // Spares are counted per factory, never netted against another factory's hires.
+    assert.match(await text(mixed, '#sbStaff'), /2 could go: the week needs/);
+    assert.match(await text(mixed, '#sbStaff'), /All factories:/);
   } finally { await mixed.close(); }
   // No staffing card, no pointer to it.
   delete data.factoryStaffing;
   const none = await board(data, {mode: 'dem'});
   try {
-    const verdict = await text(none, '#secFactories .sb-verdict');
+    const verdict = await tabTip(none, 'production');
     assert.match(verdict, /1 line could run fewer hours/);
-    assert.doesNotMatch(verdict, /Staffing for factory lines below/);
+    assert.doesNotMatch(verdict, /factory staffing below/);
   } finally { await none.close(); }
 });
 
@@ -322,10 +365,10 @@ test('a line with a day off reads its week, and names the thin day', async () =>
   Object.assign(data.supply.factories.sites[0].lines[0], {hoursNow: 12, thinDay: {day: 'Sun', hours: 0}});
   const page = await board(data);
   try {
-    const cake = (await bySlug(page, 'secFactories', 1)).cake;
-    assert.match(cake.cells[7], /rostered 12 \(Sun 0 h\) of the 24 hours a day it needs/);
+    const cake = (await bySlug(page, 'secProduction', 1)).cake;
+    assert.match(cake.tip, /Staffed 12 \(Sun 0 h\) of the 24 hours a day it needs/);
     const row = await page.evaluate(() => sbData().rows.find(r => r.kind === 'Factory run hours'));
-    assert.match(row.reason, /the roster has them 12 \(Sun 0 h\)/);
+    assert.match(row.reason, /the schedule has them 12 \(Sun 0 h\)/);
   } finally { await page.close(); }
 });
 
@@ -338,17 +381,17 @@ test('two lines making one item at a factory each keep their own change and tick
     const rows = await page.evaluate(() => sbData().rows.filter(r => r.kind === 'Factory run hours').map(r => [r.line, r.key]));
     assert.deepEqual(rows.map(r => r[0]), ['r-cake', 'r-cake-2']);
     assert.notEqual(rows[0][1], rows[1][1]);
-    const ticks = page.locator('#secFactories tr[data-slug="cake"] .sb-tick');
+    const ticks = page.locator('#secProduction tr[data-slug="cake"] .sb-tick');
     assert.equal(await ticks.count(), 2);
     await ticks.first().click();
     assert.deepEqual(await ticks.evaluateAll(b => b.map(x => x.getAttribute('aria-pressed'))), ['true', 'false']);
     // The product's ships and held are shown once, on the first line.
-    const cells = await page.$$eval('#secFactories tr[data-slug="cake"]', trs => trs.map(t => t.innerText.replace(/\s+/g, ' ')));
+    const cells = await page.$$eval('#secProduction tr[data-slug="cake"]', trs => trs.map(t => t.innerText.replace(/\s+/g, ' ')));
     assert.match(cells[0], /tops up to 270/);
     assert.match(cells[0], /all 2 Cake lines/);
     assert.match(cells[1], /shared with the other Cake line/);
     assert.doesNotMatch(cells[1], /tops up to/);
-    assert.match(await page.locator('#secFactories tr[data-slug="cake"]').nth(1).locator('.sub[data-tip]').last().getAttribute('data-tip'),
+    assert.match(await page.locator('#secProduction tr[data-slug="cake"]').nth(1).locator('.sub[data-tip]').last().getAttribute('data-tip'),
       /on the other Cake line, at list positions/);
   } finally { await page.close(); }
 });
@@ -356,57 +399,66 @@ test('two lines making one item at a factory each keep their own change and tick
 test('shared product figures sit on the first line shown, after the sort and the filter', async () => {
   const data = fixture();
   const site = data.supply.factories.sites[0];
-  site.lines.push({...site.lines[0], rid: 'r-cake-2', slots: [9, 10], makes: 9999, status: 'covered', why: null, level: 'ok'});
+  // Its machines' weeks are its own slots' (12 h a day each, as the first line's).
+  site.lines.push({...site.lines[0], rid: 'r-cake-2', slots: [9, 10], gaps: site.lines[0].gaps.map((g, i) => ({...g, slot: [9, 10][i]})),
+    makes: 9999, status: 'covered', why: null, level: 'ok'});
   // Sorted by Makes / day, high first: the second line comes first and carries them.
   const page = await board(data, {which: 'all'});
   try {
-    await page.evaluate(() => { supplySort['factory-lines'] = {col: 3, dir: -1}; drawFactoriesTab(); });
-    const cells = await page.$$eval('#secFactories tr[data-slug="cake"]', trs => trs.map(t => t.innerText.replace(/\s+/g, ' ')));
+    await page.evaluate(() => { supplySort['factory-lines'] = {col: 3, dir: -1}; drawProductionView(); });
+    const cells = await page.$$eval('#secProduction tr[data-slug="cake"]', trs => trs.map(t => t.innerText.replace(/\s+/g, ' ')));
     assert.match(cells[0], /9,999/);
     assert.match(cells[0], /tops up to 270/);
     assert.match(cells[1], /shared with the other Cake line/);
   } finally { await page.close(); }
-  // Needs a change shows only the short line: it carries the figures itself.
+  // Needs a change keeps both: the short line, and the second, which runs 12 of
+  // the 24 hours the Flour import is planned on (a factory-hours step of its own).
   const changes = await board(data, {which: 'changes'});
   try {
-    const cells = await changes.$$eval('#secFactories tr[data-slug="cake"]', trs => trs.map(t => t.innerText.replace(/\s+/g, ' ')));
-    assert.equal(cells.length, 1);
+    const cells = await changes.$$eval('#secProduction tr[data-slug="cake"]', trs => trs.map(t => t.innerText.replace(/\s+/g, ' ')));
+    assert.equal(cells.length, 2);
     assert.match(cells[0], /tops up to 270/);
-    assert.doesNotMatch(cells[0], /shared with/);
+    assert.match(cells[1], /shared with the other Cake line/);
+    const dep = await changes.evaluate(() => sbData().rows.filter(r => r.kind === 'Factory run hours').map(r => [r.line, !!r.dep, (r.forImports || []).map(x => x.item).join()]));
+    assert.deepEqual(dep, [['r-cake', false, 'Flour'], ['r-cake-2', true, 'Flour']]);
   } finally { await changes.close(); }
 });
 
-test('search and Ask the board open a Supply tab as a list, the diagram entry keeps the diagram', async () => {
-  const page = await board(fixture(), {which: 'changes', tab: 'shops'});
+test('search opens the Supply view it names, and Goods flow keeps the picture to itself', async () => {
+  const page = await board(fixture(), {which: 'changes', tab: 'deliveries'});
   try {
-    await page.locator('#sbView a[data-id="diagram"]').click();
-    await page.evaluate(() => { showPage('today'); ssSupply('factories'); });
-    assert.equal(await page.evaluate(() => sbViewMode()), 'list');
-    assert.equal(await page.locator('#secFactories .sb-list').isHidden(), false);
+    await page.evaluate(() => { showPage('today'); ssSupply('production'); });
+    assert.equal(await page.evaluate(() => [sub.supply, route].join()), 'production,supply/production');
+    assert.equal(await page.locator('#secProduction').isHidden(), false);
     assert.equal(await page.locator('#sbFlowHome #flow').count(), 1);
-    assert.equal(await page.locator('#sbView a[data-id="list"]').getAttribute('class'), 'on');
     await page.evaluate(() => SS_VIEWS.find(v => v.id === 'imports').go());
-    assert.equal(await page.evaluate(() => [sbViewMode(), sub.supply].join()), 'list,warehouses');
+    assert.equal(await page.evaluate(() => [sub.supply, route].join()), 'imports,supply/imports');
+    // Search's Shops opens Deliveries on the shops, its Warehouses Imports on the warehouses.
+    await page.evaluate(() => SS_VIEWS.find(v => v.id === 'shops').go());
+    assert.equal(await page.evaluate(() => [sub.supply, sbScope.deliveries].join()), 'deliveries,shops');
+    await page.evaluate(() => SS_VIEWS.find(v => v.id === 'flow').go());
+    assert.equal(await page.locator('#secFlow .sb-diag #flow').count(), 1);
   } finally { await page.close(); }
 });
 
 test('Ships / day says what a line tops up to your own sites and what it exports', async () => {
   const page = await board(fixture(), {which: 'all'});
   try {
-    const lines = await bySlug(page, 'secFactories', 1);
+    const lines = await bySlug(page, 'secProduction', 1);
     assert.match(lines.cake.cells[5], /tops up to 270/);
     assert.match(lines.bread.cells[5], /\+960 export/);
     assert.doesNotMatch(lines.bread.cells[5], /tops up to/);
   } finally { await page.close(); }
 });
 
-test('the Daily top-ups search entry opens the tab whose top-ups have the most to type', async () => {
+test('the Deliveries search entry opens Deliveries, where every daily top-up and wholesale contract is', async () => {
   const page = await board(fixture());
   try {
-    // The fixture: four shelves (three to lower, one on no plan) against one factory input and one depot.
-    assert.equal(await page.evaluate(() => ssTopupTab()), 'shops');
-    await page.evaluate(() => { const d = sbData(); d.rows.filter(r => r.kind === 'Shop daily top-ups').forEach(r => d.marks.add(r.key)); });
-    assert.notEqual(await page.evaluate(() => ssTopupTab()), 'shops');
+    await page.evaluate(() => { showPage('today'); SS_VIEWS.find(v => v.id === 'topups').go(); });
+    assert.equal(await page.evaluate(() => route), 'supply/deliveries');
+    // Shops, a second-tier depot and the factory's inputs, grouped by where the goods arrive.
+    assert.deepEqual(await page.$$eval('#secDeliveries .sbv-group > h3', hs => hs.map(h => h.textContent.trim())),
+      ['Shops', 'Warehouses']);
   } finally { await page.close(); }
 });
 
@@ -415,10 +467,12 @@ test('Staffing for factory lines reads the plan for the sizing on screen', async
   try {
     const card = await text(cap, '#sbStaff');
     assert.match(card, /672 machine-hours a week; you have 12 factory workers hire \+2/);
-    assert.match(card, /hire 2: the week needs 14/);
+    // The hire chip says the hires once; no line under it says them again.
+    assert.doesNotMatch(card, /hire 2: the week needs/);
     assert.match(card, /\+\$360 a day in wages/);
     assert.match(card, /Cake .*12 24 h 00–12 12 h 12–24 12 h × 2 machines/);
-    assert.match(card, /Sized 24\/7: \+2 factory workers \+\$360 a day/);
+    // One factory: no totals under it restating its own figures.
+    assert.doesNotMatch(card, /Full production:|All factories:/);
     // The factory's own page has its lines, not a staffing block: the link says so and lands there.
     const open = cap.locator('#sbStaff a[data-sb-lines]');
     assert.equal(await open.textContent(), 'Open factory page ›');
@@ -434,7 +488,9 @@ test('Staffing for factory lines reads the plan for the sizing on screen', async
     // The fewest workers that cover the week are placed; the rest could go.
     assert.match(card, /2 could go: the week needs 10/);
     assert.match(card, /Cake .*12 10 h 06–16 10 h × 2 machines/);
-    assert.match(card, /Sized for demand: −2 factory workers −\$360 a day/);
+    // One factory: its own row says it, with no totals line under it.
+    assert.match(card, /2 could go: the week needs 10 −\$360 a day in wages/);
+    assert.doesNotMatch(card, /Shop demand:/);
     // The day strip starts where the run does: Cake runs from 06:00.
     const cells = await dem.$$eval('#sbStaff .sb-sln .sb-day', ds => [...ds[0].children].map(i => i.className));
     assert.deepEqual([cells[5], cells[6], cells[15], cells[16]], ['', 'on', 'on', 'slack']);
@@ -463,14 +519,14 @@ test("a shelf a wholesale store delivers each week reads its week, and its chang
     assert.deepEqual((await actions(page)).find(a => a.item === 'Soda Can'),
       {kind: 'Wholesale deliveries', item: 'Soda Can', current: 300, proposed: 430, tight: false, paused: false});
     // Shop, Product, Sells, Busiest, On hand, Pressure, Daily top-up, Status after the tick.
-    const soda = (await bySlug(page, 'secShops', 4)).soda;
+    const soda = (await bySlug(page, 'secDeliveries', 4)).soda;
     assert.match(soda.cells[7], /^300 430 a week wholesale, each Monday$/);
     assert.match(soda.cells[8], /^short/);
     assert.ok(soda.tick);
   } finally { await page.close(); }
 });
 
-test("Warehouses lists a route-fed depot's daily top-up from its fact, naming the site that sets it", async () => {
+test("Deliveries lists a route-fed depot's daily top-up from its fact, naming the site that sets it", async () => {
   const data = fixture();
   // The hub's soda, fed only by the bakery's plan: its busiest day outruns the top-up.
   data.supply.facts[0].soda = {st: 'short', why: 'target', lvl: 'critical', role: 'depot', cad: 'daily',
@@ -481,7 +537,7 @@ test("Warehouses lists a route-fed depot's daily top-up from its fact, naming th
     assert.deepEqual([act.kind, act.current, act.proposed, act.source, !!act.tight],
       ['Depot daily top-ups', 80, 120, 1, false]);
     assert.match(act.reason, /Bakery Factory/);
-    const soda = (await bySlug(page, 'secWarehouses', 0)).soda;
+    const soda = (await bySlug(page, 'secDeliveries', 0)).soda;
     assert.match(soda.cells[WH.order], /^80 120 a day Bakery Factory's plan$/);
     assert.match(soda.cells[5], /125%/);
     assert.ok(soda.tick);
@@ -503,9 +559,10 @@ test("a factory's paused contract the top-up falls short without is a change; on
     const page = await board(withPaused(lvl));
     try {
       return await page.evaluate(() => {
-        const own = [...document.querySelectorAll('#secFactories .sb-part')].find(p => p.textContent === 'Its own imports');
+        const own = [...document.querySelectorAll('#secImports .sb-part')].find(p => p.textContent === 'Its own imports');
         const table = own && own.nextElementSibling;
-        return {milk: table ? table.querySelector('tr[data-slug="milk"]')?.textContent.replace(/\s+/g, ' ') : null,
+        const tr = table ? table.querySelector('tr[data-slug="milk"]') : null;
+        return {milk: tr ? `${tr.textContent} ${[...tr.querySelectorAll('[data-tip]')].map(x => x.dataset.tip).join(' ')}`.replace(/\s+/g, ' ') : null,
                 tick: !!(table && table.querySelector('tr[data-slug="milk"] .sb-tick')),
                 acts: sbData().rows.filter(a => a.item === 'Milk' && a.kind === 'Weekly imports').map(a => [a.kind, !!a.paused])};
       });
@@ -557,20 +614,20 @@ test('wholesale deliveries and depot top-ups from facts shaped like a real save\
     use: 100, need: 115, have: 200, setTo: null, imp: false, from: 1};
   const page = await board(data);
   try {
-    const gym = await bySlug(page, 'secShops', 4);
+    const gym = await bySlug(page, 'secDeliveries', 4);
     // Short of the week and dry before Monday: the raise and the stock to bring in, both.
     assert.match(gym.energy.cells[7], /^1,200 1,420 a week wholesale, each Monday bring in \+50 once$/);
     assert.match(gym.soda.cells[7], /^900 1,020 a week/);
     assert.match(gym.soda.cells[8], /^tight/);
     assert.match(gym.chips.cells[7], /^900 a week wholesale, each Monday bring in \+120 once$/);
-    const hub = await bySlug(page, 'secWarehouses', 0);
+    const hub = await bySlug(page, 'secDeliveries', 0);
     assert.match(hub.syrup.cells[WH.order], /^1,000 1,680 a week wholesale, each Monday$/);
     assert.match(hub.bread.cells[WH.order], /^1,000 1,050 a day Bakery Factory's plan$/);
     assert.match(hub.bread.cells[WH.status], /^tight/);
     assert.match(hub.cups.cells[WH.status], /^covered/);
     // Needs a change: the covered route-fed line drops out.
-    await page.evaluate(() => { sbWhich = 'changes'; drawWarehousesTab(); });
-    assert.ok(!(await bySlug(page, 'secWarehouses', 0)).cups);
+    await page.evaluate(() => { sbMode.deliveries = 'changes'; drawDeliveriesView(); });
+    assert.ok(!(await bySlug(page, 'secDeliveries', 0)).cups);
     const acts = await page.evaluate(() => sbData().rows.map(a => [a.kind, a.site, a.item, a.current, a.proposed]));
     assert.ok(acts.some(a => a.join() === 'Wholesale deliveries,0,Syrup,1000,1680'), JSON.stringify(acts));
     assert.ok(acts.some(a => a.join() === 'Before the next delivery,4,Chips,,120'), JSON.stringify(acts));
@@ -584,7 +641,7 @@ test('a paused backup a route covers is covered by route, with nothing to resume
     parts: {lines: 2800, sites: 0, route: 2800}};
   const page = await board(data);
   try {
-    const sugar = (await bySlug(page, 'secWarehouses', 0)).sugar;
+    const sugar = (await bySlug(page, 'secImports', 0)).sugar;
     assert.match(sugar.cells[WH.order], /covered by route/);
     assert.doesNotMatch(sugar.cells[WH.order], /resume/);
     assert.ok((await actions(page)).every(a => a.item !== 'Sugar'));
@@ -599,8 +656,9 @@ test('a recipe named in this browser reads new until the next refresh', async ()
     ingredients: [{slug: 'butter', item: 'Butter', per: 5}]});
   const page = await board(data, {names: {'r-muffin': 'muffin'}});
   try {
-    const f = await bySlug(page, 'secFactories', 1);
-    assert.match(f.butter.cells.at(-1), /^new named in this browser/);
+    const f = await bySlug(page, 'secProduction', 1);
+    assert.match(f.butter.cells.at(-1), /^new$/);
+    assert.match(f.butter.tip, /named in this browser/i);
     // Its top-up has no figure until Python judges it, so nothing to set.
     assert.equal(f.butter.tick, false);
     assert.ok((await actions(page)).every(a => a.item !== 'Butter'));
@@ -610,27 +668,26 @@ test('a recipe named in this browser reads new until the next refresh', async ()
   } finally { await page.close(); }
 });
 
-test('an unnamed line is on Factories with its recipe picker', async () => {
+test('an unnamed line is on Production with its recipe picker', async () => {
   const data = fixture();
   data.supply.factories.sites[0].unnamed = [{rid: 'r-x', workstation: 'Oven', slots: [5], machines: 1, idle: false,
     candidates: [{slug: 'cake', item: 'Cake'}], hoursWeek: 168, fullWeek: 168, gaps: []}];
   data.supply.factories.unnamed = 1;
   const page = await board(data, {which: 'changes'});
   try {
-    assert.equal(await page.locator('#secFactories select.linepick').count(), 1);
-    assert.match(await page.locator('#sbRecipes').textContent(), /1 recipe to name/);
-    assert.match(await page.locator('#secFactories .sb-verdict').textContent(), /1 machine without usable recipe details/);
+    assert.equal(await page.locator('#secProduction select.linepick').count(), 1);
+    assert.match(await tabTip(page, 'production'), /1 machine without usable recipe details/);
   } finally { await page.close(); }
 });
 
-test('the tabs, Goods flow and Today read the same facts, by sizing', async () => {
+test('the views, Goods flow and Today read the same facts, by basis', async () => {
   const page = await board(fixture());
   try {
-    const shops = await bySlug(page, 'secShops', 4);
+    const shops = await bySlug(page, 'secDeliveries', 4);
     assert.match(shops.soda.cells[7], /^— 70 a day plan from Import Hub$/);
     assert.match(shops.soda.cells[8], /^no plan/);
     // Goods flow counts each site's facts on its dot: the worst of them.
-    const dots = await page.evaluate(() => { drawFlow();
+    const dots = await page.evaluate(() => { showSub('supply', 'flow'); drawFlowView(); drawFlow();
       return [...document.querySelectorAll('#flow circle')].map(c => c.textContent).filter(Boolean); });
     assert.ok(dots.includes('1 paused'), JSON.stringify(dots));
     // The second-tier depot's short top-up is its own red dot.
@@ -644,93 +701,90 @@ test('the tabs, Goods flow and Today read the same facts, by sizing', async () =
   } finally { await page.close(); }
 });
 
-test('the diagram survives a redraw of its tab: a sizing switch or Needs a change / Everything', async () => {
-  const page = await board(fixture(), {which: 'changes', tab: 'warehouses'});
+test('the picture survives a redraw of Goods flow and of the other views: a basis switch keeps the one svg', async () => {
+  const page = await board(fixture(), {which: 'changes', tab: 'flow'});
   try {
-    await page.locator('#sbView a[data-id="diagram"]').click();
-    await page.evaluate(() => drawFlow());
-    assert.equal(await page.locator('#secWarehouses .sb-diag #flow').count(), 1);
-    await page.locator('#sbMode a[data-id="all"]').click();
-    assert.equal(await page.locator('#secWarehouses .sb-diag #flow').count(), 1, 'Everything keeps the diagram');
-    await page.locator('#sbSizingW').getByText('Demand').click();
-    assert.equal(await page.locator('#flow').count(), 1, 'a sizing switch keeps the one svg');
-    assert.equal(await page.locator('#secWarehouses .sb-diag #flow').count(), 1);
+    await page.evaluate(() => { showSub('supply', 'flow'); drawFlowView(); drawFlow(); });
+    assert.equal(await page.locator('#secFlow .sb-diag #flow').count(), 1);
+    await page.evaluate(() => { drawImportsView(); drawDeliveriesView(); drawFlowView(); });
+    assert.equal(await page.locator('#secFlow .sb-diag #flow').count(), 1, 'a redraw keeps the picture');
+    await page.evaluate(() => { sizing = 'dem'; drawSupplyStrip(); drawChangesView(); drawImportsView(); drawFlowView(); drawFlow(); });
+    assert.equal(await page.locator('#flow').count(), 1, 'a basis switch keeps the one svg');
+    assert.equal(await page.locator('#secFlow .sb-diag #flow').count(), 1);
     // A later draw still finds it.
     assert.equal(await page.evaluate(() => { drawFlow(); return document.querySelectorAll('#flow .node').length > 0; }), true);
   } finally { await page.close(); }
 });
 
-test("a factory's own import finding lands on Factories, on its import row", async () => {
+test("a factory's own import finding lands on Imports, on its import row", async () => {
   const data = fixture();
   data.supply.facts['1'].butter = {st: 'short', why: 'order', lvl: 'critical', role: 'input', cad: 'weekly', imp: true,
     use: 700, need: 805, have: 500, setTo: 810, parts: {lines: 700, sites: 0, route: 0}};
   data.alerts.push({id: 'r13ownorder', level: 'critical', group: 'order', site: '[FB] Bakery Factory', siteKey: 'factory#2',
     text: 'Butter: the weekly order brings 500 against 805', ev: {slug: 'butter'}});
-  const page = await board(data, {which: 'changes', tab: 'shops'});
+  const page = await board(data, {which: 'changes', tab: 'deliveries'});
   try {
     const got = await page.evaluate(() => { goToAlert(D.alerts.find(a => a.id === 'r13ownorder'));
-      const at = document.querySelector('#pageSupply [data-sb-at]');
-      return {tab: sub.supply, at: at ? `${at.dataset.s}:${at.dataset.slug}` : null}; });
-    assert.deepEqual(got, {tab: 'factories', at: '1:butter'});
-    // A depot's own import still lands on Warehouses.
-    assert.equal(await page.evaluate(() => { goToAlert(D.alerts.find(a => a.id === 'r8paused')); return sub.supply; }), 'warehouses');
+      const at = document.querySelector('#secImports tr[data-sb-at]');
+      return {view: sub.supply, at: at ? `${at.dataset.s}:${at.dataset.slug}` : null, card: !!document.querySelector('#sbCard[data-sb-at]')}; });
+    assert.deepEqual(got, {view: 'imports', at: '1:butter', card: true});
+    // A depot's own import lands on Imports as well.
+    assert.equal(await page.evaluate(() => { goToAlert(D.alerts.find(a => a.id === 'r8paused')); return sub.supply; }), 'imports');
   } finally { await page.close(); }
 });
 
-test('a finding reached while the diagram is on brings the list back, on its row', async () => {
-  const page = await board(fixture(), {which: 'changes', tab: 'shops'});
+test('a finding reached while Goods flow is on opens its view, on its row', async () => {
+  const page = await board(fixture(), {which: 'changes', tab: 'flow'});
   try {
-    await page.locator('#sbView a[data-id="diagram"]').click();
+    await page.evaluate(() => { showSub('supply', 'flow'); drawFlowView(); });
     await page.evaluate(() => goToAlert(D.alerts.find(a => a.id === 'r8notrouted')));
-    assert.equal(await page.evaluate(() => sbViewMode()), 'list');
-    assert.equal(await page.locator('#secWarehouses .sb-list').isHidden(), false);
-    assert.equal(await page.locator('#secWarehouses tr.sb-arrived').isVisible(), true);
+    assert.equal(await page.evaluate(() => sub.supply), 'deliveries');
+    assert.equal(await page.locator('#secDeliveries').isHidden(), false);
+    assert.equal(await page.locator('#secDeliveries tr.sb-arrived').isVisible(), true);
     assert.equal(await page.locator('#sbFlowHome #flow').count(), 1);
   } finally { await page.close(); }
 });
 
-test('a finding lands on its tab and row, lit, with a crumb back', async () => {
-  const page = await board(fixture(), {which: 'changes', tab: 'shops'});
+test('a finding lands on its view and row, lit, with a crumb back', async () => {
+  const page = await board(fixture(), {which: 'changes', tab: 'deliveries'});
   try {
     const land = id => page.evaluate(id => { goToAlert(D.alerts.find(a => a.id === id));
       const at = document.querySelector(`#${SB_SEC[sub.supply]} [data-sb-at]`);
       return {tab: sub.supply, at: at ? `${at.dataset.s}:${at.dataset.slug}` : null,
               crumb: document.querySelector(`#${SB_SEC[sub.supply]} .sb-crumb`)?.textContent || ''}; }, id);
-    // Not routed: the tab of the depot's kind, on the soda row, its group opened.
+    // Not routed: Deliveries, on the soda row, its group opened.
     const soda = await land('r8notrouted');
-    assert.deepEqual([soda.tab, soda.at], ['warehouses', '0:soda']);
-    assert.match(soda.crumb, /from Today · Not routed/);
-    assert.equal(await page.locator('#secWarehouses tr[data-slug="soda"]').evaluate(r => r.classList.contains('sb-open')), true);
-    // Too few hours: Factories, on the cake line.
+    assert.deepEqual([soda.tab, soda.at], ['deliveries', '0:soda']);
+    assert.match(soda.crumb, /from Needs attention · Not routed/);
+    assert.equal(await page.locator('#secDeliveries [data-sb-table="warehouses"] tr[data-slug="soda"]').evaluate(r => r.classList.contains('sb-open')), true);
+    // Too few hours: Production, on the cake line.
     const cake = await land('r13hours');
-    assert.deepEqual([cake.tab, cake.at], ['factories', '1:cake']);
+    assert.deepEqual([cake.tab, cake.at], ['production', '1:cake']);
     // A row that is no change opens Everything.
-    await page.evaluate(() => { sbWhich = 'changes'; sbLand('shops', 2, 'cake', 'from Today · a test'); });
-    assert.equal(await page.evaluate(() => sbWhich), 'all');
-    assert.equal(await page.locator('#secShops tr.sb-arrived').getAttribute('data-slug'), 'cake');
+    await page.evaluate(() => { sbMode.deliveries = 'changes'; sbLand('deliveries', 2, 'cake', 'from Today · a test'); });
+    assert.equal(await page.evaluate(() => sbMode.deliveries), 'all');
+    assert.equal(await page.locator('#secDeliveries tr.sb-arrived').getAttribute('data-slug'), 'cake');
     // The crumb's close drops the landing.
-    await page.locator('#secShops [data-sb-crumb]').click();
-    assert.equal(await page.locator('#secShops .sb-crumb').count(), 0);
-    assert.equal(await page.locator('#secShops tr.sb-arrived').count(), 0);
+    await page.locator('#secDeliveries [data-sb-crumb]').click();
+    assert.equal(await page.locator('#secDeliveries .sb-crumb').count(), 0);
+    assert.equal(await page.locator('#secDeliveries tr.sb-arrived').count(), 0);
   } finally { await page.close(); }
 });
 
-test('the diagram is a view of the tab; a site clicked on it opens its rows', async () => {
-  const page = await board(fixture(), {which: 'changes', tab: 'warehouses'});
+test('Goods flow follows a site clicked on the picture; its rows are one click on, and the picture waits outside the other views', async () => {
+  const page = await board(fixture(), {which: 'changes', tab: 'flow'});
   try {
-    await page.locator('#sbView a[data-id="diagram"]').click();
-    assert.equal(await page.evaluate(() => localStorage.getItem('ba_dash_supply_view')), 'diagram');
-    await page.evaluate(() => drawFlow());
-    assert.equal(await page.locator('#secWarehouses .sb-diag #flow').count(), 1);
-    assert.equal(await page.locator('#secWarehouses .sb-list').isHidden(), true);
-    // Another tab takes the diagram with it.
-    await page.evaluate(() => { showSub('supply', 'factories'); });
-    assert.equal(await page.locator('#secFactories .sb-diag #flow').count(), 1);
+    await page.evaluate(() => { showSub('supply', 'flow'); drawFlowView(); drawFlow(); wireAll(); });
+    assert.equal(await page.locator('#secFlow .sb-diag #flow').count(), 1);
     await page.locator('#flow .node[data-id="dist#6"]').click();
-    assert.equal(await page.evaluate(() => [sbViewMode(), sub.supply].join()), 'list,warehouses');
-    assert.equal(await page.locator('#secWarehouses .sb-obj.lit').count(), 1);
-    assert.match(await page.locator('#secWarehouses .sb-obj.lit').textContent(), /Cake Distr\./);
-    assert.equal(await page.locator('#sbFlowHome #flow').count(), 1, 'the list back on, the diagram waits outside the tabs');
+    assert.equal(await page.evaluate(() => flowPickId), 'dist#6');
+    assert.match(await page.locator('#sbFlowPanel').textContent(), /Cake Distr\./);
+    assert.match(await page.locator('#sbFlowPanel').textContent(), /Changes on its route/);
+    await page.locator('#sbFlowPanel [data-sb-go]').first().click();
+    assert.equal(await page.evaluate(() => sub.supply), 'imports');
+    await page.evaluate(() => sbNodeRows('dist#6'));
+    assert.equal(await page.evaluate(() => sub.supply), 'imports');
+    assert.equal(await page.locator('#sbFlowHome #flow').count(), 1, 'another view on, the picture waits outside the views');
   } finally { await page.close(); }
 });
 
@@ -780,7 +834,7 @@ for (const scenario of [
       const daily = acts.filter(a => a.kind === 'Factory daily top-ups');
       assert.deepEqual(daily.map(a => [a.site, a.proposed]).sort(), seen.topups.map(([s, , v]) => [s, v]).sort());
       // Every change has a tick on its tab.
-      const ticked = await page.evaluate(() => [...document.querySelectorAll('#pageSupply .sb-tick')]
+      const ticked = await page.evaluate(() => [...document.querySelectorAll('#pageSupply .sb-tick[data-sb-keys]')]
         .flatMap(b => b.dataset.sbKeys.split(' ').map(Number)));
       assert.deepEqual([...new Set(ticked)].sort((a, b) => a - b), acts.map((_, i) => i));
     } finally { await page.close(); }

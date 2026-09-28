@@ -73,18 +73,18 @@ async function board({width = 1280, view = 'all', storage = true, page: given, d
   await page.evaluate(([data, view, storage, before]) => {
     if(!storage) Object.defineProperty(window, 'localStorage', {get(){ throw new Error('denied'); }});
     if(before) localStorage.setItem(before[0], before[1]);
-    D = data; sbWhich = view; supplySort = {}; supplyAuto = false; sub.supply = 'warehouses';
+    D = data; sbWhich = view; sbMode.imports = view; sbSelOff = true; sbSel = null; supplySort = {}; sub.supply = 'imports';
     document.body.classList.add('has-board');
     document.querySelectorAll('.page').forEach(el => { el.hidden = el.id !== 'pageSupply'; });
     document.querySelectorAll('#pageSupply section').forEach(el => { el.hidden = false; el.classList.add('measured'); });
-    drawSupplyStrip(); drawWarehousesTab(); wireAll();
+    drawSupplyStrip(); drawChangesView(); drawImportsView(); wireAll();
   }, [data, view, storage, before]);
   return page;
 }
 /* A Warehouses row: its product, the figure in game and what is said around
    the box (the Order / top-up cell, less its chips and contract list), the
    box, and the cell with the row's word. */
-const cells = page => page.$$eval('#secWarehouses tr[data-slug]', rows => rows.map(r => {
+const cells = page => page.$$eval('#secImports tr[data-slug]', rows => rows.map(r => {
   const text = (el, drop = '') => {
     const c = el.cloneNode(true);
     if(drop) c.querySelectorAll(drop).forEach(x => x.remove());
@@ -102,12 +102,12 @@ const cells = page => page.$$eval('#secWarehouses tr[data-slug]', rows => rows.m
 }));
 const actions = page => page.evaluate(() => sbData().rows
   .filter(a => a.kind === 'Weekly imports').map(a => [a.item, a.current, a.proposed, a.mode]));
-const box = (page, item) => page.locator('#secWarehouses tr[data-slug]', {hasText: item}).locator('input');
+const box = (page, item) => page.locator('#secImports tr[data-slug]', {hasText: item}).locator('input');
 
 test('the table reads a Smart Delivery level apart from a weekly order', async () => {
   const page = await board();
   try{
-    const heads = await page.$$eval('#secWarehouses thead th', th => th.slice(1).map(x => x.textContent.trim()));
+    const heads = await page.$$eval('#secImports thead th', th => th.slice(1).map(x => x.textContent.trim()));
     assert.deepEqual(heads, ['Product', 'On hand', 'Draw / day', 'Busiest', 'Cover', 'Order / top-up', 'Uses / week', 'Status']);
     const rows = Object.fromEntries((await cells(page)).map(r => [r.item, r]));
     // The figure in game, the arrow, the box: a level is kept in stock, an order is a week's.
@@ -118,14 +118,16 @@ test('the table reads a Smart Delivery level apart from a weekly order', async (
     // Sugar's level is short of its week: the box holds the suggestion.
     assert.equal(rows.Sugar.box, '1400');
     assert.equal(rows.Sugar.changed, true);
-    assert.match(rows.Sugar.verdict, /raise/);
+    // Short: the status says so; the arrow to the box says raise (declutter U12).
+    assert.match(rows.Sugar.verdict, /short/);
+    assert.doesNotMatch(rows.Sugar.verdict, /raise/);
     // A high level only holds stock: covered, never "could lower".
     assert.equal(rows.Flour.box, '5000');
     assert.equal(rows.Flour.changed, false);
     assert.match(rows.Flour.verdict, /covered/);
-    assert.doesNotMatch(await page.locator('#secWarehouses').textContent(), /could lower/);
+    assert.doesNotMatch(await page.locator('#secImports').textContent(), /could lower/);
     // Two contracts on one line are listed in plan order under the material.
-    const sugar = await page.locator('#secWarehouses tr[data-slug]', {hasText: 'Sugar'}).locator('.imp-contracts').textContent();
+    const sugar = await page.locator('#secImports tr[data-slug]', {hasText: 'Sugar'}).locator('.imp-contracts').textContent();
     assert.match(sugar, /1\. Pier 1 · keeps 900 in stock\s*2\. Pier 2 · 500 a week · paused/);
     assert.deepEqual(await actions(page), [['Sugar', 900, 1400, 'smart']]);
     assert.match(await page.evaluate(() => orderChecklistText(sbData().rows, 'Fixture')), /Smart Delivery stock 900 -> 1400 units/);
@@ -137,23 +139,23 @@ for(const storage of [true, false]){
     const page = await board({view: 'changes', storage});
     try{
       assert.deepEqual((await cells(page)).map(r => r.item), ['Sugar']);
-      await page.locator('#sbMode').getByText('Everything').click();
+      await page.locator('#secImports .sbv-mode').getByText('Everything').click();
       await box(page, 'Flour').fill('6000');
       await box(page, 'Flour').press('Enter');
-      await page.waitForFunction(() => document.querySelector('#secWarehouses .imp-reset'));
+      await page.waitForFunction(() => document.querySelector('#secImports .imp-reset'));
       const flour = (await cells(page)).find(r => r.item === 'Flour');
       assert.deepEqual([flour.box, flour.changed], ['6000', true]);
       assert.deepEqual(await actions(page), [['Sugar', 900, 1400, 'smart'], ['Flour', 5000, 6000, 'smart']]);
       // The edited row stays in the "Needs a change" view.
-      await page.locator('#sbMode').getByText('Needs a change').click();
+      await page.locator('#secImports .sbv-mode').getByText('Needs a change').click();
       assert.deepEqual((await cells(page)).map(r => r.item), ['Sugar', 'Flour']);
       if(storage){
-        const saved = await page.evaluate(() => localStorage.getItem('ba_import_set_v2:set-fixture'));
+        const saved = await page.evaluate(() => localStorage.getItem('ba_import_set_v3:set-fixture'));
         // What was typed, and what the game held when it was.
-        assert.deepEqual(JSON.parse(saved), {'["depot#0","flour"]': {value: 6000, inGame: 5000}});
+        assert.deepEqual(JSON.parse(saved), {'["depot#0","flour"]': {value: 6000, inGame: 5000, basis: 'cap'}});
       }
       // Reset puts the suggestion back and the row leaves the view.
-      await page.locator('#secWarehouses .imp-reset').click();
+      await page.locator('#secImports .imp-reset').click();
       assert.deepEqual((await cells(page)).map(r => r.item), ['Sugar']);
       assert.deepEqual(await actions(page), [['Sugar', 900, 1400, 'smart']]);
     } finally { await page.close(); }
@@ -165,15 +167,15 @@ test('a typed figure survives a reload, and typing the suggestion is no edit', a
   try{
     await box(page, 'Sugar').fill('1800');
     await box(page, 'Sugar').press('Enter');
-    await page.waitForFunction(() => document.querySelector('#secWarehouses .imp-reset'));
+    await page.waitForFunction(() => document.querySelector('#secImports .imp-reset'));
     await page.reload();
     await board({page});
     assert.equal((await cells(page)).find(r => r.item === 'Sugar').box, '1800');
     assert.deepEqual((await actions(page))[0], ['Sugar', 900, 1800, 'smart']);
     await box(page, 'Sugar').fill('1400');
     await box(page, 'Sugar').press('Enter');
-    await page.waitForFunction(() => !document.querySelector('#secWarehouses .imp-reset'));
-    assert.equal(await page.evaluate(() => localStorage.getItem('ba_import_set_v2:set-fixture')), '{}');
+    await page.waitForFunction(() => !document.querySelector('#secImports .imp-reset'));
+    assert.equal(await page.evaluate(() => localStorage.getItem('ba_import_set_v3:set-fixture')), '{}');
   } finally { await page.close(); }
 });
 
@@ -208,7 +210,8 @@ for(const smart of [true, false]){
         // Said at its depot, never summed across depots into a level none has.
         assert.match(water.tip, /^Smart Delivery keeps 3,000 in stock at 1 Depot, from /);
         assert.doesNotMatch(water.tip, /a week on order/);
-        assert.match(water.cell, /^3,000 a week at most, Smart Delivery/);
+        // "A week at most" is the column header's tip; the row keeps a short mark (declutter E9).
+        assert.match(water.cell, /^3,000 Smart/);
       } else {
         assert.match(water.tip, /^3,000 a week on order now from /);
         assert.doesNotMatch(water.cell, /Smart Delivery/);
@@ -286,15 +289,15 @@ test('a mixed line shows its level, and only a plain amount after it comes on to
   } finally { await page.close(); }
 });
 
-const KEY = 'ba_import_set_v2:set-fixture';
+const KEY = 'ba_import_set_v3:set-fixture';
 for(const value of [900, 2000]){
   test(`a figure typed before the game moved is forgotten (${value === 900 ? 'moved onto it' : 'moved elsewhere'})`, async () => {
     // Typed when the game held 700; the game now holds 900.
-    const page = await board({before: [KEY, JSON.stringify({'["depot#0","sugar"]': {value, inGame: 700}})]});
+    const page = await board({before: [KEY, JSON.stringify({'["depot#0","sugar"]': {value, inGame: 700, basis: 'cap'}})]});
     try{
       const sugar = (await cells(page)).find(r => r.item === 'Sugar');
       assert.deepEqual([sugar.box, sugar.changed], ['1400', true]);
-      assert.match(sugar.verdict, /raise/);
+      assert.match(sugar.verdict, /short/);
       assert.equal(await page.evaluate(key => localStorage.getItem(key), KEY), '{}');
     } finally { await page.close(); }
   });
@@ -306,7 +309,7 @@ test('a figure typed on a line a route has since covered is forgotten, and the t
   const data = fixture();
   data.businesses[0].lines.push({slug: 'pepper', item: 'Pepper', units: 120});
   data.supply.facts[0].pepper = depotFact('covered', 300, {why: 'route', parts: {lines: 300, sites: 0, route: 300}});
-  const page = await board({data, before: [KEY, JSON.stringify({'["depot#0","pepper"]': {value: 600, inGame: null}})]});
+  const page = await board({data, before: [KEY, JSON.stringify({'["depot#0","pepper"]': {value: 600, inGame: null, basis: 'cap'}})]});
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   try{
@@ -314,10 +317,10 @@ test('a figure typed on a line a route has since covered is forgotten, and the t
     assert.ok(pepper, 'the covered line is listed');
     assert.equal(pepper.box, null, 'no box: nothing to set');
     assert.match(pepper.verdict, /covered by route/);
-    assert.equal(await page.locator('#secWarehouses tr[data-slug] .imp-reset').count(), 0);
+    assert.equal(await page.locator('#secImports tr[data-slug] .imp-reset').count(), 0);
     assert.equal(await page.evaluate(key => localStorage.getItem(key), KEY), '{}');
     // Drawn again, Today's card and the tabs still stand.
-    await page.evaluate(() => { drawSupplyStrip(); drawWarehousesTab(); wireAll(); });
+    await page.evaluate(() => { drawSupplyStrip(); drawChangesView(); drawImportsView(); wireAll(); });
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
@@ -327,16 +330,16 @@ test('typing the figure in game turns the suggestion down and it stays down', as
   try{
     await box(page, 'Sugar').fill('900');
     await box(page, 'Sugar').press('Enter');
-    await page.waitForFunction(() => document.querySelector('#secWarehouses .imp-reset'));
+    await page.waitForFunction(() => document.querySelector('#secImports .imp-reset'));
     let sugar = (await cells(page)).find(r => r.item === 'Sugar');
     assert.deepEqual([sugar.box, sugar.changed], ['900', false]);
     assert.deepEqual(await actions(page), []);
     // A redraw keeps it: the game has not moved since it was typed.
-    await page.evaluate(() => { drawWarehousesTab(); wireAll(); });
+    await page.evaluate(() => { drawImportsView(); wireAll(); });
     sugar = (await cells(page)).find(r => r.item === 'Sugar');
     assert.equal(sugar.box, '900');
     assert.deepEqual(JSON.parse(await page.evaluate(key => localStorage.getItem(key), KEY)),
-      {'["depot#0","sugar"]': {value: 900, inGame: 900}});
+      {'["depot#0","sugar"]': {value: 900, inGame: 900, basis: 'cap'}});
   } finally { await page.close(); }
 });
 
@@ -366,16 +369,16 @@ test('the box and its reset say what they hold in each state', async () => {
     assert.match(await tip('Flour'), /^The figure in game/);
     await box(page, 'Flour').fill('6000');
     await box(page, 'Flour').press('Enter');
-    await page.waitForFunction(() => document.querySelector('#secWarehouses .imp-reset'));
+    await page.waitForFunction(() => document.querySelector('#secImports .imp-reset'));
     assert.match(await tip('Flour'), /^Your own figure\. The game holds 5,?000/);
-    const reset = page.locator('#secWarehouses .imp-reset');
+    const reset = page.locator('#secImports .imp-reset');
     assert.match(await reset.getAttribute('aria-label'), /^Back to the figure in game, 5,?000, for Flour$/);
     await box(page, 'Sugar').fill('2000');
     await box(page, 'Sugar').press('Enter');
-    await page.waitForFunction(() => document.querySelectorAll('#secWarehouses .imp-reset').length === 2);
-    const sugarReset = page.locator('#secWarehouses tr[data-slug]', {hasText: 'Sugar'}).locator('.imp-reset');
+    await page.waitForFunction(() => document.querySelectorAll('#secImports .imp-reset').length === 2);
+    const sugarReset = page.locator('#secImports tr[data-slug]', {hasText: 'Sugar'}).locator('.imp-reset');
     assert.match(await sugarReset.getAttribute('aria-label'), /^Back to the board's suggestion, 1,?400, for Sugar$/);
-    assert.match(await page.locator('#secWarehouses thead th', {hasText: 'Order / top-up'}).first().getAttribute('data-tip'), /the figure to type/);
+    assert.match(await page.locator('#secImports thead th', {hasText: 'Order / top-up'}).first().getAttribute('data-tip'), /the figure to type/);
   } finally { await page.close(); }
 });
 
@@ -396,22 +399,22 @@ test('the Plan imports card counts what the checklist has to do', async () => {
       document.querySelector('#planImportsCard .soon').textContent,
       document.querySelector('#planImportsCard .soon').className,
       document.querySelector('#planImportsCard .what').textContent,
-      document.querySelector('#sbTrayText').textContent]);
+      document.querySelector('#sbcTop .sb-road').getAttribute('aria-label').replace(' changes ', ' ')]);
     const [badge, cls, what, todo] = await card();
-    assert.deepEqual([badge, cls, todo], ['1 TO CHANGE', 'soon live', '0 of 1 typed in']);
+    assert.deepEqual([badge, cls, todo], ['1 TO CHANGE', 'soon live', '0 of 1 recorded or applied']);
     assert.match(what, /^Sugar at North Depot: Smart Delivery stock 900 → 1,400\.$/);
     await box(page, 'Flour').fill('6000');
     await box(page, 'Flour').press('Enter');
-    await page.waitForFunction(() => document.querySelector('#secWarehouses .imp-reset'));
-    assert.deepEqual((await card()).filter((_, i) => i !== 1), ['2 TO CHANGE', '2 changes at North Depot, starting with Sugar.', '0 of 2 typed in']);
-    const tick = item => page.locator('#secWarehouses tr[data-slug]', {hasText: item}).locator('.sb-tick').click();
+    await page.waitForFunction(() => document.querySelector('#secImports .imp-reset'));
+    assert.deepEqual((await card()).filter((_, i) => i !== 1), ['2 TO CHANGE', '2 changes at North Depot, starting with Sugar.', '0 of 2 recorded or applied']);
+    const tick = item => page.locator('#secImports tr[data-slug]', {hasText: item}).locator('.sb-tick').click();
     await tick('Sugar');
     const one = await card();
-    assert.deepEqual([one[0], one[3]], ['1 TO CHANGE', '1 of 2 typed in']);
+    assert.deepEqual([one[0], one[3]], ['1 TO CHANGE', '1 of 2 recorded or applied']);
     assert.match(one[2], /^Flour at North Depot: Smart Delivery stock 5,000 → 6,000\.$/);
     await tick('Flour');
     const [done, quiet, doneWhat, doneTodo] = await card();
-    assert.deepEqual([done, quiet, doneTodo], ['ALL TICKED', 'soon', '2 of 2 typed in']);
+    assert.deepEqual([done, quiet, doneTodo], ['ALL TICKED', 'soon', '2 of 2 recorded or applied']);
     assert.match(doneWhat, /^You ticked all 2\./);
   } finally { await page.close(); }
 });
@@ -429,7 +432,7 @@ test('a German browser still reads Supply figures with a comma', async () => {
   })()});
   try{
     assert.equal(await page.evaluate(() => (8000).toLocaleString()), '8.000');
-    const flour = await page.locator('#secWarehouses tr[data-slug]', {hasText: 'Flour'}).innerText();
+    const flour = await page.locator('#secImports tr[data-slug]', {hasText: 'Flour'}).innerText();
     assert.match(flour, /\b2,000\b/);
     assert.match(flour, /1,200 arrived last week/);
     assert.doesNotMatch(flour, /\d\.\d{3}\b/);

@@ -65,16 +65,16 @@ this column is where to look when you change a key's shape — not a complete ca
 
 | Key | Produced by | Read by |
 | --- | --- | --- |
-| `meta` | `extract()` inline, with `_city_date()` and `_difficulty()` | `drawMast`, `drawWeekday`, `drawSite`, `sbData`, `drawSupplyStrip`, `drawFactoriesTab`, `drawFooter`, `fvOpenDiff`, `drawDifficulty`; `web/map.js` `refreshCityMaps`; `web/wiki.js` `wikiGuidePrices` |
+| `meta` | `extract()` inline, with `_city_date()` and `_difficulty()` | `drawMast`, `drawWeekday`, `drawSite`, `sbData`, `drawSupplyStrip`, `drawProductionView`, `drawFooter`, `fvOpenDiff`, `drawDifficulty`; `web/map.js` `refreshCityMaps`; `web/wiki.js` `wikiGuidePrices` |
 | `kpi` | `extract()` inline, with `_net_worth()` | `drawMast`, `drawKpis` |
 | `daily` | `_daily_series()`, plus the rolling `profit7` added in `extract()` | `drawChart`, `drawKpis`, `drawKpis/hist` |
-| `businesses` | `_business()` per rented non-residential building | `drawPortfolio`, `drawSitePicker`, `openSite`, `siteKeys`, `drawSite`, `drawWeekday`, `supplyChecklistRows` and its locals `lineOf`, `held`, `label`, `factoryView/held`, `alertSite`, `nameUses`, the tab drawers `drawShopsTab`, `drawWarehousesTab`, `drawFactoriesTab` and their row helpers (`sbObject`, `sbDepotRow`, `sbLineRow`, `sbInputRow`, `sbTabOf`), and `drawFactoryStaffing`; `web/map.js` `mapBusinesses`; `web/wiki.js` `wikiOwn`, `wikiGuideOwn`, `wikiGuidePrices` |
+| `businesses` | `_business()` per rented non-residential building | `drawPortfolio`, `drawSitePicker`, `openSite`, `siteKeys`, `drawSite`, `drawWeekday`, `supplyChecklistRows` and its locals `lineOf`, `held`, `label`, `factoryView/held`, `alertSite`, `nameUses`, Supply's views (`drawImportsView`, `drawDeliveriesView`, `drawProductionView`, `drawChangesView`) through their parts `sbShopsPart`, `sbDepotPart`, `sbFactoryPart` and row helpers (`sbObject`, `sbDepotRow`, `sbLineRow`, `sbInputRow`, `sbTabOf`), the Imports card `sbImportCard`, and `drawFactoryStaffing`; `web/map.js` `mapBusinesses`; `web/wiki.js` `wikiOwn`, `wikiGuideOwn`, `wikiGuidePrices` |
 | `ownedBuildings` | `_owned_buildings()` | `web/map.js` only: `CityMapView.update`, `openLocationMap` |
 | `homes` | `_homes()`, with `m` and `hood` from `load_buildings()` | `spHome`, `siteKeys`; `web/map.js` `CityMapView.update`, `openLocationMap` |
 | `products` | `_products()`, with `peak`/`swing`/`weeks` from `_product_rhythm()` | `drawProducts`; `web/wiki.js` `wikiOwn`, `wikiGuideOwn` |
 | `staff` | `_staff_summary()` | `drawKpis`, `drawPayroll` |
 | `loans` | `_loans()` | `drawKpis`, and the `SS_VIEWS` `cash` entry's `live()` |
-| `supply` | `_supply()`; its `facts` from `_supply_facts()`, each fact's status word from `_supply_status()`; `margin` and `roundTo` are `SUPPLY_MARGIN` and `SUPPLY_ROUND_TO`; `roundTo` has no board reader, since the rounding is done in Python before the numbers ship | `supplyChecklistRows`, `sbData`, the tab drawers `drawShopsTab`, `drawWarehousesTab`, `drawFactoriesTab` (with `sbDepotRows`, `sbTabOf`, `sbNodeOpen`), `drawSite`, `drawFlow`, `flowLayout`, the phone chain's `flowStages`, `drawFlowChain`, `drawFlowFocus` and `flowPipeProblem` (which reads each `graph.links` entry's `slugs`, the products its pipe carries), `factoryView`; `web/map.js` `refreshCityMaps`. `supply.facts` only through `supplyFact()` (below), and `supply.idle` only through `idleRows()`, which keeps the rows idle under the sizing on screen (`modes`) with their `dem` laid over. `supply.wholesaleShops` (the shops a repeating wholesale contract delivers to) has no board reader: `_alerts()` counts it as a delivery plan |
+| `supply` | `_supply()`; its `facts` from `_supply_facts()`, each fact's status word from `_supply_status()`; `margin` and `roundTo` are `SUPPLY_MARGIN` and `SUPPLY_ROUND_TO`; `roundTo` has no board reader, since the rounding is done in Python before the numbers ship | `supplyChecklistRows`, `sbData`, Supply's five view drawers (with `sbDepotRows`, `sbTabOf`, `sbDeps`, `sbNodeOpen`, `drawFlowPanel`), `pgEvaluate` (a later board's evidence for an applied write), `drawSite`, `drawFlow`, `flowLayout` (its columns are `flowStages`' stages), the phone chain's `flowStages`, `drawFlowChain`, `drawFlowFocus` and `flowPipeProblem` (which reads each `graph.links` entry's `slugs`, the products its pipe carries), `factoryView`; `web/map.js` `refreshCityMaps`. `supply.facts` only through `supplyFact()` (below), and `supply.idle` only through `idleRows()`, which keeps the rows idle under the sizing on screen (`modes`) with their `dem` laid over. `supply.wholesaleShops` (the shops a repeating wholesale contract delivers to) has no board reader: `_alerts()` counts it as a delivery plan |
 | `rhythm` | `_chain_rhythm()`; its `recent` key holds the same three series over the last `RHYTHM_RECENT_DAYS` (28) calendar days before the last finished day, which the chart draws, while the full-length ones feed `_supply()` | `weekdaySeries` (which `drawChart` asks), `drawSite` |
 | `market` | `_market()`; its `catalogue` key is popped out and handed to `_plan()` | `drawMovers`, `drawMarket`; `web/wiki.js` `wikiOwn`, `wikiGuidePrices` |
 | `premises` | `_premises()`, with `_premises_status()`, `_premises_demand()`, `_rent_estimate()`, `_deposit_estimate()`, `_deposit_check()`, `_door_caps()`, `_rival_numbers()`, `_rival_names()` | `drawFindLocation`, `finderPreset`, `wireCards`; `web/map.js` `premises` |
@@ -84,7 +84,7 @@ this column is where to look when you change a key's shape — not a complete ca
 | `hours` | `_hourly()`, the sites with hour reports behind them | `drawSite` |
 | `hourFindings` | `_hour_findings()` | `drawSite` |
 | `staffing` | `_staffing()`, with `_plan_site()`, `_need_curve()`, `_arrival_ceiling()`, `_cut_run()`, `_bridge_troughs()`, `_hires_for()`, `_plan_people()`, `_current_roster()`, `_index_table()`, `_shift_row()` | `drawSite` through `spRosterBlock`, and `drawOptimizeStaffing` for the Next-moves card |
-| `factoryStaffing` | `_factory_staffing()`, once per sizing (`{cap, dem}`), with `_factory_site_plan()`, `_factory_run_start()` and the shop placer `_place_week()`; its hours come from each factory line's `needHours`, `hoursNow` and `_posts` (the machines' ids, set by `_line_hours()` in `_factories()` on each line and on each unnamed line with a recipe, and taken off the payload here, by the line's place in its list) | `drawFactoryStaffing`, through `drawFactoriesTab` |
+| `factoryStaffing` | `_factory_staffing()`, once per sizing (`{cap, dem}`), with `_factory_site_plan()`, `_factory_run_start()` and the shop placer `_place_week()`; its hours come from each factory line's `needHours`, `hoursNow` and `_posts` (the machines' ids, set by `_line_hours()` in `_factories()` on each line and on each unnamed line with a recipe, and taken off the payload here, by the line's place in its list) | `drawFactoryStaffing`, through `drawProductionView` |
 | `officeStaffing` | `_office_staffing()`, with `_office_site_plan()`, `_office_runs()` (Peter's office default) and the shop placer `_place_week()`, drawing on the unassigned people no shop plan counts on (`_bench_claimed()`) | the Staff page (issue #89) |
 | `candidates` | `_candidates()`, with `_character()` and `_skill_rows()` | the Staff page |
 | `hiring` | `_hiring()`, which takes each plan row's private `_hire` (`_hire_fields()`: `hireWeeks` from `_hire_weeks()`, `spare`, `bench`) off `staffing`, `staffing[].fullCover`, `factoryStaffing` and `officeStaffing`; `accepts` from `ASSIGN_SKILLS`, `facts` from `_site_facts()`, `stations` from `_station_facts()` (the desk and chair demands each station meets), `company` from `_company_facts()`, `recruiting` from `_recruiting()` | the Staff page |
@@ -101,18 +101,21 @@ this column is where to look when you change a key's shape — not a complete ca
 Four indirect routes an agent would otherwise miss:
 
 - The Supply page's change checklist has one source. `supplyChecklistRows()` gathers the rows
-  from `supply`, `businesses` and the plan, `sbData()` caches them with the player's ticks,
-  and `drawSupplyStrip()` (the strip under the tabs, Today's Plan imports card, the tab
-  badges) and the three tab drawers all read `sbData()` rather than the payload. Change a
-  shape in `supply` or `businesses` and it is `supplyChecklistRows()` you have to follow;
-  it also fills `gwImportRows`, which the game link's write-back reads.
+  from `supply`, `businesses` and the plan, `sbData()` caches them with the player's marks,
+  and `drawSupplyStrip()` (the counts of every view, the Overview's Calculate import amounts
+  task) and the five view drawers all read `sbData()` rather than the payload. It is the one
+  proposed-plan record: the Imports card, its Why and manual instructions, Copy remaining,
+  the Overview's Details (`ovPlanHtml()`) and the game link's write all read the same row.
+  Change a shape in `supply` or `businesses` and it is `supplyChecklistRows()` you have to
+  follow; it also fills `gwImportRows`, which the game link's write-back reads.
 - The whole location finder reads `premises` through one accessor,
   `const premises = () => D?.premises || null` in `web/map.js`. Every `CityMapView` method
   that ranks, filters or describes a building goes through it, so that one line is the seam
   to follow when the key's shape changes.
 - Every supply verdict on the board reads `supply.facts` through one accessor,
-  `supplyFact(s, slug)`: the fact for a site index and an item, its 24/7 fields with the
-  fact's `dem` laid over them when the sizing switch reads Demand. The three Supply tabs, the checklist, Goods
+  `supplyFact(s, slug)`: the fact for a site index and an item, its full-production fields
+  with the fact's `dem` laid over them when the planning basis reads Shop demand (`sizing`,
+  `cap` or `dem`, kept per character: `szRead()`, `szPick()`). Supply's views, the checklist, Goods
   flow and the site page all ask it, so none of them computes a verdict of its own; the
   Python twin is `_supply_fact()`, which the findings use. The findings themselves come
   twice, `alerts`/`minor` and `alertsDemand`, and `alertLines()` picks the pair by the same
@@ -671,70 +674,95 @@ to fetching `data.json` from a site that has no such route.
 
 ## Pages
 
-`const PAGES =` in the board script lists the top-level pages; `SUBS` lists the views inside
-three of them. Each page is a `div.page` that `showPage()` unhides.
+The UI redesign (26 Sep 2026, chunk 1) put a layer of routes over the pages: the sidebar
+(see [The sidebar](#the-sidebar)) shows five areas and two references, and every place the reader can be is a route such as
+`supply/imports` (see [Routes](#routes)). The pages below are the routes' *hosts*: they keep
+their ids, sections and `PAGE_DRAWS` tags, so lazy drawing and the calm refresh are as they
+were. [ui-route-migration.md](ui-route-migration.md) maps every route to the host view that
+shows it until chunks 2 and 3 move its presentation.
 
-| Page (`id`) | Host element | Drawn by |
-| --- | --- | --- |
-| Today (`today`) | `pageToday` | `drawKpis` (`#kpis`), `drawAlerts` (`#alertSection`), `drawFindLocation` and `drawOptimizeStaffing` (each card's live count, its sentence about this save and the line naming where it goes); the "Plan imports" card is painted by `paintPlanImports` from `drawSupplyStrip` (the change checklist's strip on Supply, drawn on Today too), with `planImportsState()` counting the same rows and ticks as the checklist |
-| Company (`company`) | `pageCompany` | one view at a time — see below |
-| Supply (`supply`) | `pageSupply` | one tab at a time — see below |
-| Growth (`growth`) | `pageGrowth` | one view at a time — see below |
-| Map (`map`) | `pageMap` | `showCityMap` / `refreshCityMaps` in `web/map.js`, which also hosts the location finder as a mode of the page — `openFinder()` switches it on, and `CityMapView` ranks the `premises` rows beside the map |
-| Wiki (`wiki`) | `pageWiki` | `wikiVisit` → `showWikiRoute` in `web/wiki.js`; the entry is omitted when `showWikiRoute` is undefined |
+`const PAGES =` in the board script lists the host pages; `SUBS` lists the views inside
+four of them. Each page is a `div.page` that `showPage()` unhides.
 
-Company's views:
+| Page (`id`) | Area on screen | Host element | Drawn by |
+| --- | --- | --- | --- |
+| `today` | Overview | `pageToday` | `drawKpis` (`#kpis`, and on a phone the one-line `#ovCtx` from `drawKpiLine`), `drawAlerts` (`#alertSection`, Needs attention: stable order in `ovOrder`, the state a departure leaves in `ovSnapshot`/`ovRemember`), `drawTools` (`#secMoves`, All tools: thirteen tasks, three of them the old live cards painted by `drawFindLocation`, `drawOptimizeStaffing` and `paintPlanImports` from `drawSupplyStrip`) |
+| `company` | Businesses | `pageCompany` | one view at a time — see below |
+| `supply` | Supply | `pageSupply` | one tab at a time — see below |
+| `staffing` | Staffing | `pageStaffing` | one view at a time — see below |
+| `growth` | Expansion | `pageGrowth` | one view at a time — see below |
+| `map` | City map (and Expansion › Find a location) | `pageMap` | `showCityMap` / `refreshCityMaps` in `web/map.js`, which also hosts the location finder as a mode of the page — `openFinder()` switches it on with a preset, `showFinder()` without one (a replayed entry's own filters, `nxFs`, else those on screen), and `CityMapView` ranks the `premises` rows beside the map. The route decides the mode: `map` is always the plain map, `expansion/finder` the finder. The board script heads the page (`#mapHead`) and puts the finder's ways on under it (`#finderCtx`), both from `drawFinderCtx()` |
+| `wiki` | Wiki | `pageWiki` | `wikiVisit` → `showWikiRoute` in `web/wiki.js`; the entry is omitted when `showWikiRoute` is undefined |
+
+Company's views (Businesses):
 
 | View | Section | Drawn by |
 | --- | --- | --- |
-| Results | `secDaily` (its By weekday option, `drawWeekday`, replaced the Weekly rhythm section; an old `#secRhythm` link lands here through `SEC_MOVED`), `secPortfolio`, `secDetail` | `drawChart`, `drawPortfolio`, `drawSitePicker` + `drawSite` |
-| Products | `secProducts` | `drawProducts` |
-| Staff | `secStaff` (was Payroll, `secPayroll`) | the Staff page from `hiring`, `candidates`, `staffing`, `factoryStaffing` and `officeStaffing` (issue #89, `docs/staff-hire-plan.md`), with the old Payroll tables (`drawPayroll`) at its foot |
-| Milestones | `secGoals` | `drawGoals`; the difficulty is not here but a chip at the end of the clock's last line at 1501 px and over (`drawMast`) and, at 1500 px and under, the footer stamp (`drawFooter`, `#footDiff`), built by `fvDiffChip()`, with a body-level popover (`#fvDiffPop`) from `drawDifficulty()` |
+| Results | `secDaily` (Company results; its By weekday option, `drawWeekday`, replaced the Weekly rhythm section; an old `#secRhythm` link lands here through `SEC_MOVED`), `secFinance` (Company finances), `secPortfolio`, `secDetail` | `drawChart`, `drawFinance`, `drawPortfolio`, `drawSitePicker` + `drawSite`. A business's page (`drawSite`) carries its findings, tiles and blocks, a Schedule summary (`spSchedSummary()`, `#sp-sched`; the planner is Staffing › Schedules') and, in its head, the ways to its planners (`spActs()`, `data-site-go`) |
+| Products & prices (`products`) | `secPrices`, `secProducts` | `drawPriceShops` (a chip a shop or office, `data-price-pick`; the picked one's prices beside the market's lowest in its neighbourhood, `bzPriceTable()`; kept on the entry as `nxPrice`), `drawProducts` (Sales across the company) |
+| Standards | `secStandards`, then `secPortfolio` (its `data-sub` is `results standards`) switched to Operations | `drawStandards` (the four subjects, then `stdTable()`: every shop and office, satisfaction, promotion, amenity lamps, uniforms with the write and its progress), `drawPortfolio` |
+| Milestones | `secGoals` | `drawGoals` (Career goals with bars, Career totals); the difficulty is not here but a chip at the end of the clock's last line at 1501 px and over (`drawMast`) and, at 1500 px and under, the footer stamp (`drawFooter`, `#footDiff`), built by `fvDiffChip()`, with a body-level popover (`#fvDiffPop`) from `drawDifficulty()` |
 
-Supply's views are three tabs, one per object (R13):
+Staffing's views:
 
 | View | Section | Drawn by |
 | --- | --- | --- |
-| Shops | `secShops` | `drawShopsTab`: every shelf against tomorrow morning's round |
-| Warehouses | `secWarehouses` | `drawWarehousesTab`: every depot, second tier included, with each import line's Set to box (`sbImportCtx()`); a factory input no depot brings is its "No depot" block |
-| Factories | `secFactories` | `drawFactoriesTab`: each factory's lines and their hours, its factory inputs and its own imports, then `drawFactoryStaffing()` from `factoryStaffing[sizing]` |
+| Schedules | `secSchedules` | `drawSchedules`: every shop and office in a list (`data-sched-pick`), each with its plan's state and progress (`schedProgress()`), and the chosen one's scheduling beside it in `#schDetail`: a shop's `spRosterBlock()` or an office's `spOfficeRoster()`, the planner and its write, `#sp-roster`. Since chunk 3 this is the one place the planner is drawn: a business's page summarises it (`spSchedSummary()`) and links here. Its handlers are bound by `wireAll()` (`wireRoster()`). The pick (`schedLit`) rides on the history entry (`nxSch`). Factories open Supply › Production on their scope |
+| Staff needs (`needs`) | `secNeeds`, `secStaff` | `drawNeeds` (Unmet demands, `#nxDemands`, and the last hire or move made from here with its progress), then the hiring page from `hiring`, `candidates`, `staffing`, `factoryStaffing` and `officeStaffing` (`drawStaff`, issue #89, `docs/staff-hire-plan.md`) under "Whom to hire": open places, candidates, Quick hire, the hire write with no undo, and its short current-staff summary (`hrPayroll`) linking to Payroll. "Write their week" opens Schedules on the site |
+| Payroll | `secPayroll` | `drawPayroll`: rate and booked tiles and their difference, the roles, and the sites whose books part from their rates (`payrollOff()`), each opening its crew; the view an old `#payroll` or `#secPayroll` link opens |
 
-Above the three, `#sbStrip` is the one change checklist (`drawSupplyStrip()`): the done
-count, Copy remaining and the reset, over the rows of every tab. It also paints each tab's
-badge (`sbBadge()`, through `SUBS.supply.badge`) and Today's Plan imports card, so its
-`PAGE_DRAWS` row is tagged for Today and all three tabs. Every tab reads the same rows
-through `sbData()`: `supplyChecklistRows()` gathers the facts into the rows each table shows
-and hands them to `buildOrderChecklist()`, the single source of what to change (it also
-leaves `gwImportRows` for the game link's write-back); the result is kept per board, sizing
-and browser-side change (`sbStamp`). A table row carries the tick for the checklist rows about
-its site and item (`sbChk()`); any row no table claims is listed under "Other changes" on its
-tab, so every change is tickable. A site's tab is `sbTabOf()`: a shop's Shops, a factory's
-Factories, every other site's Warehouses.
+Supply's views are five task views (the redesign's chunk 2); shops, warehouses and factories
+are each view's scope (`sbScope`, a `<select>`: the whole company, every site of a kind, or one
+site), not views of their own:
 
-Needs a change and Everything (`sbWhich`, in memory) and list or diagram (`sbViewMode()`,
-`ba_dash_supply_view`) sit in the subhead. The goods-flow diagram is a view of the tab on
-screen: `sbPlaceFlow()` moves the one `svg#flow` into that tab's `.sb-diag`, and a click on a
-site (`sbNodeOpen()`) goes back to the list on that site's rows. A finding's link, the search
-and a diagram click land through `sbLand()`: the tab, Everything where the row is no change, its
-group opened, `[data-sb-at]` lit, and a crumb back. Supply's old views still resolve: a
-remembered `ba_dash_supply` of `checks` opens Shops, `map` Warehouses with the diagram on, and
-`orders` (or none) the tab with the most still to type (`SUPPLY_WAS`, `supplyAuto`); the old
-`#secLogistics`, `#secStock` and `#secFlow` links reach their tab through `SEC_PAGE` and
-`SEC_MOVED`.
+| View | Section | Drawn by |
+| --- | --- | --- |
+| Changes | `secChanges` | `drawChangesView`: the one change checklist over every view, grouped Imports, Deliveries, Production; the truck's road (`#sbcTop`), Copy remaining with its fallback, Apply N import amounts (game link), Clear my marks, the basis, the copied text's preview, and the records a later read confirmed or not |
+| Imports | `secImports` | `drawImportsView`: the card reviewing one line (`sbImportCard()`, `sbSel`: the recurring order beside the one-time catch-up, Why, manual instructions, Copy, Preview in the game, the factory hours it is planned on), then every import line: depots' (`sbDepotPart(…, "imports")`) and factories' own (`sbFactoryPart(…, {imports})`), and "No depot" |
+| Deliveries | `secDeliveries` | `drawDeliveriesView`: by where the goods arrive: shops (`sbShopsPart`), second-tier warehouses (`sbDepotPart(…, "deliveries")`: route-fed top-ups, wholesale, idle and not routed) and factory inputs |
+| Production | `secProduction` | `drawProductionView`: machine-hour tiles (staffed now as an observation, both bases), each factory's lines, hours and inputs, then `drawFactoryStaffing()` from `factoryStaffing[sizing]`; an honest empty state with no factory |
+| Goods flow | `secFlow` | `drawFlowView`: the picture (the one `svg#flow`, or `#flowChain` when narrow, moved in by `sbPlaceFlow()`), the site it follows (`flowPickId`) and its panel (`drawFlowPanel()`: what it holds, the changes on its route), and Table back to the view the reader came from (`sbTableView`) |
 
-Growth's views:
+`drawSupplyStrip()` counts every view (`sbLeft`, the area row's counts) and paints the
+Overview's Calculate import amounts task, so its `PAGE_DRAWS` row is tagged for the Overview
+and all five views. Every view reads the same rows through `sbData()`:
+`supplyChecklistRows()` gathers the facts into the rows each table shows and hands them to
+`buildOrderChecklist()`, the single source of what to change (it also leaves `gwImportRows`
+for the game link's write-back, and adds a non-writable "Factory run hours" row for the factory
+hours an import figure is planned on, `sbDeps()`); the result is kept per board, basis and
+browser-side change (`sbStamp`). A row's view is `sbViewOf()` (`byView`). A table row carries
+the tick for the checklist rows about its site and item (`sbChk()`); any row no table claims is
+listed under "Other changes" on its view, so every change can be marked. A site's kind is
+`sbTabOf()`: a shop, a factory, or a warehouse.
+
+Needs a change and Everything (`sbMode`), the scope, the reviewed import line and the followed
+site ride on the history entry (`nxSb`, `sbSnap()`/`sbRestore()`), so Back, Forward and a reload
+give each view back as it was left. Sites are kept by key there, never by list position, and read
+back against the board on screen (`sbBoard()` moves them on each new board); a `site:` scope the
+board no longer has reads as the whole company (`sbScopeOf()`), and another company's board starts
+every view afresh (`sbForget()`). A finding's link, the search and the Goods flow panel land
+through `sbLand()`: the view, Everything where the row is no change, its group opened,
+`[data-sb-at]` lit (on Imports the card too), and a crumb back. The three meanings of done
+(Marked by you, Applied · awaiting refresh, Confirmed) are `pgState()` and `pgPill()`, from the
+marks and the progress records (`docs/ui-progress-postconditions.md`). Supply's old views still
+resolve: a remembered `ba_dash_supply` of `shops`, `warehouses`, `factories`, `checks`, `map`
+or `orders` opens Deliveries, Imports, Production, Deliveries, Goods flow or Changes
+(`SUPPLY_WAS`), and an old `#secShops`, `#secWarehouses`, `#secFactories`, `#secStock`,
+`#secLogistics` or `#secFlow` opens the view that took its place (`SEC_PAGE`, `SEC_MOVED`).
+
+Growth's views (Expansion; Find a location is the Map page's finder):
 
 | View | Section | Drawn by |
 | --- | --- | --- |
 | Demand | `secMarket` | `drawMovers` (`#movers`) and `drawMarket` (`#market`) |
-| Plan a chain | `secPlan`, `secIngredients` | `drawPlan` |
+| Plan a factory (`plan`) | `secPlan`, `secIngredients` | `drawPlan` |
 
-Outside the pages, `drawMast` and `drawFooter` own the masthead and footer, and
+Outside the pages, `drawMast` and `drawFooter` own the sidebar's name and clock and the footer, and
 `indexTrends` builds the lookup the other draws use. `renderAll()` calls those itself and
 works through `PAGE_DRAWS` for the rest, one row per draw function, tagged with the views
-(`"today"`, `"company/payroll"`) whose markup it writes, or `""` for a row drawn on every
-refresh. `PAGE_ALIASES` keeps old hashes such as `#results` working after a page became a
+(`"today"`, `"staffing/payroll"`) whose markup it writes, or `""` for a row drawn on every
+refresh; `drawShellCounts()` is one, so the critical count on the Overview's link follows a
+refresh made on another page. `PAGE_ALIASES` keeps old hashes such as `#results` working after a page became a
 view.
 
 A live refresh of the same company enters through `renderCalm()`, which also runs the
@@ -758,6 +786,56 @@ view whose DOM it writes; if other code reads state it computes from another pag
 redraw. A row calls its function by name, `() => drawX()`, not `drawX` itself, so a test
 that stubs `window.drawX` is the one the row runs.
 
+### The sidebar
+
+Since 27 Sep 2026 the places run down the left (the navigation canvas's variant B,
+[ui-declutter.md](ui-declutter.md), "Sidebar"). The markup is `<nav class="sd" id="mast">`
+inside `div.sd-app`, a two-column grid whose second column is `.wrap`; the news strip and the
+update banner stay above it at full width. The sidebar is sticky and as tall as the window less
+what is above it (`sdFit()` sets `--sd-cut` while the news strip is in view). Top to bottom:
+
+- the head (`#sdHead`): the company's name (`#title`), the dot and the sphere (`wireSphere()`:
+  the balls rest on the head's rule, at its right end, and roll left as the page scrolls);
+- Search (`ssField`, or its icon `ssFieldBtn` on the rail);
+- the five areas (`#nav`, `navHtml()`), and under the open one its views: the same
+  `#localNav` that `paintLocal()` fills, moved there by `sdPlaceViews()`;
+- the references (`#navRefs`, `refsHtml()`);
+- the foot: the clock (`#clock`; `#sdClk` is the rail's short one), then `#sdRow` with ···
+  (`#navMore`) and the fold button (`#sdToggle`). The hosted board puts its Update and its own ···
+  (`#mastSrc`) first in that row, and its ··· takes the utilities in (`nxMenuInto()`), so the
+  sidebar always has one ···.
+
+The top of the page (`#localRow`) holds only the view's own controls, hoisted into `#viewCtl`
+from wherever the view draws them (`data-view-ctl="<route>"`, `ctlHoist()`); a view with no
+controls starts with its content.
+
+Folded, the sidebar is a 64 px rail (`body.sd-rail`): icons with their names as tips, the short
+clock, Update as its icon. `#localNav` then goes back into `#localRow`, before the controls.
+`sdLayout()` decides: the rail wherever the reader folded it on this device (`localStorage`
+`ba_dash_sidebar`, `rail` or `full`, set by `sdSet()` and kept for the visit when storage
+refuses), and at 1100 px and under unless it was unfolded there during this visit; a stored
+`full` holds only in a wider window, so a window snapped to half the screen gets the rail. An inline script at the top of `.sd-app` applies the same rule before the
+first paint. On a phone (560 px and under) the sidebar is a drawer (`body.sd-open`, `sdDrawer()`)
+opened by the bottom bar's Map & more, and the views sit at the top of the page as on the rail.
+`nxTopLine()` is what stays covered at the top of the window as the page scrolls: the update
+banner, never the sidebar.
+
+### The utilities
+
+The sidebar's ··· (`#navMore`, `nxMenuItems()`) lists What's new, Preferences and Help &
+feedback; on the hosted board they are the last three rows of its save-source menu
+(`#menuUtilSlot`), which that page's ··· opens. Preferences and Help & feedback are sheets over the board
+(`pxOpen()`, `#pxSheet`, the board script's `/* --- Preferences and Help & feedback` section),
+hung off `<body>` at z-index 55, under the popovers a row can open (the language list, the checks
+panel and the difficulty popover, 60). They hold no setting of their own: each row reuses the
+control that exists — the theme buttons (`data-theme-set`), a copy of the footer's Language
+picker (wired by `wireGameNames()`), the web page's game-text chip and Forget history, the checks
+panel (`data-kinds`), the difficulty chip (`data-fv-at="prefs"`) — and Help's links are copied
+from the footer. A row's controls appear only where they exist (the game text and Forget history
+on the web page; the CLI's page says where its history file is). `data-open-prefs="<row>"`
+anywhere opens Preferences on that row. Escape closes a popover first, then the sheet, and the
+keyboard returns to the control that opened it.
+
 ### Routes
 
 The hash is the board's address bar, and `pageFromHash()` / `openHash()` read it. A hash
@@ -765,11 +843,33 @@ is one of:
 
 | Hash | Opens |
 | --- | --- |
-| `#today`, `#company`, … | a page (`PAGES`), on the view it was last left on |
+| `#overview`, `#supply/imports`, `#staffing/needs`, … | a route (`ROUTES`), through `openRoute()`: its host page and view, then what the route asks of it (`enter`, `after`, `into`) |
+| `#businesses`, `#supply`, `#staffing`, `#expansion` | an area (`AREAS`): the view it was last left on this session, else its first (`areaEntry()`) |
+| `#today`, `#payroll`, `#staff`, `#guide` | an old word for a route, through `ROUTE_ALIASES` |
+| `#company`, `#growth` | a host page (`PAGES`), on the view it was last left on, under the route that view shows (`HOST_ROUTES`) |
 | `#results` | an old page name, through `PAGE_ALIASES`, on the view that replaced it |
 | `#secPortfolio`, `#secStock`, … | a section: its page and view (`SEC_PAGE`), scrolled to it by `reveal()` |
 | `#wiki/<page>` | a wiki route, handed whole to `showWikiRoute()` in `web/wiki.js` |
 | `#site/<slug>` | one site's own page, for example `#site/fifthavenue-57` |
+
+The route on screen is `route`; `routeFor(page)` settles it after any navigation that did not
+name one (`routeAccepts()`: a route stands while its host shows it, so Supply › Imports survives
+a switch to the Factories tab but not to Shops). `routeNext` and `arrivalNext` carry the route
+and the arrival that the next `showPage()` writes. A history entry keeps `nxRoute` (the route
+a site's page stands under, when it is not Businesses › Results), `nxArr` (why the reader
+arrived: the strip `#arrive`, which takes the keyboard on arrival) and, on the Overview's
+entry, `nxOv` (its filters, folds and the row the reader left from). A load with no hash opens
+`ba_dash_route`. [ui-route-migration.md](ui-route-migration.md) is the full table, with every
+old hash, finding kind and task.
+
+Two routes share the Map page: `map` with the finder off and `expansion/finder` with it on.
+`routeFor()` reads the switch (`routeFinderOn()`), and the switch calls `routeSync()`, so the
+address and the lit place always name what is on screen. The finder's picked building rides on
+the history entry as `nxPick` (`finderPickRemember()`/`finderPickRestore()` in `web/map.js`),
+which is its source of truth: a new visit takes the pick on screen, and Back, Forward or a reload
+show the entry's own pick where the current results still hold it, else none. An old word can land
+inside its route: `ROUTE_ALIAS_INTO` sends `#staff` to the hiring block (`#secStaff`) on
+Staffing › Staff needs.
 
 A site's page is the site panel (`drawSite()` in `#secDetail`) shown on its own on Company:
 while it is up, `#pageCompany` carries `ss-siteup` and the rest of Results and the Company
@@ -856,7 +956,8 @@ says otherwise; "board script" means the last `<script>` block of its `TEMPLATE`
 | `def _condense(` | *Only if* the kind merges and a field of its own must survive the merge. A merged row is built fresh: it keeps `group`, the key the rows were merged on; from the worst row it keeps `level`, `site`, `siteKey`, `detail` (that row's `text`) and `ev` when present; `text` is the `SUMMARIES` line, `worth` the sum of the rows' non-null worths (or `None` when there are none), `unit` from `ALERT_UNITS`, `id` a new `_alert_id("summary", …)`, and `always` is true if any row's is. Every other field is dropped. Every row, merged or not, also loses `rank` and `subject`, and `always` once the materiality gate has used it | none |
 | `const ALERT_GROUPS = [` (board script) | `{id, label, note, on}`. The settings panel, `kindLabel`, `kindCounts`, search and the map's `kindOff` all read it. Keep a noisy kind `on: false` | `tests/alert_kinds.test.cjs`, "At capacity is on by default" and the per-kind tests; `tests/test_doc_registries.py`, "test_every_alert_group_is_a_group_the_findings_emit" |
 | `const ALERT_DEFAULTS_V1 =` (board script) | Never add to it: it is the frozen migration of old settings | `tests/alert_kinds.test.cjs`, "a stored whole map keeps only …" |
-| `const ALERT_LINKS = {` (board script) | Where a click lands: `{sec, tab?, site?, port?}`, where `tab` is a Supply tab (`shops`, `warehouses`, `factories`) or `"site"` for the tab of the site's own kind. Without it `goToAlert()` does nothing | `tests/alert_kinds.test.cjs`, "every finding kind has an ALERT_LINKS entry …", the per-kind tests and "the supply kinds land on the Supply tab of their object"; `tests/job_demands.test.cjs`, "both demand findings can be filtered and link somewhere" |
+| `const ALERT_LINKS = {` (board script) | Where a click lands: `{sec, view?, site?, port?}`, where `view` is a Supply view (`imports`, `deliveries`, `production`) or `"route"` for the view of the finding's route (`findingRoute()`). Without it `goToAlert()` does nothing | `tests/alert_kinds.test.cjs`, "every finding kind has an ALERT_LINKS entry …", the per-kind tests and "the supply kinds land on the Supply view of their route"; `tests/job_demands.test.cjs`, "both demand findings can be filtered and link somewhere" |
+| `const FINDING_ROUTES = {` (board script) | Its route and the action's words: `{route, act, pick?}`, `pick(a)` returning another `{route, act}` for some of its findings (a route-fed shortfall is a delivery, a staff finding at a factory is Production). `ALERT_LINKS` stays the landing until chunks 2 and 3 give the route its own presentation | `tests/shell_routes.test.cjs`, "every finding kind names a real route, and every route is a view of its area" |
 | `const ALERT_SITE_PICK = {` (board script) | *Only if* the kind is company-wide, with no site of its own | `tests/job_demands.test.cjs` |
 | `const ALERT_LANDS_ON_ROW = new Set(` (board script) | *Only if* the finding is about one shelf, stock or input row | none |
 | `const ALERT_EVIDENCE = {` (board script) | The site panel block it lights, `{block, hit?}`. A kind with no site panel goes on `NO_EVIDENCE` in `tests/alert_kinds.test.cjs` instead | `tests/alert_kinds.test.cjs`, "every finding kind with a site panel has an ALERT_EVIDENCE entry"; `tests/site_panel.test.cjs`, "the findings here are the ones about this site, and each lights its block" |
@@ -879,14 +980,16 @@ all three.
 | Anchor | What goes in it | Test that covers it |
 | --- | --- | --- |
 | The markup: `<div class="page" id="page…">` for a page, or `<section class="sec rv" id="sec…" data-sub="…">` inside its page for a view; a page with views also gets its `<nav class="seg" id="…Nav">` | The host element | the navigation tests, indirectly |
-| `const PAGES = [` (board script) | *Only for a page*: `{id, label, host, newFeature?}` | `tests/navigation.test.cjs`, "the top row is Today, Company, Supply, Growth, Map, Wiki" |
+| `const PAGES = [` (board script) | *Only for a page*: `{id, label, host, newFeature?}` | `tests/navigation.test.cjs`, "the sidebar is Overview, Businesses, Supply, Staffing, Expansion, then City map and Wiki" |
 | `const ICON = {` (board script) | *Only for a page*: its nav icon, keyed by page id | none |
-| `const SUBS = {` (board script) | *Only for a view*: its `[id, label, section]` item; a new page with views needs the whole entry | `tests/navigation.test.cjs`, "Company carries Results, Products, Payroll and Milestones" and "every view in SUBS has its SEC_PAGE row and a PAGE_DRAWS tag" |
-| `const SEC_PAGE = {` (board script) | `secX: [page, view]` for every section. Without it `reveal()`, the sub-nav and `pageFromHash()` fail | `tests/navigation.test.cjs`, "every view in SUBS has its SEC_PAGE row …" and "every Company section deep link opens the view that holds it"; `tests/alert_kinds.test.cjs`, "the supply kinds land on the Supply tab of their object" |
+| `const SUBS = {` (board script) | *Only for a view*: its `[id, label, section]` item; a new page with views needs the whole entry | `tests/navigation.test.cjs`, "Businesses carries Results, Products & prices, Standards and Milestones; Staffing its three views" and "every view in SUBS has its SEC_PAGE row and a PAGE_DRAWS tag" |
+| `const SEC_PAGE = {` (board script) | `secX: [page, view]` for every section. Without it `reveal()`, the sub-nav and `pageFromHash()` fail | `tests/navigation.test.cjs`, "every view in SUBS has its SEC_PAGE row …" and "every Company section deep link opens the view that holds it"; `tests/alert_kinds.test.cjs`, "the supply kinds land on the Supply view of their route" |
 | `const PAGE_DRAWS = [` (board script) | `["page/view", () => drawX()]`, tagged with every view whose markup it writes | `tests/calm_refresh.test.cjs`, "a refresh on Today draws Today …"; `tests/navigation.test.cjs`, "every PAGE_DRAWS tag names a real page or view" and the SUBS test above |
+| `const ROUTES = {`, `const AREAS = [`, `routeViewLabel(` (board script) | *For a route*: `{host: [page, view?], scopes?, enter?, after?, into?}`, its view id in its area's `views`, and its words; `HOST_ROUTES` names it when a host view shows it by default, and `docs/ui-route-migration.md` lists it | `tests/shell_routes.test.cjs`, "every finding kind names a real route, and every route is a view of its area"; `tests/navigation.test.cjs`, "the sidebar is Overview, Businesses, Supply, Staffing, Expansion, then City map and Wiki" |
+| `const ROUTE_ALIASES =` (board script) | *Only when* an old page or view name becomes a route | `tests/navigation.test.cjs`, "the old #payroll hash, #secPayroll and a remembered Payroll open Staffing › Payroll" and "the #staff hash, #secStaff and a remembered Staff open Staffing › Staff needs" |
 | `const SS_VIEWS = [` (board script) | `{id, t, p, ic, syn, go}`, so search can open it | `tests/search.test.cjs`, "the index holds every group …" |
 | `function showPage(` (board script) | *Only if* the page loads or draws when shown, as the Map does | none |
-| `const SB_SEC =`, `const SB_LABEL =`, `const SB_TAB_ICON =` (board script) | *Only for* a new Supply tab: its section, label and icon, keyed by the tab id. Also its `supply` item in `SUBS`; its draw function in `drawSupplyTab()`'s dispatch map (a missing tab draws Shops); `sbTabOf()`, which sorts a site onto a tab; and the tab-keyed objects in `sbData()` (`byTab`), `sbUpdateStrip()` (`sbLeft`) and `ssIdleTab()`; and the tab list in `ssTopupTab()` | `tests/navigation.test.cjs`, "Supply is three tabs, one per object"; `tests/import_routes.test.cjs` |
+| `const SB_VIEWS =`, `const SB_SEC =` (board script) | *Only for* a new Supply view: its section, keyed by the view id. Also its `supply` item in `SUBS`, its route in `ROUTES` and `HOST_ROUTES`, its drawer in `drawSupplyView()`'s dispatch map (a missing view draws Changes) and its `PAGE_DRAWS` row; `sbViewOf()`, which puts a kind of change on a view, and the view-keyed objects in `sbData()` (`byView`), `sbUpdateStrip()` (`sbLeft`), `sbMode` and `sbScope` | `tests/navigation.test.cjs`, "Supply is five task views …"; `tests/import_routes.test.cjs`; `tests/progress.test.cjs` |
 | `const PAGE_ALIASES =`, `const SEC_MOVED =` (board script) | *Only when* renaming or moving an old page or section | `tests/navigation.test.cjs` |
 | `const quietRender =` in `tests/search.test.cjs` | A new draw function, in the list the test stubs | that test |
 | `tests/milestones.test.cjs` | Nothing, but mind its four slices, which it runs in a VM: `const fmt =` to `const compact =`, `const attr =` to `/* Tooltips are plain text`, `const plural =` to `/* A rival per dot`, and `function drawGoals(){` to `/* Next moves: the Plan imports card`. A function declared inside one is harmless; a top-level statement there runs in the test, and moving or rewording a start or end anchor breaks the slice | that test |

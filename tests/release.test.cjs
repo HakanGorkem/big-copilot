@@ -25,7 +25,8 @@ test('release preserves the redesigned map, interactive ball and dismissible bad
     }
     await page.goto(base);
     // Eleven: the landing's footer and the board's each carry a Changelog, a
-    // voting and a game-link badge, the nav adds two, the Link button one, and
+    // voting and a game-link badge, the references (City map, Wiki) add
+    // two, the Link button one, and
     // the masthead's search control two (the field and its icon form; the
     // stylesheet shows one). The copies share an id, so the counts below still
     // go to zero together once the feature has been opened.
@@ -49,7 +50,7 @@ test('release preserves the redesigned map, interactive ball and dismissible bad
     // Opening the search palette is the search's visit.
     await page.evaluate(() => { ssOpen(); ssClose(); });
     assert.equal(await page.locator('[data-new-feature="board-search"]:not([hidden])').count(),0);
-    await page.locator('#nav a[data-id="map"]').click();
+    await page.locator('#navRefs a[data-id="map"]').click();
     await page.evaluate(() => cityMapPage.ready);
     assert.equal(await page.locator('#cityMapPage .lay').count(),5);
     assert.equal(await page.locator('#cityMapPage .lay[data-l="home"]').count(),1);
@@ -60,7 +61,7 @@ test('release preserves the redesigned map, interactive ball and dismissible bad
     assert.equal(await page.locator('[data-new-feature="map"]:not([hidden])').count(),0);
     await page.locator('#cityMapPage .layer .ball').click();
     await page.waitForFunction(() => document.querySelectorAll('body > .coin').length > 0);
-    await page.locator('#nav a[data-id="wiki"]').click();
+    await page.locator('#navRefs a[data-id="wiki"]').click();
     await page.getByRole('searchbox', {name:'Search the wiki'}).waitFor();
     assert.equal(await page.locator('[data-new-feature="wiki"]:not([hidden])').count(),0);
     await page.evaluate(() => {

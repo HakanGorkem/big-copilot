@@ -146,6 +146,18 @@
       showSaveLocation(select.value);
       try { localStorage.setItem("ledger_save_platform", select.value); } catch (e) {}
     });
+    /* More help opens the rest of the save help under the box: where the game
+       shows the folder, the "upload" wording, linking, the game text. */
+    const more = $("saveMoreHelp"), help = $("help");
+    if (more && help) {
+      more.addEventListener("click", (e) => {
+        e.preventDefault();
+        help.open = !help.open;
+        more.setAttribute("aria-expanded", String(help.open));
+        if (help.open) help.scrollIntoView({block: "nearest"});
+      });
+      help.addEventListener("toggle", () => more.setAttribute("aria-expanded", String(help.open)));
+    }
   }
 
   const stored = {
@@ -356,17 +368,29 @@
   // which is read from inside the file. The raw file name stays on hover.
   let company = "";
   const isAutosave = (file) => /^recover/i.test(file.name);
-  const fileLine = (file, extra) => {
+  const fileWords = (file) => {
     const when = fmtTime(file.lastModified);
     const base = file.name.replace(/\.hsg$/i, "");
-    const what = isAutosave(file)
+    return isAutosave(file)
       ? tt("app.file.autosave", "autosave from {when}", {when})
       : base.toLowerCase() === company.toLowerCase()
       ? tt("app.file.saved", "saved {when}", {when})
       : tt("app.file.named", "{name} saved {when}", {name: base, when});
-    $("srcStrip").title = file.name;
-    return `${company ? company + " · " : ""}${what}${extra ? ` · ${extra}` : ""}`;
   };
+  const fileLine = (file, extra) => {
+    $("srcStrip").title = file.name;
+    return `${company ? company + " · " : ""}${fileWords(file)}${extra ? ` · ${extra}` : ""}`;
+  };
+  /* Where the board on screen comes from, for the ··· menu: the strip says
+     nothing while all is well (declutter S1), and the masthead clock holds
+     the game's day. */
+  function sourceWords() {
+    if (linkUrl) return tt("app.menu.src.link", "Game link");
+    const file = lastGood || lastFile;
+    if (!file) return "";
+    return dirHandle ? tt("app.menu.src.folder", "Folder {folder} · {file}", {folder: dirHandle.name, file: fileWords(file)})
+      : tt("app.menu.src.file", "One save file · {file}", {file: fileWords(file)});
+  }
 
   // The strip is painted from these: a tone (ok, busy, bad, remembered,
   // ready), a headline, a mono file line; and a note, which in the bad tone
@@ -378,6 +402,14 @@
   function paintStrip() {
     const board = onBoard();
     const bad = strip.tone === "bad";
+    /* On the board the strip is Update and ··· while all is well, and the
+       progress bar alone while a read runs; it speaks when something is
+       wrong (declutter S1, S2). The words stay in the markup, out of sight. */
+    const srcStrip = $("srcStrip");
+    srcStrip.classList.toggle("calm", board && strip.tone === "ok");
+    srcStrip.classList.toggle("reading", board && strip.tone === "busy");
+    const menuLine = $("menuSrcLine");
+    if (menuLine) menuLine.textContent = board ? sourceWords() : "";
     const restoring = !board && attempt && attempt.restoring && strip.tone === "busy";
     const landing = $("landing");
     if (landing) landing.classList.toggle("lg-resume", !!(dirHandle || linkUrl));
@@ -388,10 +420,13 @@
     st.textContent = restoring ? tt("app.strip.restoring", "Loading your previous save…")
       : bad && noted.text ? `${strip.head}: ${noted.text.replace(/\.$/, "")}` : strip.head;
     $("srcProg").hidden = strip.tone !== "busy";
+    // On the board a read in progress is the masthead's Update button, busy.
+    const upd = $("updateBtn");
+    upd.classList.toggle("busy", board && strip.tone === "busy");
+    if (board && strip.tone === "busy") upd.setAttribute("aria-busy", "true"); else upd.removeAttribute("aria-busy");
     let meta = bad && noted.sub ? noted.sub
       : strip.tone === "busy" && lastGood ? tt("app.strip.kept", "last good board stays on screen")
       : strip.meta;
-    if (watchTimer && strip.tone === "ok") meta += " · " + tt("app.strip.watching", "watching");
     $("srcMeta").textContent = restoring ? "" : meta;
     const btn = $("updateBtn");
     btn.disabled = !!readerError || !!attempt || busy || !(dirHandle || lastFile || linkUrl);
@@ -417,7 +452,9 @@
     // On the landing the strip only shows when it has something to say: a
     // remembered folder, a save being read, a folder that would not read.
     const quietLoad = strip.tone === "busy" && !lastFile && !dirHandle && !attempt;
-    $("srcStrip").hidden = !board && (strip.tone === "ready" || quietLoad);
+    /* On the board Update and ··· live in the masthead; the strip is a
+       full-width warning bar, there only while something is wrong. */
+    $("srcStrip").hidden = board ? !bad : (strip.tone === "ready" || quietLoad);
     const n = $("srcNote");
     const showNote = !!noted.text && !bad;
     n.hidden = !showNote;
@@ -486,6 +523,19 @@
       row.appendChild($("srcStrip"));
       $("sourceNote").appendChild($("srcNote"));
       $("srcActions").appendChild($("boardControls").content.cloneNode(true));
+      /* Update and ··· sit at the sidebar's foot, and this ··· is the
+         sidebar's only one: it takes the board's utilities in under the save
+         source (nxMenuInto()). The strip keeps the recovery actions for its
+         warning bar. */
+      const foot = $("sdRow");
+      if (foot) {
+        const slot = document.createElement("div");
+        slot.className = "nx-src"; slot.id = "mastSrc";
+        foot.insertBefore(slot, foot.firstChild);
+        slot.append($("updateBtn"), $("srcMenu"));
+        if (typeof nxMenuInto === "function") nxMenuInto($("menuUtilSlot"));
+        if (typeof nxFitMast === "function") nxFitMast();
+      }
       const lb = $("linkBtn");
       fb.className = "lg-btn";
       if (lb) lb.className = "lg-btn";
@@ -544,16 +594,38 @@
       }
     }
   }
+  /* The ··· button is the one way into the source menu: the company name in
+     the masthead carries no second button to it (declutter S5). */
   function wireMenu() {
     $("menuBtn").addEventListener("click", (e) => {
       e.stopPropagation();
       const open = !$("srcMenu").classList.contains("open");
+      /* From the sidebar's foot the panel opens beside the sidebar, its foot
+         level with the button's; in a phone's drawer, across the window above
+         the button. */
+      const panel = $("srcMenu").querySelector(".menu-panel"), mast = $("mast");
+      if (panel && open && mast && $("srcMenu").closest("#mast")) {
+        const r = $("menuBtn").getBoundingClientRect(), vh = window.innerHeight || 800;
+        const phone = window.matchMedia && matchMedia("(max-width:560px)").matches;
+        panel.style.left = phone ? "12px" : `${Math.round(mast.getBoundingClientRect().right + 8)}px`;
+        panel.style.right = phone ? "12px" : "auto";
+        panel.style.top = "auto";
+        panel.style.bottom = `${Math.max(8, Math.round(vh - (phone ? r.top - 8 : r.bottom)))}px`;
+      }
       $("srcMenu").classList.toggle("open", open);
       $("menuBtn").setAttribute("aria-expanded", String(open));
       if (!open) closeSavePicker();
       if (typeof window.hideTip === "function") window.hideTip();
     });
     $("srcMenu").addEventListener("click", (e) => e.stopPropagation());
+    // The board's utilities in this menu: each closes it and does its thing.
+    const util = $("menuUtilSlot");
+    if (util) util.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-nx-item]");
+      if (!b || typeof nxMenuDo !== "function") return;
+      closeMenu();
+      nxMenuDo(b.dataset.nxItem, $("menuBtn"));
+    });
   }
   function closeMenu() {
     const m = $("srcMenu");
@@ -569,7 +641,11 @@
     place();
     window.BigCopilotCommunity?.start();
     window.scrollTo(0, 0);
-    if (focusLeaves && document.activeElement === document.body) $("nav").querySelector("a.on").focus();
+    if (focusLeaves && document.activeElement === document.body) {
+      // The lit place, or on the City map or the Game guide the lit reference.
+      const lit = $("nav").querySelector("a.on") || document.querySelector("#navRefs a.on");
+      if (lit) lit.focus();
+    }
   }
 
   /* --- the game link (docs/game-link-api.md) ---------------------------- */
@@ -2325,9 +2401,8 @@
       drop.style.setProperty("--ry", (x * 10) + "deg"); drop.style.setProperty("--rx", (-y * 8) + "deg");
     });
     drop.addEventListener("mouseleave", () => { drop.style.setProperty("--ry", "0deg"); drop.style.setProperty("--rx", "0deg"); });
-    drop.addEventListener("click", pickFolder);
-    drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickFolder(); } });
-    $("helpLink").addEventListener("click", (e) => { e.preventDefault(); $("help").open = !$("help").open; });
+    /* The drop box takes a drop; Choose the folder under it is the one way to
+       click for the same picker (declutter L1). */
     wireCoin();
     wireSphere();
     // A bookmarked Wiki route can remove the landing immediately. Bind its
@@ -2388,11 +2463,8 @@
     const title = window.isSecureContext
       ? tt("land.folder.snapshot", "Choose the folder named Big Ambitions inside SaveGames. In this browser the choice is a snapshot; Update opens the picker again.")
       : tt("land.folder.snapshot.http", "Choose the folder named Big Ambitions inside SaveGames. Watching a folder takes Chrome or Edge on an HTTPS or localhost address, so here the choice is a snapshot; Update opens the picker again.");
-    for (const el of [$("folderBtn"), $("drop")]) {
-      if (!el) continue;
-      el.removeAttribute("data-tt-title");
-      el.title = title;
-    }
+    const fb = $("folderBtn");
+    if (fb) { fb.removeAttribute("data-tt-title"); fb.title = title; }
   }
 
   // A change of UI language (web/i18n.js calls this after it has refilled

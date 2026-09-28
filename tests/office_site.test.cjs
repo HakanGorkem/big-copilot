@@ -116,7 +116,7 @@ test('an office reads its grid as staffed workstations, with the finding and its
     assert.doesNotMatch(tip, /register capacity|counter/);
     // The ceiling sentence moved out of the ? into the chip under the grid.
     const cap = await capChip(page);
-    assert.match(cap, /workstations is the limit, so the answer is another computer workstation\. \$[\d.,]+k?\/day of trade/);
+    assert.match(cap, /workstations is the limit; the fix is another computer workstation\. \$[\d.,]+k?\/day of sales/);
     assert.doesNotMatch(tip, /is the limit/);
     const read = await page.locator('#sitePanel .hc.cap').first().getAttribute('data-read');
     assert.match(read, /3 customers · 3 of 3 workstations staffed · <b>at the ceiling<\/b>/);
@@ -151,7 +151,7 @@ test('a shop keeps its registers and shelves', async () => {
     assert.match(panel, /show 1 more: bags, drinks, odds and ends/);
     assert.match(await page.locator('#sitePanel .sstat', {hasText: 'Customers'}).innerText(), /\/visit/);
     const cap = await capChip(page);
-    assert.match(cap, /registers is the limit, so the answer is another counter/);
+    assert.match(cap, /registers is the limit; the fix is another counter/);
   } finally { await page.close(); }
 });
 
@@ -210,7 +210,7 @@ test('a finding naming two tied answers reads as a plural', async () => {
     assert.equal(tie.limit, 'staffing and projection booths',
       'the planner really does join a people limit to a posts one');
     const tip = await (await capChips(page))[0].getAttribute('data-tip');
-    assert.match(tip, /staffing and projection booths are the limit, so the answer is more service staff on those hours and another projection booth/);
+    assert.match(tip, /staffing and projection booths are the limit; the fix is more service staff on those hours and another projection booth/);
     assert.doesNotMatch(tip, /projection booths is the limit/);
     assert.doesNotMatch(await hourTip(page), /is the limit|are the limit/);
   } finally { await page.close(); }

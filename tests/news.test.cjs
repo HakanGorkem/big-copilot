@@ -80,7 +80,8 @@ for (const width of [390, 1280]) test(`strip and update banner stack without ove
       assert.ok(box.x >= 0 && box.x + box.width <= width, sel + ' fits the width');
       assert.ok(box.y >= news.y && box.y + box.height <= news.y + news.height + 0.5, sel + ' stays inside the strip');
     }
-    const next = await page.locator(board ? '.mast' : '#landing').boundingBox();
+    // The board's sidebar and page (.sd-app) start below it, as the landing does.
+    const next = await page.locator(board ? '#sdApp' : '#landing').boundingBox();
     assert.ok(next.y >= news.y + news.height - 0.5, 'the page starts below the strip');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'no sideways scroll');
   }

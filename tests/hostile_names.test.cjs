@@ -81,8 +81,9 @@ test('every page, view and site page prints the names as text', async t => {
     }
   }
   // Supply with every row shown, and the Portfolio's chains unfolded.
-  for (const v of ['shops', 'warehouses', 'factories']) {
-    await page.evaluate(v => { showPage('supply'); sbWhich = 'all'; showSub('supply', v); drawSupplyTab(v); wireAll(); }, v);
+  for (const v of ['changes', 'imports', 'deliveries', 'production', 'flow']) {
+    await page.evaluate(v => { showPage('supply'); sbWhich = 'all'; sbMode.imports = sbMode.deliveries = sbMode.production = 'all';
+      showSub('supply', v); drawSupplyView(v); wireAll(); }, v);
     assert.deepEqual(await injected(page), clean, `supply/${v}, everything`);
   }
   await page.evaluate(() => { showPage('company'); showSub('company', 'results'); });
@@ -108,12 +109,12 @@ test('every page, view and site page prints the names as text', async t => {
   // the save, so the names here are the game's; the table is drawn all the same.
   assert.ok(await page.locator('#ingBody tr').count() >= 1, 'the ingredient table is drawn');
   // The factory's line with a recipe the board cannot name: its picker.
-  await page.evaluate(() => { showPage('supply'); sbWhich = 'all'; showSub('supply', 'factories'); drawSupplyTab('factories'); wireAll(); });
+  await page.evaluate(() => { showPage('supply'); sbMode.production = 'all'; showSub('supply', 'production'); drawSupplyView('production'); wireAll(); });
   assert.deepEqual(await injected(page), clean, 'factory lines');
-  assert.ok(await page.locator('#secFactories select.linepick').count() >= 1, 'the picker is drawn');
+  assert.ok(await page.locator('#secProduction select.linepick').count() >= 1, 'the picker is drawn');
   // A factory's inputs are named from the recipe table; the depot's lines from the save.
-  await page.evaluate(() => { showSub('supply', 'warehouses'); drawSupplyTab('warehouses'); wireAll(); });
-  assert.ok((await page.locator('#secWarehouses').textContent()).includes(NAMES.INGREDIENT), 'the depot line is named');
+  await page.evaluate(() => { sbMode.imports = 'all'; showSub('supply', 'imports'); drawSupplyView('imports'); wireAll(); });
+  assert.ok((await page.locator('#secImports').textContent()).includes(NAMES.INGREDIENT), 'the depot line is named');
   // Each site's own page: a shop, a second shop, the depot and the factory.
   const sites = await page.evaluate(() => D.businesses.filter(b => b.status !== 'home').map(b => b.key));
   const heads = [];
@@ -146,7 +147,7 @@ test('every page, view and site page prints the names as text', async t => {
 
 test('the goods-flow chain on a phone prints the names as text, overview and each site followed', async t => {
   const page = await board(t, 390);
-  await page.evaluate(() => { showPage('supply'); sbViewOn = 'diagram'; showSub('supply', 'warehouses'); drawSupplyTab('warehouses'); wireAll(); drawFlow(); });
+  await page.evaluate(() => { showPage('supply'); showSub('supply', 'flow'); drawSupplyView('flow'); wireAll(); drawFlow(); });
   assert.equal(await page.locator('#flowChain').isVisible(), true, 'the chain is drawn at 390 px');
   assert.deepEqual(await injected(page), clean, 'the chain');
   const chain = () => page.locator('#flowChain').textContent();

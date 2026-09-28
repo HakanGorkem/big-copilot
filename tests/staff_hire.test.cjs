@@ -192,7 +192,8 @@ async function board(t, {link = {writes: ['uniforms', 'imports', 'schedule', 'hi
   await page.goto('https://hire.test/', {waitUntil: 'load'});
   await page.evaluate(() => { document.body.classList.add('has-board'); });
   await page.evaluate(p => window.calmWatch.changed(JSON.parse(p)), data);
-  if (open) await page.evaluate(() => { showPage('company'); showSub('company', 'staff'); });
+  // Staff is Staffing › Staff needs in the redesign (docs/ui-route-migration.md).
+  if (open) await page.evaluate(() => { showPage('staffing'); showSub('staffing', 'needs'); });
   return page;
 }
 // The page's own answer, as plain data.
@@ -260,7 +261,8 @@ test('netting: the bench a plan counts on, then spare people, then hires, best f
   assert.match(await bo.textContent(), /Assign 1 · unassigned → HART\. Bare/);
   assert.equal(await bo.locator('input').count(), 0);
   // Bo's assignment takes no hire week: own staff counts Sam alone.
-  assert.match(await roles.locator('tfoot').textContent(), /^Total8170\+\$[\d,]+$/);
+  // The order panel beside the table holds the totals: no Total row repeats them (declutter T6).
+  assert.equal(await roles.locator('tfoot').count(), 0);
   assert.match(await page.locator('#hsOpen .hs-facts2').textContent(), /^15 candidates · 2 expire within 24 h$/);
   // The order panel: what the button does.
   const order = page.locator('#hsOrder');
@@ -269,8 +271,9 @@ test('netting: the bench a plan counts on, then spare people, then hires, best f
   assert.match(await order.locator('.hs-sum').textContent(), /^Added wages\+\$[\d,]+\/day$/);
   assert.equal((await page.locator(REVIEW).textContent()).trim(), 'Review and hire 7');
   assert.equal(await order.locator('.hs-note').textContent(), 'Picked for you. You confirm next.');
-  assert.equal(await page.locator('#secStaff .hs-head h2').textContent(), 'Staff');
-  assert.equal(await page.locator('#secStaff .hs-link').textContent(), 'Game linked');
+  assert.equal(await page.locator('#secStaff .hs-head h2').textContent(), 'Whom to hire');
+  // Linked is the normal state: nothing says so (declutter T4).
+  assert.equal(await page.locator('#secStaff .hs-link').count(), 0);
 
   // Unticking the reassign returns its week to hiring: Bram now takes Gifts'
   // first week, and Cleo finds a week at Bare without a weekend.
@@ -386,7 +389,8 @@ test('open places, and ticking one more over the plan', async (t) => {
   const cs = m.roles[0];
   assert.deepEqual([cs.picked, cs.short], [['c2', 'c1'], 1]);
   const short = page.locator('#hsOrder .hs-ol li.short');
-  assert.match(await short.textContent(), /^Stays open3Customer Service: 1 open · Factory Worker: 1 open · Cleaning: 1 open$/);
+  // Its number; the roles are the table's rows (declutter T5).
+  assert.match(await short.textContent(), /^Stays open3$/);
   await page.locator('#hsOpen .hs-fbar[data-hr-filters=""] [data-hr-min]').selectOption('0');
   assert.equal(await short.count(), 0);
   // Unticking Bram lets the next best in; ticking Greta, who nobody needs, is
@@ -585,7 +589,7 @@ test('a role with no candidates says so instead of Change picks', async (t) => {
   const law = page.locator(`#hsOpen tr[data-hr-role="${LAW}"]`);
   assert.equal(await law.locator('[data-hr-open]').count(), 0);
   assert.equal(await law.locator('td.act').textContent(), 'No candidates');
-  assert.match(await page.locator('#hsOrder .hs-ol li.short').textContent(), /Stays open1Lawyer: no candidates/);
+  assert.match(await page.locator('#hsOrder .hs-ol li.short').textContent(), /^Stays open1$/);
 });
 
 test('a body over what the game link takes is named before anything is sent', async (t) => {
@@ -652,6 +656,10 @@ test('Review: the dry run, who goes where, one confirm with no undo, and a parti
   await phase(page, 'done');
   const writes = await page.evaluate(() => window.hrWrites.map(w => [w.kind, w.dryRun]));
   assert.deepEqual(writes, [['hire', true], ['hire', false]]);
+  // Applied from the answer: everyone the game hired or moved, and where to;
+  // Ada, whose application expired, is not in it. There is no undo to drop it.
+  assert.deepEqual(await page.evaluate(() => pgOfFamily('hire').map(r => [r.state, r.expect.hired, r.expect.moved, r.expect.skipped,
+    r.expect.people.length, r.expect.people.some(p => p.id === 'c1')])), [['applied', 6, 2, 1, 8, false]]);
   // No Undo, and where to let someone go instead; Ada's application expired
   // before the game reached her.
   assert.equal(await dlg.locator('[data-gw-b="undo"]').count(), 0);
@@ -704,7 +712,7 @@ test('the review names the hours a reassign leaves empty where the week is not r
   assert.ok(!body.sites.some(s => s.address.number === 2), 'Corner is not rewritten');
   await page.locator(REVIEW).click();
   await phase(page, 'ready');
-  assert.match(await page.locator('dialog.gw-dlg .gw-body').textContent(), /Hours left empty.*Sam Spare \(2 shifts at HART\. Corner\)/);
+  assert.match(await page.locator('dialog.gw-dlg .gw-body').textContent(), /Hours left empty.*Sam Spare \(2 stretches of hours at HART\. Corner\)/);
 });
 
 test('refusals: a row the game refuses, and MyEmployees open', async (t) => {
@@ -747,9 +755,8 @@ test('refusals: a row the game refuses, and MyEmployees open', async (t) => {
 
 test('not linked: everything works from the save, the button is off with how to link', async (t) => {
   const page = await board(t, {link: null});
-  const state = page.locator('#secStaff .hs-head .hs-link');
-  assert.equal(await state.textContent(), 'Save file · game not linked');
-  assert.equal(await state.getAttribute('class'), 'hs-link off');
+  // Not linked is said under the button, not in the head (declutter T4).
+  assert.equal(await page.locator('#secStaff .hs-head .hs-link').count(), 0);
   const review = page.locator(REVIEW);
   assert.equal(await review.getAttribute('aria-disabled'), 'true');
   assert.equal((await review.textContent()).trim(), 'Review and hire 7');
@@ -802,7 +809,8 @@ test('Quick hire: the best matches for one role at the headquarters, with no hou
     cand('h4', 'Rhea Tamm', [[HRM, 70]], 30), cand('h5', 'Sven Udal', [[HRM, 60]], 20, {demands: [PT]}));
   const page = await board(t, {data});
   const box = page.locator('#hsQuick');
-  assert.equal(await box.locator('.hs-match.none').textContent(), 'Pick a role and a site to see who matches.');
+  // No hint line: the two empty selects and the off button say it (declutter G8).
+  assert.equal(await box.locator('.hs-match').count(), 0);
   assert.equal(await box.locator('[data-hq-go]').getAttribute('aria-disabled'), 'true');
   // Roles from what the sites accept; sites that accept the role.
   assert.deepEqual(await box.locator('[data-hq-role] option').evaluateAll(os => os.map(o => o.value)),
@@ -810,9 +818,8 @@ test('Quick hire: the best matches for one role at the headquarters, with no hou
   await box.locator('[data-hq-role]').selectOption(HRM);
   assert.deepEqual(await box.locator('[data-hq-site] option').evaluateAll(os => os.map(o => o.value)), ['', Q]);
   await box.locator('[data-hq-site]').selectOption(Q);
-  // Not a shop: Part-time is not left out.
-  assert.match(await box.locator('[data-hs-dem-open="quick"]').textContent(), /nobody/);
-  assert.equal(await box.locator('.hs-shops').count(), 0);
+  // Quick hire takes the page's filters (declutter T9); not a shop, so Part-time is not left out.
+  assert.equal(await box.locator('[data-hs-dem-open="quick"], [data-hq-min]').count(), 0);
   await box.locator('[data-hq-more]').click();
   await box.locator('[data-hq-more]').click();
   assert.equal(await box.locator('[data-hq-n]').textContent(), '3');
@@ -832,14 +839,14 @@ test('Quick hire: the best matches for one role at the headquarters, with no hou
       {candidateId: 'h1', address: addr(Q), expect: {wage: 40}, seenHoursLeft: 5}],
     moves: []});
   // Fewer match than asked: the button drops to the matches.
-  await box.locator('[data-hq-min]').selectOption('90');
+  await page.locator('#hsOpen [data-hr-min]').selectOption('90');
   assert.match(await list.locator('summary').textContent(), /^1 match · only 1 matches/);
   assert.equal(await list.locator('summary .warn').textContent(), 'only 1 matches');
   assert.equal(await box.locator('[data-hq-go]').textContent(), 'Hire 1');
-  await box.locator('[data-hq-min]').selectOption('100');
+  await page.locator('#hsOpen [data-hr-min]').selectOption('100');
   assert.equal(await box.locator('.hs-match.none').textContent(), 'Nobody matches.');
   assert.equal(await box.locator('[data-hq-go]').getAttribute('aria-disabled'), 'true');
-  await box.locator('[data-hq-min]').selectOption('0');
+  await page.locator('#hsOpen [data-hr-min]').selectOption('0');
 
   // The confirm: the game asked first, then one Hire, no undo.
   await answering(page, []);
@@ -872,7 +879,7 @@ test('Quick hire: the best matches for one role at the headquarters, with no hou
   assert.equal(await box.locator('[data-hq-role]').inputValue(), '');
   assert.equal(await box.locator('[data-hq-site]').inputValue(), '');
   assert.equal(await box.locator('[data-hq-n]').textContent(), '1');
-  assert.equal(await box.locator('.hs-match.none').textContent(), 'Pick a role and a site to see who matches.');
+  assert.equal(await box.locator('.hs-match').count(), 0);
   // Hire more does not offer the three just hired while the board is the
   // one they were hired from; the board read again brings back whoever the
   // game still lists.
@@ -925,9 +932,8 @@ test('Quick hire at a shop holds its plan week while its confirm is open, and no
   const box = page.locator('#hsQuick');
   await box.locator('[data-hq-role]').selectOption(CS);
   await box.locator('[data-hq-site]').selectOption(G);
-  // A shop: Part-time left out, and the line saying so.
-  assert.match(await box.locator('[data-hs-dem-open="quick"]').textContent(), /Part-time/);
-  assert.equal(await box.locator('.hs-shops').textContent(), 'Part-time is left out for shop roles only.');
+  // A shop: Part-time left out, as the page's filter has it.
+  assert.deepEqual((await quick(page)).ex, [PT]);
   // Bram would take the week Sam's reassign leaves at Gifts; the form alone
   // holds nothing: Open places is as it was.
   assert.deepEqual((await quick(page)).picks, [['c2', 36]]);
@@ -1020,7 +1026,7 @@ test('Quick hire leaves out a new shift that meets one already there', async (t)
   assert.match(await dlg.locator('.gw-body').textContent(), /Hours from HART\. Gifts's plan: 24 h a week; nobody else's hours change\./);
 });
 
-test('Quick hire whose plan hours all meet shifts already there joins with no hours', async (t) => {
+test('Quick hire whose plan hours all meet hours already set there joins with no hours', async (t) => {
   const d = JSON.parse(payload);
   // Ana on Gifts' register Friday to Sunday: all of the open week.
   d.staffing.find(r => r.key === G).current.list.push({d: 5, s: 0, f: 8, t: 20, p: 0}, {d: 6, s: 0, f: 8, t: 20, p: 0}, {d: 0, s: 0, f: 8, t: 20, p: 0});
@@ -1031,7 +1037,7 @@ test('Quick hire whose plan hours all meet shifts already there joins with no ho
   const r = await page.evaluate(() => { const r = hrQuickRequest(hrQuickModel(hrModel())); return {sites: r.body.sites, given: r.given, clashed: r.clashed}; });
   assert.deepEqual(r, {sites: [{address: addr(G), expect: null, days: null}], given: 0, clashed: 1});
   const dlg = await quickConfirm(page);
-  assert.match(await dlg.locator('.gw-body').textContent(), /Their plan hours meet shifts already there: they join with no hours\./);
+  assert.match(await dlg.locator('.gw-body').textContent(), /Their plan hours meet hours already set there: they join with no hours\./);
 });
 
 test('Quick hire takes a role Open places had filled while its confirm is open, and Open places shrinks', async (t) => {
@@ -1056,7 +1062,7 @@ test('Quick hire takes a role Open places had filled while its confirm is open, 
   assert.deepEqual(m.roles.map(r => r.skill), [CS, FW, CLEAN]);
   assert.deepEqual(m.weeks[4], [O, 'office', ['quick:l1']]);
   assert.equal(await page.locator(`#hsOpen tr[data-hr-role="${LAW}"]`).count(), 0);
-  assert.match(await page.locator('#hsOpen table.hs-roles tfoot').textContent(), /^Total7160\+\$/);
+  assert.match(await page.locator('#hsOrder .hs-ol').textContent(), /Hire6/);
   assert.equal(await page.locator('#hsOrder p.hs-held').textContent(), '1 week held for Quick hire (Lawyer at HART. Law)');
   // The main order no longer hires Lior.
   assert.ok(!(await request(page)).hires.some(h => h.candidateId === 'l1'));
@@ -1144,33 +1150,29 @@ test('Part-time is left out by default for shop roles only', async (t) => {
   // for the office, is picked.
   assert.deepEqual(m.roles.find(r => r.skill === CS).picked, ['c2', 'c1', 'c3']);
   assert.deepEqual(m.roles.find(r => r.skill === LAW).picked, ['p2']);
-  assert.match(await page.locator('#hsOpen [data-hs-dem-open=""]').textContent(), /^Leave out who asks for: Part-time/);
-  assert.equal(await page.locator('#hsOpen .hs-shops').textContent(), 'Part-time is left out for shop roles only.');
-  // Quick hire: pre-selected at a shop, not at the office.
+  const filter = page.locator('#hsOpen [data-hs-dem-open=""]');
+  assert.match(await filter.textContent(), /^Leave out who asks for: Part-time/);
+  // Shop roles only: the filter's tip, not a line under it (declutter T10).
+  assert.equal(await filter.getAttribute('data-tip'), 'Part-time is left out for shop roles only.');
+  assert.equal(await page.locator('#hsOpen .hs-shops').count(), 0);
+  // Quick hire takes the page's filters (declutter T9): Part-time left out at a shop, not at the office.
   const box = page.locator('#hsQuick');
   await box.locator('[data-hq-role]').selectOption(LAW);
   await box.locator('[data-hq-site]').selectOption(O);
-  assert.match(await box.locator('[data-hs-dem-open="quick"]').textContent(), /nobody/);
-  assert.equal(await box.locator('.hs-shops').count(), 0);
+  assert.deepEqual((await quick(page)).ex, []);
   await box.locator('[data-hq-role]').selectOption(CS);
   await box.locator('[data-hq-site]').selectOption(G);
-  assert.match(await box.locator('[data-hs-dem-open="quick"]').textContent(), /Part-time/);
-  assert.equal(await box.locator('.hs-shops').count(), 1);
+  assert.deepEqual((await quick(page)).ex, [PT]);
   assert.ok(!(await quick(page)).matches.includes('p1'));
-  // Quick hire's own list: unticking Part-time there brings Pia in for it
-  // only; a filled form holds nothing, so Open places is as it was.
-  await box.locator('[data-hs-dem-open="quick"]').click();
-  await page.locator('body > #hsDemPop [data-hr-dem="' + PT + '"]').uncheck();
-  assert.deepEqual((await quick(page)).picks, [['p1', 36]]);
-  assert.deepEqual((await model(page)).roles.find(r => r.skill === CS).picked, ['c2', 'c1', 'c3']);
-  await page.keyboard.press('Escape');
-  await box.locator('[data-hq-role]').selectOption('');
-  // Unticking Part-time in the page's list brings her back.
-  await page.locator('#hsOpen [data-hs-dem-open=""]').click();
+  // Unticking Part-time in the page's list brings her back, in both.
+  await filter.click();
   await page.locator('#hsDemPop [data-hr-dem="' + PT + '"]').uncheck();
   m = await model(page);
   assert.deepEqual(m.roles.find(r => r.skill === CS).picked, ['p1', 'c2', 'c1']);
-  assert.equal(await page.locator('#hsOpen .hs-shops').count(), 0);
+  assert.ok((await quick(page)).matches.includes('p1'));
+  await page.keyboard.press('Escape');
+  await box.locator('[data-hq-role]').selectOption('');
+  assert.equal(await filter.getAttribute('data-tip'), null);
   assert.deepEqual((await page.evaluate(() => JSON.parse(localStorage.getItem('ba_dash_hire:default')))).company.ex, []);
   // A set kept before the default gets Part-time once; a v2 set is kept as is.
   const kept = await page.evaluate(pt => {
@@ -1215,22 +1217,26 @@ test('a live refresh leaves Staff alone while it is hidden, and draws it on the 
     window.drawStaff = (...a) => { window.staffDraws++; return was(...a); }; });
   await page.evaluate(p => { const d = JSON.parse(p); d.candidates = d.candidates.slice(1); window.calmWatch.changed(d); }, payload);
   assert.equal(await page.evaluate(() => window.staffDraws), 0);
-  assert.equal(await page.evaluate(() => [...pageStale].some(r => r[0] === 'company/staff')), true);
-  await page.evaluate(() => { showPage('company'); showSub('company', 'staff'); });
+  assert.equal(await page.evaluate(() => [...pageStale].some(r => r[0] === 'staffing/needs' && /drawStaff/.test(String(r[1])))), true);
+  await page.evaluate(() => { showPage('staffing'); showSub('staffing', 'needs'); });
   assert.equal(await page.evaluate(() => window.staffDraws), 1);
   assert.match(await page.locator('#hsOpen .hs-facts2').textContent(), /^14 candidates/);
 });
 
-test('old Payroll links land on Staff, with Payroll at its foot', async (t) => {
+/* The redesign keeps Payroll as a Staffing view of its own beside Staff needs,
+   which draws no second Payroll (declutter T8): an old Payroll link opens
+   Payroll, an old Staff link opens Staff needs (docs/ui-route-migration.md). */
+test('old Payroll links land on Payroll; old Staff links on Staff needs, which draws no second Payroll', async (t) => {
   const page = await board(t, {open: false});
-  await page.evaluate(() => openHash('payroll'));
-  assert.equal(await page.evaluate(() => `${page}/${sub.company}`), 'company/staff');
-  const pay = page.locator('#secStaff section#hrPayroll.hs-apart');
-  assert.equal(await pay.locator('.hs-kick').textContent(), 'Current staff');
-  assert.equal(await pay.locator('h3').textContent(), 'Payroll');
-  assert.match(await pay.locator('.facts').textContent(), /^People\d+Wages a day/);
-  await page.evaluate(() => { showPage('today'); reveal('secPayroll'); });
-  assert.equal(await page.evaluate(() => `${page}/${sub.company}`), 'company/staff');
+  await page.evaluate(() => openHash('staff'));
+  assert.equal(await page.evaluate(() => `${page}/${sub.staffing} ${route}`), 'staffing/needs staffing/needs');
+  assert.equal(await page.locator('#secStaff #hrPayroll').count(), 0);
+  for (const go of [() => openHash('payroll'), () => { showPage('today'); reveal('secPayroll'); }]) {
+    await page.evaluate(go);
+    assert.equal(await page.evaluate(() => `${page}/${sub.staffing} ${route}`), 'staffing/payroll staffing/payroll');
+    assert.equal(await page.locator('[data-view-ctl="staffing/payroll"] h2').textContent(), 'Payroll');
+    assert.match(await page.locator('#secPayroll').textContent(), /People\d+/);
+  }
 });
 
 test('closing the Quick hire confirm gives the focus back to its Hire button', async (t) => {
@@ -1361,7 +1367,7 @@ test('a plan week whose slots are all unusable is no clash: no open hours', asyn
   const dlg = await quickConfirm(page);
   const text = await dlg.locator('.gw-body').textContent();
   assert.match(text, /No open hours in HART\. Gifts's plan: they join with no hours\./);
-  assert.doesNotMatch(text, /meet shifts already there/);
+  assert.doesNotMatch(text, /meet hours already set there/);
 });
 
 test('a desk or chair demand is judged at the desk the week is on, and a pick goes to one that meets it', async (t) => {
@@ -1430,9 +1436,10 @@ test('Where to find them: a role places stay open in, how many and where people 
     const el = document.createElement('div'); el.innerHTML = html;
     return [...el.querySelectorAll('li')].map(li => [...li.children].map(c => c.textContent.trim()).join(' '));
   }, [LAW, CS]);
+  // How many stay open, and that there are no candidates, is the table's to say (declutter T5, T7).
   assert.deepEqual(text, [
-    'Lawyer 6 more needed · no candidates a Headhunter at your headquarters recruiting Lawyer, or a Recruitment Agency',
-    'Customer Service 2 more needed · only 1 candidate (2 more left out by your filters) your Headhunter is recruiting Customer Service: wait for more candidates, or a Recruitment Agency',
+    'Lawyer a Headhunter at your headquarters recruiting Lawyer, or a Recruitment Agency',
+    'Customer Service 2 more left out by your filters your Headhunter is recruiting Customer Service: wait for more candidates, or a Recruitment Agency',
   ]);
   // Nothing short, nothing said.
   assert.equal(await page.evaluate(() => hrFindHtml({roles: []})), '');
@@ -1538,10 +1545,10 @@ test('Staff with no hours: a site whose own staff the plan counts on have no hou
   }, [G, CS]);
   assert.deepEqual(text, ['HART. Gifts | 168 h with nobody on · your 4 Customer Service staff have no hours | Write their week']);
   const link = page.locator('#secStaff .hs-idle a[data-hr-roster]');
-  assert.match(await link.getAttribute('href'), /^#site\//);
+  // Their week is Staffing › Schedules', with the site picked and its planner beside the list.
   await link.click();
-  await page.waitForSelector('#sp-roster.sp-arrived');
-  assert.equal(await page.evaluate(() => !!document.querySelector('#secDetail #sp-roster')), true);
+  await page.waitForFunction(() => route === 'staffing/schedules');
+  assert.deepEqual(await page.evaluate(() => [schedLit, !!document.querySelector('#schDetail #sp-roster')]), [G, true]);
   // Not counted in the order: nobody is hired for those hours.
   assert.equal(await page.evaluate(() => hrTotals(hrModel()).hire), 7);
 });
@@ -1585,7 +1592,7 @@ test('Staff with no hours: shops and offices, each measured on the plan its Staf
   assert.match(out.demand, /HART\. Law40 h with nobody on/);
 });
 
-test('an office week is written from its site page: the office default for its own staff, never opening it', async (t) => {
+test('an office week is written from Staffing › Schedules: the office default for its own staff, never opening it', async (t) => {
   const page = await board(t);
   const out = await page.evaluate(([O, LAW]) => {
     const row = D.officeStaffing.find(r => r.key === O);
@@ -1596,8 +1603,8 @@ test('an office week is written from its site page: the office default for its o
       address: body.address, business: 'HART. Law', before: {shifts: 0, print: 'a'}, after: {shifts: 2, print: 'b'},
       removed: 0, added: 2, openedHours: false, leftWithout: [], warnings: [], siteError: null, rows: []}});
     Object.assign(D.businesses.find(b => b.key === O), {status: 'office'});
-    openSite(O, false);
-    const block = document.querySelector('#secDetail #sp-roster');
+    openRoute('staffing/schedules', {pick: O});
+    const block = document.querySelector('#schDetail #sp-roster');
     return {plan: !!gwRosterPlan(O), block: block && block.textContent.replace(/\s+/g, ' ').trim(),
       button: !!(block && block.querySelector('[data-gw-sites]'))};
   }, [O, LAW]);
@@ -1606,7 +1613,7 @@ test('an office week is written from its site page: the office default for its o
   assert.match(out.block, /Waiting on a hire\s*14 h/);
   assert.match(out.block, /Hours \/ week\s*0 → 28/);
   assert.equal(out.button, true);
-  await page.locator('#secDetail #sp-roster [data-gw-sites]').first().click();
+  await page.locator('#schDetail #sp-roster [data-gw-sites]').first().click();
   await phase(page, 'ready');
   const w = await page.evaluate(() => window.hrWrites.filter(x => x.kind === 'schedule').at(-1));
   assert.deepEqual(w.body, {address: addr(O), expect: '0ff1ce00', openAllHours: false, days: [
@@ -1645,9 +1652,9 @@ test('an office write only adds: the week as it stands plus the planned entries 
     window.hrAnswer = async (kind, body, o) => ({status: 200, error: null, body: {ok: true, kind, dryRun: !!o.dryRun, stamp: 's',
       address: body.address, business: 'HART. Law', before: {shifts: 3, print: 'a'}, after: {shifts: 4, print: 'b'},
       removed: 3, added: 4, openedHours: false, leftWithout: [], warnings: [], siteError: null, rows: []}});
-    openSite(O, false);
+    openRoute('staffing/schedules', {pick: O});
   }, [O]);
-  await page.locator('#secDetail #sp-roster [data-gw-sites]').first().click();
+  await page.locator('#schDetail #sp-roster [data-gw-sites]').first().click();
   await phase(page, 'ready');
   const text = await page.locator('dialog.gw-dlg').textContent();
   assert.match(text, /Adds 14 h for Lena Voss; nobody's current hours change\./);
@@ -1667,8 +1674,8 @@ test('an office entry this board cannot read stops the office write, and still k
       current: {list: [{d: 1, s: 0, f: 10, t: 14, p: 1}]}});
     Object.assign(D.businesses.find(b => b.key === O), {status: 'office'});
     const week = gwRosterWeek(gwRosterPlan(O));
-    openSite(O, false);
-    const b = document.querySelector('#secDetail #sp-roster [data-gw-sites]');
+    openRoute('staffing/schedules', {pick: O});
+    const b = document.querySelector('#schDetail #sp-roster [data-gw-sites]');
     return {unreadable: week.unreadable, days: week.days.map(x => x.d), listed: gwScheduleSites().includes(O),
       off: b && (b.getAttribute('aria-disabled') === 'true' || b.disabled), why: b && (b.getAttribute('aria-label') || b.title || b.textContent)};
   }, [O]);
@@ -1697,4 +1704,24 @@ test('an office write is refused while a shift cannot be carried, and nothing to
     return {blocked, sent: written.sent, listed: gwScheduleSites().includes(O)};
   }, [O]);
   assert.deepEqual(out, {blocked: 1, sent: 0, listed: false});
+});
+
+// --- user testing, 28 September 2026 ---------------------------------------------------
+
+test('Staff needs has one heading over its filters; beside the full sidebar at 1280 px the roles table is whole, its panel under it, and beside it wider', async (t) => {
+  const page = await board(t, {viewport: {width: 1280, height: 1400}});
+  const heads = await page.$$eval('#secStaff h2, #secStaff h3', hs => hs.map(h => h.textContent.trim()));
+  assert.ok(!heads.includes('Open places'), JSON.stringify(heads));
+  const fit = () => page.evaluate(() => {
+    const t = document.querySelector('#secStaff table.hs-roles'), box = t.closest('.hs-scroll');
+    return {right: t.getBoundingClientRect().right, box: box.getBoundingClientRect().right, over: box.scrollWidth - box.clientWidth,
+      tracks: getComputedStyle(document.querySelector('#secStaff .hs-split')).gridTemplateColumns.trim().split(/\s+/).length};
+  });
+  let f = await fit();
+  assert.ok(f.over <= 1 && f.right <= f.box + 1, `nothing cut off: ${JSON.stringify(f)}`);
+  assert.equal(f.tracks, 1, 'the panel goes under the table');
+  await page.setViewportSize({width: 1700, height: 1400});
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('#secStaff .hs-split')).gridTemplateColumns.trim().split(/\s+/).length === 2);
+  f = await fit();
+  assert.ok(f.over <= 1 && f.right <= f.box + 1, JSON.stringify(f));
 });

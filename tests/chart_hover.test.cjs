@@ -82,7 +82,8 @@ async function hoverMiss(page, x, y, last) {
 }
 
 test('a wide chart reads the bar under the pointer and nothing in its margins', async t => {
-  const page = await board(t, 2440);
+  // Wide enough, beside the sidebar, for a chart box past 2200px.
+  const page = await board(t, 2700);
   const g = await geometry(page);
   assert.ok(g.right - g.left > 2200, `the chart box is wide (${g.right - g.left}px)`);
   assert.equal(g.bars.length, 30);
