@@ -49,6 +49,7 @@ function harness({routes = {}} = {}) {
   const waits = [];
   const context = vm.createContext({
     setTimeout: () => 0, clearTimeout: () => {}, AbortController, URL,
+    console,
     Date: Clock,
     File: class {
       constructor(parts, name, options) { this.parts = parts; this.name = name; Object.assign(this, options || {}); }
@@ -617,6 +618,29 @@ test('a paused watcher is not followed by a look after a build', async () => {
   assert.equal(h.seen.builds.length, 1);
   assert.equal(healthCalls(h), 1, 'the read only; no look while the player has paused watching');
   assert.equal(h.run('lookRun'), null);
+  assert.equal(h.run('attempt'), null);
+});
+
+test('a pause while the look is reading /health ends the look before it builds', async () => {
+  let reads = 0;
+  const h = harness({
+    routes: {
+      // The check and the read find s2; the look's own read finds s3, and the
+      // player pauses watching while that answer is on the way.
+      health: () => {
+        reads += 1;
+        if (reads === 3) h.run('watchTimer = null');
+        return {...HEALTH, stamp: reads < 3 ? 's2' : 's3'};
+      },
+      save: () => saveFor(reads < 3 ? 's2' : 's3'),
+    },
+  });
+  taking(h);
+  h.run('linkUrl = "http://127.0.0.1:8322"; lastLinkStamp = "s1"');
+  await h.run('checkFolder()');
+  await h.run('lookRun');
+  assert.equal(reads, 3, 'the look read /health');
+  assert.deepEqual(h.seen.builds.map((f) => f.linkStamp), ['s2'], 'and built nothing after the pause');
   assert.equal(h.run('attempt'), null);
 });
 

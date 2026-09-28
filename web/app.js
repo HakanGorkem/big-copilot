@@ -998,12 +998,15 @@
   // there, so a fast game never keeps the board building back to back.
   // Not awaited: whoever asked for the read has its outcome without it (a
   // write's follow reports on its own build), and checkLink() starts nothing
-  // while another read holds the attempt. `lookRun` is the look under way.
+  // while another read holds the attempt, nor once the player has paused
+  // watching while its /health was on the way. `lookRun` is the latest look's
+  // promise, kept for the tests to await; nothing else reads it.
   let lookRun = null;
   function lookAgain(gen) {
     lookRun = (async () => {
-      if (gen !== sourceGen) return;
-      try { await checkLink(false); } catch (e) {}
+      // A failure is the page's own mistake, never the game's: said in the
+      // console, and never an unhandled rejection.
+      try { await checkLink(false); } catch (e) { console.error(e); }
     })();
   }
 
@@ -1597,6 +1600,10 @@
     // is withdrawn, even when the stamp has not moved.
     if (portNoteUp() && strip.tone === "ok") note("");
     if (document.hidden || busy || attempt) return;
+    // The look after a build (`look` false) was asked for while watching; a
+    // pause since, while its /health was on the way, ends it here. A tick of
+    // the watcher itself cannot run paused: the pause stops its timer.
+    if (!look && !watchTimer) return;
     // Nothing yet, or mid-refresh: nothing to build from. The next tick, or
     // Update, looks again.
     if (!health.stamp || health.busy) return;
