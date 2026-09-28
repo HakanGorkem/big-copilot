@@ -78,7 +78,7 @@ A refresh is skipped, and the previous bytes kept, while `SaveGameManager.Saving
 is true or `SaveGameManager.CanSave()` is false (interior designer, placement mode, the
 casino boat). Refreshes never overlap: one in flight at a time. The automatic triggers
 above run at most one every 15 seconds; a `POST /refresh` needs only 3 seconds since the
-last refresh started, whatever started it, while serializing runs on the worker thread.
+last refresh started, whatever started it, while the mod is on its worker-thread path.
 After a fallback to the main thread, where every walk is a stall, `POST /refresh` keeps
 the 15 seconds until the worker path is tried again. A building load and a write's
 refresh may pass either window (never an in-flight one). Mods before 0.4.0 applied the
