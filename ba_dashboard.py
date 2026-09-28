@@ -6949,10 +6949,11 @@ def _can_work(person: dict, state: dict, slot: dict) -> bool:
 
 
 def _may_take(person: dict, slot: dict) -> bool:
-    """The rules of `_can_work()` that read the slot alone, never the week.
+    """The rules of `_can_work()` that read the person and the slot, never the week.
 
-    The role, free weekends and blackout windows: the same answer for every
-    slot of one skill, kind, day and hours, however far the week has filled.
+    The role, free weekends and blackout windows: for one person, the same
+    answer for every slot of one skill, kind, day and hours, however far the
+    week has filled.
     """
     if not _usable(person, slot["skill"], slot["kind"]):
         return False
@@ -7778,7 +7779,8 @@ def _fill_by_exchange(shifts: list, pool: list, state: dict, rostered: set) -> i
     So each open line is offered to somebody already on this roster who is
     free that day but full for the week, if they can hand one of their own
     entries to another person on the roster who has room for it. Both moves
-    are tested with `_can_work()` against the weeks as they would stand, and
+    are tested with `_can_work()`'s two halves, `_may_take()` for who may take
+    the line at all and `_has_room()` against the weeks as they would stand, and
     the giver with `_keeps_floors()` too, so no rule bends, no met demand is
     broken, and nobody new is started. The taker only gains. Deterministic: open
     lines by the clock, people and their entries by id and the clock.
@@ -9190,10 +9192,11 @@ def _place_week(grid, need, slots_open, cover_posts, pool, people, business, ben
     # after the swaps as before, and is copied only when a swap was made.
     unswapped = {pid: _copy_state(state[pid]) for pid in here["rostered"]}
     swapped = _fill_by_exchange(shifts, pool, state, here["rostered"])
+    plain_state = None
     if swapped:
         plain_state = {
-            person["id"]: unswapped.get(person["id"]) or _copy_state(state[person["id"]])
-            for person in pool
+            pid: unswapped[pid] if pid in unswapped else _copy_state(state[pid])
+            for pid in (person["id"] for person in pool)
         }
     # The residue the one-at-a-time fill leaves on whoever was admitted last:
     # the same lines, a name or two different, and one fewer failed demand.
