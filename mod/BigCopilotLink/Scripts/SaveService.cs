@@ -121,9 +121,11 @@ namespace BigCopilotLink
 
         /// <summary>
         /// The player's own POST /refresh (trigger "request") waits only this long since
-        /// the last refresh started: the walk runs on a worker thread, so an explicit ask
-        /// need not sit out the automatic triggers' window. Mods before 0.4.0 applied
-        /// ThrottleSeconds to it too.
+        /// the last refresh started, while the walk runs on the worker thread: then an
+        /// explicit ask stalls nothing and need not sit out the automatic triggers'
+        /// window. After a fallback to the main thread every walk is a stall, so a
+        /// request keeps ThrottleSeconds until the worker path is back (a re-probe turns
+        /// it back on). Mods before 0.4.0 applied ThrottleSeconds to it always.
         /// </summary>
         private const int RequestThrottleSeconds = 3;
 
@@ -213,8 +215,8 @@ namespace BigCopilotLink
         /// IsInsideBuilding changes under the black, so whatever a serialize costs
         /// lands there. The city's loading spinner is not an edge of its own: it
         /// rises only for CityManager.DelayEnterBuilding, whose entry flips too, and
-        /// a second walk under the same black bought nothing. This passes the
-        /// fifteen-second window. Only while a client is attached, and only with the
+        /// a second walk under the same black bought nothing. This passes either
+        /// window. Only while a client is attached, and only with the
         /// building-load option on, which is off by default: the hourly and game-save
         /// refreshes make it a backup.
         /// </summary>
@@ -337,7 +339,7 @@ namespace BigCopilotLink
 
         /// <summary>
         /// Main thread only. A trigger whose stall is hidden anyway (a building load)
-        /// may pass the fifteen-second window; nothing passes Busy. A building load walks
+        /// may pass either window; nothing passes Busy. A building load walks
         /// on the main thread, under the black screen.
         /// </summary>
         public RefreshResult TryStartRefresh(string trigger, bool pastWindow)
@@ -347,7 +349,7 @@ namespace BigCopilotLink
 
         /// <summary>
         /// Main thread only, right after a write applied (WriteService). The page waits
-        /// for the stamp to move, so this passes the fifteen-second window, as a building
+        /// for the stamp to move, so this passes either window, as a building
         /// load does, but never Busy (a write only runs while nothing is in flight, so
         /// Busy is down here). Unlike a building load it walks on whichever path is on:
         /// nothing hides a stall, and the state is not being rewritten under the walk.
@@ -366,14 +368,15 @@ namespace BigCopilotLink
         /// Main thread only. <paramref name="pastWindow"/> skips the window;
         /// <paramref name="onMainThread"/> walks on the main thread whatever the
         /// worker path's state (a building load). Nothing passes Busy. The window is
-        /// the player's short one for a "request", the fifteen-second one for every
-        /// other trigger; both count from the last refresh started, whatever asked
-        /// for it, and retryAfter is what is left of the one that applied.
+        /// the player's short one for a "request" while the worker path is on, the
+        /// fifteen-second one otherwise and for every other trigger; both count from
+        /// the last refresh started, whatever asked for it, and retryAfter is what is
+        /// left of the one that applied.
         /// </summary>
         private RefreshResult TryStartRefresh(string trigger, bool pastWindow, bool onMainThread)
         {
             var sinceLast = (DateTime.UtcNow - _lastRefreshStarted).TotalSeconds;
-            var window = trigger == "request" ? RequestThrottleSeconds : ThrottleSeconds;
+            var window = trigger == "request" && _backgroundSerialize ? RequestThrottleSeconds : ThrottleSeconds;
             if (_busy || (!pastWindow && sinceLast < window))
             {
                 var remaining = window - sinceLast;

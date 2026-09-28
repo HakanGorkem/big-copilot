@@ -184,6 +184,7 @@ class Link:
         self.stamp = ""
         self.refreshed_at = None
         self.last_refresh = 0.0
+        self.clock = time.monotonic  # what refresh() measures its window by; tests pin it
         self.busy = False
         self._mtime = None
         self._last_seconds = 0
@@ -217,7 +218,7 @@ class Link:
     def refresh(self, force: bool = False) -> tuple[int, dict]:
         """Re-read the file. Returns the status and body /refresh would answer."""
         with self.lock:
-            now = time.monotonic()
+            now = self.clock()
             if self.refuse and not force:
                 return 409, {"error": "cannot_save", "reason": self.refuse}
             # The mock's own refreshes (the file changing, an apply) are forced,

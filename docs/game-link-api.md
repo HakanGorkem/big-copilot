@@ -54,9 +54,9 @@ clock, so clients must not rely on it.
 - on the frame the player enters or leaves a building (option "Refresh when a
   building loads", **off** by default, a backup: the hourly and game-save refreshes
   make it redundant): the screen is black between the fade-out and the
-  fade-in, so the serialize is not seen, and this trigger alone may pass the
-  fifteen-second window below (a refresh already in flight still blocks it; the
-  refresh then runs once the window lifts);
+  fade-in, so the serialize is not seen, and this trigger, like a write's refresh,
+  may pass either window below (a refresh already in flight still blocks it; the
+  refresh then runs once the fifteen-second window lifts);
 - after any game save completes, so the served bytes are never older than the
   player's own save;
 - on `POST /refresh`, with a window of its own (below);
@@ -78,9 +78,12 @@ A refresh is skipped, and the previous bytes kept, while `SaveGameManager.Saving
 is true or `SaveGameManager.CanSave()` is false (interior designer, placement mode, the
 casino boat). Refreshes never overlap: one in flight at a time. The automatic triggers
 above run at most one every 15 seconds; a `POST /refresh` needs only 3 seconds since the
-last refresh started, whatever started it. A building load and a write's refresh may pass
-either window (never an in-flight one). Mods before 0.4.0 applied the 15 seconds to
-`POST /refresh` too; clients honour `retryAfter` either way, so `schemaVersion` stays 1.
+last refresh started, whatever started it, while serializing runs on the worker thread.
+After a fallback to the main thread, where every walk is a stall, `POST /refresh` keeps
+the 15 seconds until the worker path is tried again. A building load and a write's
+refresh may pass either window (never an in-flight one). Mods before 0.4.0 applied the
+15 seconds to `POST /refresh` always; clients honour `retryAfter` either way, so
+`schemaVersion` stays 1.
 
 ## Endpoints
 
@@ -158,7 +161,8 @@ the mod sees it. Browsers' `fetch` and Python's `urllib` send it; curl does not,
   the main thread takes it). The clients' wait allows that. Clients time out a call
   after five seconds; the mod never holds one longer than that.
 - `429 {"error": "throttled", "retryAfter": <seconds>}` within 3 seconds of the last
-  refresh starting (15 seconds before mod 0.4.0), or while one is in flight;
+  refresh starting (15 seconds after a fallback to the main thread, and always before
+  mod 0.4.0), or while one is in flight;
   `retryAfter` is what is left of that window, at least 1. The client waits and polls
   `/health` as above.
 - `409 {"error": "cannot_save", "reason": "saving" | "placement" | "interior" | "casino" | "other"}`
@@ -211,7 +215,7 @@ approved it (see "Approving a browser" below).
   the page's wait ends; it replaces the kind's undo with nothing.
 - **After an apply** the mod calls `SaveGameManager.MarkChange()`, shows an in-game
   notification ("Big Copilot updated <what> at <business>"), and starts a refresh that may
-  pass the fifteen-second window (never an in-flight one). The answer carries `stamp`,
+  pass either window (never an in-flight one). The answer carries `stamp`,
   the stamp before that refresh; the page polls `/health` until it moves, as after
   `POST /refresh`, and rebuilds from the new bytes. No game save.
 
@@ -667,7 +671,8 @@ python tools/game_link_mock.py <save.hsg> [--port 8322] [--character ID] [--comp
 Serves the file with this contract, `source: "mock"`. `POST /refresh` and a change of
 the file's modification time both re-read it and issue a new stamp, so pointing the
 mock at the game's own autosave folder gives a live-looking link without the mod.
-`POST /refresh` is throttled as the mod's is, 3 seconds since the last refresh.
+`POST /refresh` is throttled as the mod's is on its worker path, 3 seconds since the
+last refresh (the mock has no main-thread fallback).
 `--throttle`, `--refuse <reason>` and `--schema <n>` exercise the clients' error paths.
 For the writes, `--refuse-write <error>[:<detail>]`, `--busy-writes <n>` and `--writes <kinds>`
 do the same, and for `hire`, `--hire-gone <candidateId>` (repeatable) makes a candidate gone
