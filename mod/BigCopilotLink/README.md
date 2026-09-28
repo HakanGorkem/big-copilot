@@ -131,6 +131,12 @@ main thread: the screen is black, the load is rewriting the state a walk would r
 and its stall is hidden anyway. One that finds a refresh already in flight is run
 once the fifteen-second window lifts instead, on whichever path is on.
 
+That window holds for the automatic triggers (the first refresh, the hour, a game
+save, the five-minute floor, and the retries and held-over refreshes above). The
+page's Update (`POST /refresh`) has a window of its own: three seconds since the
+last refresh started, since the walk no longer stalls the game. Mods before 0.4.0
+held it to fifteen seconds too.
+
 The log lines:
 
 ```

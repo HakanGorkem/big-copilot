@@ -111,8 +111,21 @@ namespace BigCopilotLink
     /// </summary>
     public sealed class SaveService
     {
-        /// <summary>At most one refresh this often, whatever asks.</summary>
+        /// <summary>
+        /// At most one refresh this often for the automatic triggers (first, hour,
+        /// game-save, floor, attach, retry): at top game speed the hour turns every few
+        /// seconds, and this keeps the walks, and their allocations, from running back
+        /// to back.
+        /// </summary>
         private const int ThrottleSeconds = 15;
+
+        /// <summary>
+        /// The player's own POST /refresh (trigger "request") waits only this long since
+        /// the last refresh started: the walk runs on a worker thread, so an explicit ask
+        /// need not sit out the automatic triggers' window. Mods before 0.4.0 applied
+        /// ThrottleSeconds to it too.
+        /// </summary>
+        private const int RequestThrottleSeconds = 3;
 
         /// <summary>A floor, so an attached board is never looking at something very old.</summary>
         private const int FloorMinutes = 5;
@@ -156,8 +169,9 @@ namespace BigCopilotLink
         private bool _reprobing;
         private const int BackgroundFailuresBeforeFallback = 2;
         private const int FallbackRunsBeforeReprobe = 10;
-        // A failed walk asks for one more try when the throttle window lifts. Any
-        // refresh that starts spends it, whatever asked for that refresh.
+        // A failed walk asks for one more try when the fifteen-second window lifts.
+        // Any refresh that starts spends it, whatever asked for that refresh (a
+        // player's request inside that window included).
         private bool _retryPending;
         // The uncompressed size of the last refresh, so the next stream is allocated
         // once instead of doubling its way up through the large-object heap. Written by
@@ -349,16 +363,20 @@ namespace BigCopilotLink
         }
 
         /// <summary>
-        /// Main thread only. <paramref name="pastWindow"/> skips the fifteen-second
-        /// window; <paramref name="onMainThread"/> walks on the main thread whatever the
-        /// worker path's state (a building load). Nothing passes Busy.
+        /// Main thread only. <paramref name="pastWindow"/> skips the window;
+        /// <paramref name="onMainThread"/> walks on the main thread whatever the
+        /// worker path's state (a building load). Nothing passes Busy. The window is
+        /// the player's short one for a "request", the fifteen-second one for every
+        /// other trigger; both count from the last refresh started, whatever asked
+        /// for it, and retryAfter is what is left of the one that applied.
         /// </summary>
         private RefreshResult TryStartRefresh(string trigger, bool pastWindow, bool onMainThread)
         {
             var sinceLast = (DateTime.UtcNow - _lastRefreshStarted).TotalSeconds;
-            if (_busy || (!pastWindow && sinceLast < ThrottleSeconds))
+            var window = trigger == "request" ? RequestThrottleSeconds : ThrottleSeconds;
+            if (_busy || (!pastWindow && sinceLast < window))
             {
-                var remaining = ThrottleSeconds - sinceLast;
+                var remaining = window - sinceLast;
                 var retryAfter = remaining > 0 ? (int)Math.Ceiling(remaining) : 1;
                 return RefreshResult.Throttled(retryAfter < 1 ? 1 : retryAfter);
             }

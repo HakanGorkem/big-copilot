@@ -80,6 +80,27 @@ class MockContract(unittest.TestCase):
         self.assertEqual(status, 429)
         self.assertEqual(json.loads(body)["error"], "throttled")
 
+    def test_a_request_has_a_three_second_window_of_its_own(self):
+        # As the mod from 0.4.0: a POST /refresh waits 3 s since the last
+        # refresh, not the automatic triggers' 15.
+        self.link.last_refresh = time.monotonic() - 4
+        before = self.link.stamp
+        status, _, body = call(self.url + "/refresh", "POST")
+        self.assertEqual((status, json.loads(body)), (202, {"accepted": True, "stamp": before}))
+        self.link.last_refresh = time.monotonic() - 2
+        status, _, body = call(self.url + "/refresh", "POST")
+        self.assertEqual((status, json.loads(body)), (429, {"error": "throttled", "retryAfter": 1}))
+        # In flight: throttled whatever the window says, and never below 1.
+        self.link.last_refresh = time.monotonic() - 60
+        self.link.busy = True
+        status, _, body = call(self.url + "/refresh", "POST")
+        self.assertEqual((status, json.loads(body)), (429, {"error": "throttled", "retryAfter": 1}))
+        self.link.busy = False
+        # --throttle refuses every request, with the automatic triggers' window.
+        self.link.throttle = True
+        status, _, body = call(self.url + "/refresh", "POST")
+        self.assertEqual((status, json.loads(body)), (429, {"error": "throttled", "retryAfter": 15}))
+
     def test_refuse_and_unknown_routes(self):
         self.link.refuse = "placement"
         status, _, body = call(self.url + "/refresh", "POST")
